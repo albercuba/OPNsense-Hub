@@ -45,6 +45,7 @@ docker-compose.yml
 - Device enrollment endpoint using WireGuard public key.
 - Device tokens stored hashed; heartbeat uses bearer token auth.
 - Automatic Hub WireGuard server bootstrap and peer restore on container startup.
+- `/32`-only WireGuard routes for firewall web UI access; customer LAN subnets are never routed.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, and proxy access.
@@ -84,6 +85,8 @@ docker compose up --build
 
 ## WireGuard production notes
 
+OPNsense Hub is a management overlay for opening each firewall's own web UI. It is not a site-to-site VPN router and does not route customer LANs.
+
 The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false`:
 
 1. Generates `/etc/wireguard/server.key` if it does not exist.
@@ -92,6 +95,13 @@ The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY
 4. Runs `wg-quick up /etc/wireguard/wg0.conf` when `wg0` is not already running.
 5. Restores all non-revoked device peers from the database on startup.
 6. Adds each newly enrolled firewall as a `/32` peer.
+
+AllowedIPs are intentionally narrow:
+
+- Hub side peer route: `firewall_tunnel_ip/32`
+- Firewall side peer route: `hub_tunnel_ip/32`
+
+Do not add customer LAN networks such as `192.168.1.0/24` to WireGuard `AllowedIPs`. Many companies can use the same LAN subnet without conflict because the Hub only connects to each firewall's unique tunnel IP.
 
 The server private key is persisted in the `opnsense_hub_wg` Docker volume. Back up this volume securely; losing it requires re-enrolling devices or carefully rotating WireGuard keys.
 

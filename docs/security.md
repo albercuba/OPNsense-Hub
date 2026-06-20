@@ -6,6 +6,7 @@
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates WireGuard public key shape and tunnel IP before invoking `wg`.
+- Hub only installs `/32` WireGuard AllowedIPs for each firewall tunnel IP and never routes customer LAN subnets.
 - Dashboard RBAC checks happen before device detail, revoke, and proxy access.
 - Proxy access and revocation are audit logged.
 - Revocation invalidates the stored device token hash and removes the WireGuard peer.
@@ -27,6 +28,7 @@ Never log or display these values:
 - `security: replace default secrets` — set a long random `SECRET_KEY`, admin password, and database password.
 - `security: enable MFA` — implement TOTP/WebAuthn using the existing MFA-ready user model.
 - `security: harden proxy headers` — strip hop-by-hop headers, restrict methods if needed, and consider a battle-tested reverse proxy.
+- `security: keep management-only routing` — continue rejecting customer LAN routes in WireGuard AllowedIPs to avoid cross-company routing and overlapping subnet conflicts.
 - `security: pin firewall certificates` — replace `PROXY_VERIFY_TLS=false` with certificate pinning or an internal CA.
 - `security: isolate WireGuard management` — for higher-assurance deployments, consider moving WireGuard bootstrap and peer updates into a minimal privileged sidecar or host service.
 - `security: rate limit login and enrollment` — add IP/user rate limits to auth and enrollment endpoints.

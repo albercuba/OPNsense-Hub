@@ -41,6 +41,7 @@ sequenceDiagram
 - WireGuard server setup is bootstrapped by the app container on startup.
 - The app generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
+- Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
 - Reverse proxy is implemented in FastAPI for the MVP and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
 
 For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels, the app container runs with `NET_ADMIN` and `/dev/net/tun` so it can configure `wg0` itself.
@@ -66,3 +67,4 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - The Hub never stores OPNsense administrator passwords.
 - Firewall access is reverse-proxied through WireGuard and audit logged.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
+- The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.

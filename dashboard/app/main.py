@@ -28,6 +28,7 @@ from .wireguard import (
     WireGuardError,
     add_peer,
     bootstrap_wireguard,
+    client_allowed_ips,
     get_server_public_key,
     next_tunnel_ip,
     remove_peer,
@@ -331,7 +332,7 @@ def enroll(
             "interface_address": f"{tunnel_ip}/32",
             "server_public_key": get_server_public_key(),
             "endpoint": settings.hub_wg_endpoint,
-            "allowed_ips": str(settings.hub_wg_address).split("/")[0] + "/32",
+            "allowed_ips": client_allowed_ips(),
             "persistent_keepalive": 25,
         },
     }

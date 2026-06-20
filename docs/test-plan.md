@@ -15,6 +15,7 @@ Current coverage:
 - Secret hashing and verification.
 - OTP format generation.
 - WireGuard public key validation against command injection-shaped values.
+- `/32`-only WireGuard peer route generation.
 - RBAC role ordering.
 
 ## Manual MVP tests
@@ -50,6 +51,7 @@ On a disposable OPNsense VM:
 - Verify Docker images build from a clean checkout.
 - Verify database backup and restore.
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
+- Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet.
 - Verify revocation removes the peer from `wg show`.
 - Verify company RBAC prevents cross-company proxy access.
 - Verify logs do not contain OTPs, device tokens, or private keys.

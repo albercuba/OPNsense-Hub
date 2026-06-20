@@ -121,6 +121,8 @@ Address = {interface_address}
 [Peer]
 PublicKey = {server_public_key}
 Endpoint = {endpoint}
+# OPNsense Hub is management-only. This must remain the Hub tunnel /32,
+# never a customer LAN subnet.
 AllowedIPs = {allowed_ips}
 PersistentKeepalive = {persistent_keepalive}
 """.format(private_key=private_key, **wg)

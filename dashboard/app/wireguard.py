@@ -146,6 +146,24 @@ def bootstrap_wireguard(db: Session) -> None:
     sync_existing_peers(db)
 
 
+def peer_allowed_ips(tunnel_ip: str) -> str:
+    """Return the only route the Hub installs for a firewall: its tunnel /32.
+
+    Customer LAN subnets are intentionally never included. OPNsense Hub is only
+    for reaching the firewall web UI over its unique tunnel IP, not for routing
+    into customer networks where overlapping LANs are common.
+    """
+    ip = ipaddress.ip_address(tunnel_ip)
+    return f"{ip}/32"
+
+
+def client_allowed_ips() -> str:
+    """Return the only route the firewall installs for the Hub: Hub tunnel /32."""
+    settings = get_settings()
+    hub_ip = ipaddress.ip_interface(settings.hub_wg_address).ip
+    return f"{hub_ip}/32"
+
+
 def next_tunnel_ip(db: Session) -> str:
     settings = get_settings()
     network = ipaddress.ip_network(settings.hub_wg_cidr, strict=False)
@@ -173,7 +191,7 @@ def add_peer(public_key: str, tunnel_ip: str) -> None:
         "peer",
         public_key,
         "allowed-ips",
-        f"{tunnel_ip}/32",
+        peer_allowed_ips(tunnel_ip),
     ]
     _run(cmd, timeout=10)
 
