@@ -60,7 +60,7 @@ docker compose up --build
 Open:
 
 ```text
-http://localhost:8082
+http://localhost:8083
 ```
 
 Default login comes from `.env`:

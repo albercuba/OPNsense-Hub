@@ -3,5 +3,5 @@
 }
 
 hub.example.com {
-  reverse_proxy opnsense-hub-api:8082
+  reverse_proxy opnsense-hub-api:8083
 }

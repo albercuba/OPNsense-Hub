@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     app_name: str = "OPNsense Hub"
-    public_url: str = "http://localhost:8082"
+    public_url: str = "http://localhost:8083"
     database_url: str = (
         "postgresql+psycopg://opnsensehub:opnsensehub@db:5432/opnsensehub"
     )

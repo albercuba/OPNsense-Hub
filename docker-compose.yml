@@ -20,7 +20,7 @@ services:
       opnsense-hub-db:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "8083:8083"
     cap_add:
       - NET_ADMIN
     devices:
@@ -35,7 +35,7 @@ services:
       opnsense-hub-db:
         condition: service_healthy
     profiles: ["split-services"]
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8083"]
 
   opnsense-hub-wireguard:
     image: linuxserver/wireguard:latest
