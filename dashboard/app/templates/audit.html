@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="card">
-  <h1>Audit logs</h1>
-  <table><thead><tr><th>Time</th><th>Action</th><th>Company</th><th>Device</th><th>IP</th></tr></thead><tbody>
-  {% for log in logs %}<tr><td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ log.action }}</td><td>{{ log.company_id or '—' }}</td><td>{{ log.device_id or '—' }}</td><td>{{ log.ip_address or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No audit logs yet.</td></tr>{% endfor %}
-  </tbody></table>
-</section>
-{% endblock %}

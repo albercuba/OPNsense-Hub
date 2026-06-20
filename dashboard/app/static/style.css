@@ -418,3 +418,160 @@ th {
         margin-top: 0.5rem;
     }
 }
+
+/* Compact full-width dashboard layout */
+body {
+    font-size: 12px;
+}
+.topbar {
+    padding: 0.5rem 0.75rem;
+}
+.brand {
+    gap: 0.45rem;
+}
+.brand-mark {
+    font-size: 1.2rem;
+}
+.app-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0 0.75rem;
+}
+.side-menu {
+    top: 3.75rem;
+    gap: 0.25rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+}
+.side-menu-link,
+.side-menu-sublink {
+    gap: 0.45rem;
+    padding: 0.5rem 0.6rem;
+}
+.side-menu-sublink,
+th,
+.eyebrow {
+    font-size: 1rem;
+}
+.side-menu-submenu {
+    gap: 0.15rem;
+    padding-left: 0.4rem;
+}
+.shell {
+    margin: 0.75rem auto;
+}
+.card {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.grid,
+.settings-grid-form,
+.inline-user-form {
+    gap: 0.5rem;
+}
+h1,
+h2,
+h3,
+p {
+    margin-bottom: 0.5rem;
+}
+.form-row {
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+input,
+select,
+.button {
+    padding: 0.45rem 0.6rem;
+}
+select {
+    background-position:
+        calc(100% - 14px) 50%,
+        calc(100% - 9px) 50%;
+    padding-right: 1.8rem;
+}
+.icon-button {
+    font-size: 1rem;
+    padding: 0.2rem 0.3rem;
+}
+th,
+td {
+    padding: 0.4rem 0.5rem;
+}
+.admin-card-header {
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.settings-form,
+.settings-grid-form {
+    margin-top: 0.5rem;
+}
+.divider-top {
+    padding-top: 0.5rem;
+    margin-top: 0.25rem;
+}
+.status {
+    padding: 0.15rem 0.4rem;
+}
+.status-card {
+    gap: 0.4rem;
+}
+.footer {
+    padding: 0.75rem;
+}
+
+.editable-row .edit-field:disabled {
+    color: var(--text);
+    opacity: 1;
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0;
+    padding-right: 0;
+    cursor: default;
+}
+.editable-row select.edit-field:disabled {
+    appearance: none;
+    background-image: none;
+}
+.editable-row.editing .edit-field {
+    border-color: var(--line);
+    background: #fff;
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
+}
+.user-name-fields {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr);
+    gap: 0.4rem;
+}
+.password-edit-field {
+    display: none;
+    width: 180px;
+    margin-right: 0.25rem;
+}
+.editable-row.editing .password-edit-field {
+    display: inline-block;
+}
+.actions .inline-delete-form {
+    float: none;
+    margin-top: 0;
+    margin-left: 0.15rem;
+    vertical-align: middle;
+}
+.inline-company-form input,
+.editable-row td > .edit-field {
+    min-width: 180px;
+}
+
+@media (max-width: 900px) {
+    .app-layout {
+        padding: 0 0.5rem;
+    }
+    .user-name-fields {
+        grid-template-columns: 1fr;
+    }
+    .password-edit-field {
+        width: 100%;
+    }
+}

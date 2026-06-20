@@ -38,5 +38,6 @@ When finished, respond only with:
 
 ## Git
 
-Do not commit or push unless I explicitly ask.
-Prepare the repo so I can review, commit, and push to GitHub.
+- Do not commit or push unless I explicitly ask.
+- Prepare the repo so I can review, commit, and push to GitHub.
+- Whenever code, documentation, configuration, templates, or assets are changed, include a suggested Conventional Commit message in the final response, such as `feat: add company management table`, `fix: restrict vpn tunnel access`, or `docs: update agent instructions`.

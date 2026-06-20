@@ -14,7 +14,6 @@ from .audit import write_audit
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
 from .models import (
-    AuditLog,
     Company,
     CompanyUser,
     Device,
@@ -859,25 +858,6 @@ def revoke_device(
         )
         db.commit()
     return RedirectResponse(f"/companies/{device.company_id}", status_code=303)
-
-
-@app.get("/audit", response_class=HTMLResponse)
-def audit_page(
-    request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(current_user)],
-):
-    company_ids = [cu.company_id for cu in user.companies]
-    logs = db.scalars(
-        select(AuditLog)
-        .where(AuditLog.company_id.in_(company_ids) | AuditLog.company_id.is_(None))
-        .order_by(AuditLog.created_at.desc())
-        .limit(100)
-    ).all()
-    return templates.TemplateResponse(
-        "audit.html",
-        {"request": request, "user": user, "logs": logs, "active_page": "audit"},
-    )
 
 
 @app.api_route(

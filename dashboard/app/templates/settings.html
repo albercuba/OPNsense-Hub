@@ -23,14 +23,14 @@
       <thead><tr><th>Company Name</th><th class="actions">Actions</th></tr></thead>
       <tbody>
       {% for company in companies %}
-        <tr>
+        <tr class="editable-row" data-editable-row>
           <td>
-            <form id="company-edit-{{ company.id }}" action="/settings/companies/{{ company.id }}" method="post" class="inline-company-form">
-              <input name="name" value="{{ company.name }}" required autocomplete="organization" aria-label="Company Name">
-            </form>
+            <form id="company-edit-{{ company.id }}" action="/settings/companies/{{ company.id }}" method="post" class="inline-company-form"></form>
+            <input class="edit-field" form="company-edit-{{ company.id }}" name="name" value="{{ company.name }}" required autocomplete="organization" aria-label="Company Name" data-edit-control disabled>
           </td>
           <td class="actions">
-            <button class="icon-button" form="company-edit-{{ company.id }}" type="submit" title="Edit company" aria-label="Edit company"><i class="fa-solid fa-pen-to-square"></i></button>
+            <button class="icon-button" type="button" title="Edit company" aria-label="Edit company" data-edit-button><i class="fa-solid fa-pen-to-square"></i></button>
+            <button class="icon-button save-button" form="company-edit-{{ company.id }}" type="submit" title="Save company" aria-label="Save company" data-save-button hidden><i class="fa-solid fa-floppy-disk"></i></button>
             <form action="/settings/companies/{{ company.id }}/delete" method="post" class="inline-delete-form">
               <button class="icon-button danger-text" type="submit" title="Remove company" aria-label="Remove company"><i class="fa-solid fa-trash"></i></button>
             </form>
@@ -73,23 +73,29 @@
       <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>MFA ready</th><th class="actions">Actions</th></tr></thead>
       <tbody>
       {% for managed_user in users %}
-        <tr>
-          <td colspan="5">
-            <form action="/settings/users/{{ managed_user.id }}" method="post" class="inline-user-form">
-              <input type="email" name="email" value="{{ managed_user.email }}" required>
-              <input name="first_name" value="{{ managed_user.first_name or '' }}" placeholder="First name">
-              <input name="last_name" value="{{ managed_user.last_name or '' }}" placeholder="Last name">
-              <select name="role">
-                <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>User</option>
-                <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>Administrator</option>
-              </select>
-              <input type="password" name="password" placeholder="New password optional" autocomplete="new-password">
-              <span class="status">{% if managed_user.mfa_enabled %}enabled{% else %}ready{% endif %}</span>
-              <button class="icon-button" type="submit" title="Save user"><i class="fa-solid fa-floppy-disk"></i></button>
-            </form>
+        <tr class="editable-row" data-editable-row>
+          <td>
+            <form id="user-edit-{{ managed_user.id }}" action="/settings/users/{{ managed_user.id }}" method="post"></form>
+            <input class="edit-field" form="user-edit-{{ managed_user.id }}" type="email" name="email" value="{{ managed_user.email }}" required data-edit-control disabled>
+          </td>
+          <td class="user-name-fields">
+            <input class="edit-field" form="user-edit-{{ managed_user.id }}" name="first_name" value="{{ managed_user.first_name or '' }}" placeholder="First name" data-edit-control disabled>
+            <input class="edit-field" form="user-edit-{{ managed_user.id }}" name="last_name" value="{{ managed_user.last_name or '' }}" placeholder="Last name" data-edit-control disabled>
+          </td>
+          <td>
+            <select class="edit-field" form="user-edit-{{ managed_user.id }}" name="role" data-edit-control disabled>
+              <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>User</option>
+              <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>Administrator</option>
+            </select>
+          </td>
+          <td><span class="status">{% if managed_user.mfa_enabled %}enabled{% else %}ready{% endif %}</span></td>
+          <td class="actions">
+            <input class="edit-field password-edit-field" form="user-edit-{{ managed_user.id }}" type="password" name="password" placeholder="New password optional" autocomplete="new-password" data-edit-control disabled>
+            <button class="icon-button" type="button" title="Edit user" aria-label="Edit user" data-edit-button><i class="fa-solid fa-pen-to-square"></i></button>
+            <button class="icon-button save-button" form="user-edit-{{ managed_user.id }}" type="submit" title="Save user" aria-label="Save user" data-save-button hidden><i class="fa-solid fa-floppy-disk"></i></button>
             {% if managed_user.id != user.id %}
             <form action="/settings/users/{{ managed_user.id }}/delete" method="post" class="inline-delete-form">
-              <button class="icon-button danger-text" type="submit" title="Delete user"><i class="fa-solid fa-trash"></i></button>
+              <button class="icon-button danger-text" type="submit" title="Delete user" aria-label="Delete user"><i class="fa-solid fa-trash"></i></button>
             </form>
             {% endif %}
           </td>

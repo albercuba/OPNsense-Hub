@@ -17,7 +17,6 @@
   <div class="app-layout">
     <aside class="side-menu" aria-label="Primary navigation">
       <a class="side-menu-link {% if active_page == 'companies' %}active{% endif %}" href="/companies"><i class="fa-solid fa-building"></i> Companies</a>
-      <a class="side-menu-link {% if active_page == 'audit' %}active{% endif %}" href="/audit"><i class="fa-solid fa-list-check"></i> Audit Logs</a>
       {% if user and user.role == 'administrator' %}
       <details class="side-menu-group" {% if active_page == 'settings' %}open{% endif %}>
         <summary class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"><i class="fa-solid fa-gear"></i> Settings</summary>
@@ -35,5 +34,6 @@
     <main class="shell">{% block content %}{% endblock %}</main>
   </div>
   <footer class="footer">OPNsense Hub MVP · read-only control plane</footer>
+  <script src="/static/app.js"></script>
 </body>
 </html>
