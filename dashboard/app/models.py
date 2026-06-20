@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,12 +30,51 @@ class User(Base):
         String(320), unique=True, nullable=False, index=True
     )
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    role: Mapped[str] = mapped_column(String(30), default="user", nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, nullable=False
     )
 
     companies: Mapped[list["CompanyUser"]] = relationship(back_populates="user")
+
+
+class IntegrationSettings(Base):
+    __tablename__ = "integration_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    smtp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_username: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_from: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    graph_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    graph_tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    graph_client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    graph_client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    graph_sender: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    microsoft_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    microsoft_tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_audience: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_authority: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_admin_group: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    microsoft_user_group: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ad_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ad_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ad_base_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ad_bind_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    branding_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
 
 
 class Company(Base):

@@ -50,6 +50,7 @@ docker-compose.yml
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, and proxy access.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
+- Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
 
 ## Run locally
@@ -184,4 +185,4 @@ docker compose build
 - The FastAPI proxy is intentionally simple. For production, consider Caddy/Nginx with a signed internal auth check or a hardened streaming proxy.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.
 - MFA fields exist, but MFA is not implemented yet.
-- User management UI is not included in this MVP, though schema supports company users and roles.
+- Email and Microsoft Graph client secrets entered in the settings UI are not shown back in forms and are never logged, but they are currently stored in the database without application-level encryption. Use restrictive database access and backups until encrypted-at-rest integration secrets are implemented.

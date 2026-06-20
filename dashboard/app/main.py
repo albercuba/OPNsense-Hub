@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Resp
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from .audit import write_audit
@@ -20,6 +20,7 @@ from .models import (
     Device,
     DeviceEvent,
     EnrollmentCode,
+    IntegrationSettings,
     User,
 )
 from .rbac import has_company_role
@@ -40,8 +41,57 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
+def ensure_schema_compat() -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name text NULL")
+        )
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name text NULL")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS integration_settings (
+                  id integer PRIMARY KEY DEFAULT 1,
+                  smtp_enabled boolean NOT NULL DEFAULT false,
+                  smtp_host text NULL,
+                  smtp_port integer NULL,
+                  smtp_username text NULL,
+                  smtp_password text NULL,
+                  smtp_from text NULL,
+                  graph_enabled boolean NOT NULL DEFAULT false,
+                  graph_tenant_id text NULL,
+                  graph_client_id text NULL,
+                  graph_client_secret text NULL,
+                  graph_sender text NULL,
+                  microsoft_enabled boolean NOT NULL DEFAULT false,
+                  microsoft_tenant_id text NULL,
+                  microsoft_client_id text NULL,
+                  microsoft_audience text NULL,
+                  microsoft_authority text NULL,
+                  microsoft_admin_group text NULL,
+                  microsoft_user_group text NULL,
+                  ad_enabled boolean NOT NULL DEFAULT false,
+                  ad_host text NULL,
+                  ad_base_dn text NULL,
+                  ad_bind_dn text NULL,
+                  branding_logo_url text NULL,
+                  updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+
+
 def bootstrap() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compat()
     with SessionLocal() as db:
         admin = db.scalar(
             select(User).where(User.email == settings.initial_admin_email.lower())
@@ -51,8 +101,12 @@ def bootstrap() -> None:
                 User(
                     email=settings.initial_admin_email.lower(),
                     password_hash=hash_secret(settings.initial_admin_password),
+                    role="administrator",
                 )
             )
+            db.commit()
+        elif admin.role != "administrator":
+            admin.role = "administrator"
             db.commit()
         bootstrap_wireguard(db)
 
@@ -90,6 +144,28 @@ def require_company(
     if not company or not has_company_role(db, user, company_id, minimum):
         raise HTTPException(status_code=404, detail="company not found")
     return company
+
+
+def require_admin(user: User) -> None:
+    if user.role != "administrator":
+        raise HTTPException(status_code=403, detail="administrator access required")
+
+
+def get_or_create_integration_settings(db: Session) -> IntegrationSettings:
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not integration_settings:
+        integration_settings = IntegrationSettings(id=1)
+        db.add(integration_settings)
+        db.commit()
+        db.refresh(integration_settings)
+    return integration_settings
+
+
+def clean_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -164,8 +240,259 @@ def companies_page(
         .order_by(Company.name)
     ).all()
     return templates.TemplateResponse(
-        "companies.html", {"request": request, "user": user, "companies": companies}
+        "companies.html",
+        {
+            "request": request,
+            "user": user,
+            "companies": companies,
+            "active_page": "companies",
+        },
     )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_redirect(user: Annotated[User, Depends(current_user)]):
+    require_admin(user)
+    return RedirectResponse("/settings/add-company", status_code=303)
+
+
+@app.get("/settings/{section}", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    section: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    allowed_sections = {
+        "add-company",
+        "manage-users",
+        "email-settings",
+        "microsoft-365",
+        "local-ad",
+        "branding",
+    }
+    if section not in allowed_sections:
+        raise HTTPException(status_code=404)
+    users = db.scalars(select(User).order_by(User.email)).all()
+    integration_settings = get_or_create_integration_settings(db)
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "user": user,
+            "users": users,
+            "settings": integration_settings,
+            "active_page": "settings",
+            "active_settings": section,
+            "status": request.query_params.get("status"),
+        },
+    )
+
+
+@app.post("/settings/users")
+def create_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    email: str = Form(...),
+    password: str = Form(...),
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+    role: str = Form("user"),
+):
+    require_admin(user)
+    role = role if role in {"user", "administrator"} else "user"
+    normalized_email = email.lower().strip()
+    if not normalized_email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    if db.scalar(select(User).where(User.email == normalized_email)):
+        raise HTTPException(status_code=400, detail="email already exists")
+    db.add(
+        User(
+            email=normalized_email,
+            password_hash=hash_secret(password),
+            first_name=clean_optional(first_name),
+            last_name=clean_optional(last_name),
+            role=role,
+        )
+    )
+    write_audit(db, request, "settings.user.create", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-users?status=user-created", status_code=303
+    )
+
+
+@app.post("/settings/users/{target_user_id}")
+def update_user(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    email: str = Form(...),
+    password: str = Form(""),
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+    role: str = Form("user"),
+):
+    require_admin(user)
+    target = db.get(User, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404)
+    role = role if role in {"user", "administrator"} else "user"
+    normalized_email = email.lower().strip()
+    duplicate = db.scalar(
+        select(User).where(User.email == normalized_email, User.id != target.id)
+    )
+    if duplicate:
+        raise HTTPException(status_code=400, detail="email already exists")
+    target.email = normalized_email
+    target.first_name = clean_optional(first_name)
+    target.last_name = clean_optional(last_name)
+    target.role = role
+    if password.strip():
+        target.password_hash = hash_secret(password)
+    write_audit(db, request, "settings.user.update", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-users?status=user-updated", status_code=303
+    )
+
+
+@app.post("/settings/users/{target_user_id}/delete")
+def delete_user(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    if target_user_id == user.id:
+        raise HTTPException(status_code=400, detail="you cannot delete your own user")
+    target = db.get(User, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404)
+    db.execute(delete(CompanyUser).where(CompanyUser.user_id == target.id))
+    db.delete(target)
+    write_audit(db, request, "settings.user.delete", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-users?status=user-deleted", status_code=303
+    )
+
+
+@app.post("/settings/email")
+def update_email_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    smtp_enabled: str | None = Form(None),
+    smtp_host: str = Form(""),
+    smtp_port: str = Form(""),
+    smtp_username: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from: str = Form(""),
+    graph_enabled: str | None = Form(None),
+    graph_tenant_id: str = Form(""),
+    graph_client_id: str = Form(""),
+    graph_client_secret: str = Form(""),
+    graph_sender: str = Form(""),
+):
+    require_admin(user)
+    integration_settings = get_or_create_integration_settings(db)
+    use_smtp = smtp_enabled == "on"
+    use_graph = graph_enabled == "on" and not use_smtp
+    integration_settings.smtp_enabled = use_smtp
+    integration_settings.graph_enabled = use_graph
+    integration_settings.smtp_host = clean_optional(smtp_host)
+    integration_settings.smtp_port = int(smtp_port) if smtp_port.strip() else None
+    integration_settings.smtp_username = clean_optional(smtp_username)
+    integration_settings.smtp_from = clean_optional(smtp_from)
+    integration_settings.graph_tenant_id = clean_optional(graph_tenant_id)
+    integration_settings.graph_client_id = clean_optional(graph_client_id)
+    integration_settings.graph_sender = clean_optional(graph_sender)
+    if smtp_password.strip():
+        integration_settings.smtp_password = smtp_password
+    if graph_client_secret.strip():
+        integration_settings.graph_client_secret = graph_client_secret
+    integration_settings.updated_at = utc_now()
+    write_audit(db, request, "settings.email.update", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/email-settings?status=email-saved", status_code=303
+    )
+
+
+@app.post("/settings/microsoft")
+def update_microsoft_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    microsoft_enabled: str | None = Form(None),
+    microsoft_tenant_id: str = Form(""),
+    microsoft_client_id: str = Form(""),
+    microsoft_audience: str = Form(""),
+    microsoft_authority: str = Form(""),
+    microsoft_admin_group: str = Form(""),
+    microsoft_user_group: str = Form(""),
+):
+    require_admin(user)
+    integration_settings = get_or_create_integration_settings(db)
+    integration_settings.microsoft_enabled = microsoft_enabled == "on"
+    integration_settings.microsoft_tenant_id = clean_optional(microsoft_tenant_id)
+    integration_settings.microsoft_client_id = clean_optional(microsoft_client_id)
+    integration_settings.microsoft_audience = clean_optional(microsoft_audience)
+    integration_settings.microsoft_authority = clean_optional(microsoft_authority)
+    integration_settings.microsoft_admin_group = clean_optional(microsoft_admin_group)
+    integration_settings.microsoft_user_group = clean_optional(microsoft_user_group)
+    integration_settings.updated_at = utc_now()
+    write_audit(db, request, "settings.microsoft.update", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/microsoft-365?status=microsoft-saved", status_code=303
+    )
+
+
+@app.post("/settings/local-ad")
+def update_local_ad_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    ad_enabled: str | None = Form(None),
+    ad_host: str = Form(""),
+    ad_base_dn: str = Form(""),
+    ad_bind_dn: str = Form(""),
+):
+    require_admin(user)
+    integration_settings = get_or_create_integration_settings(db)
+    integration_settings.ad_enabled = ad_enabled == "on"
+    integration_settings.ad_host = clean_optional(ad_host)
+    integration_settings.ad_base_dn = clean_optional(ad_base_dn)
+    integration_settings.ad_bind_dn = clean_optional(ad_bind_dn)
+    integration_settings.updated_at = utc_now()
+    write_audit(db, request, "settings.local_ad.update", user=user)
+    db.commit()
+    return RedirectResponse("/settings/local-ad?status=local-ad-saved", status_code=303)
+
+
+@app.post("/settings/branding")
+def update_branding_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    branding_logo_url: str = Form(""),
+    remove_logo: str | None = Form(None),
+):
+    require_admin(user)
+    integration_settings = get_or_create_integration_settings(db)
+    integration_settings.branding_logo_url = (
+        None if remove_logo == "on" else clean_optional(branding_logo_url)
+    )
+    integration_settings.updated_at = utc_now()
+    write_audit(db, request, "settings.branding.update", user=user)
+    db.commit()
+    return RedirectResponse("/settings/branding?status=branding-saved", status_code=303)
 
 
 @app.get("/api/v1/companies")
@@ -227,6 +554,7 @@ def company_detail(
             "devices": devices,
             "codes": codes,
             "now": utc_now(),
+            "active_page": "companies",
         },
     )
 
@@ -413,7 +741,13 @@ def device_page(
     ).all()
     return templates.TemplateResponse(
         "device.html",
-        {"request": request, "user": user, "device": device, "events": events},
+        {
+            "request": request,
+            "user": user,
+            "device": device,
+            "events": events,
+            "active_page": "companies",
+        },
     )
 
 
@@ -483,7 +817,8 @@ def audit_page(
         .limit(100)
     ).all()
     return templates.TemplateResponse(
-        "audit.html", {"request": request, "user": user, "logs": logs}
+        "audit.html",
+        {"request": request, "user": user, "logs": logs, "active_page": "audit"},
     )
 
 

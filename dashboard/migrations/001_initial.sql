@@ -4,8 +4,39 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text UNIQUE NOT NULL,
   password_hash text NOT NULL,
+  first_name text NULL,
+  last_name text NULL,
+  role text NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'administrator')),
   mfa_enabled boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS integration_settings (
+  id integer PRIMARY KEY DEFAULT 1,
+  smtp_enabled boolean NOT NULL DEFAULT false,
+  smtp_host text NULL,
+  smtp_port integer NULL,
+  smtp_username text NULL,
+  smtp_password text NULL,
+  smtp_from text NULL,
+  graph_enabled boolean NOT NULL DEFAULT false,
+  graph_tenant_id text NULL,
+  graph_client_id text NULL,
+  graph_client_secret text NULL,
+  graph_sender text NULL,
+  microsoft_enabled boolean NOT NULL DEFAULT false,
+  microsoft_tenant_id text NULL,
+  microsoft_client_id text NULL,
+  microsoft_audience text NULL,
+  microsoft_authority text NULL,
+  microsoft_admin_group text NULL,
+  microsoft_user_group text NULL,
+  ad_enabled boolean NOT NULL DEFAULT false,
+  ad_host text NULL,
+  ad_base_dn text NULL,
+  ad_bind_dn text NULL,
+  branding_logo_url text NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS companies (
