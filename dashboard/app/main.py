@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .audit import write_audit
 from .config import get_settings
@@ -234,6 +234,7 @@ def companies_page(
 ):
     companies = db.scalars(
         select(Company)
+        .options(selectinload(Company.devices))
         .join(CompanyUser)
         .where(CompanyUser.user_id == user.id)
         .order_by(Company.name)

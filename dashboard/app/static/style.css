@@ -609,3 +609,38 @@ select option {
     color: var(--muted);
     padding: 0.2rem 0.3rem;
 }
+
+.company-row {
+    cursor: pointer;
+}
+.company-row:hover {
+    background: rgba(255, 138, 31, 0.06);
+}
+.company-row:focus {
+    outline: 2px solid rgba(255, 138, 31, 0.25);
+    outline-offset: -2px;
+}
+.row-toggle-icon {
+    width: 1rem;
+    color: var(--muted);
+    transition: transform 0.16s ease;
+}
+.company-row[aria-expanded="true"] .row-toggle-icon {
+    transform: rotate(90deg);
+}
+.inline-action-form {
+    display: inline-flex;
+    margin: 0;
+}
+.nested-table-wrap {
+    padding: 0.35rem 0.5rem 0.5rem 1.45rem;
+    background: rgba(248, 251, 255, 0.75);
+    border-left: 1px solid var(--line);
+}
+.nested-table th,
+.nested-table td {
+    padding: 0.35rem 0.45rem;
+}
+.company-firewalls-row > td {
+    padding: 0;
+}

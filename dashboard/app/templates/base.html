@@ -19,7 +19,7 @@
   </header>
   <div class="app-layout">
     <aside class="side-menu" aria-label="Primary navigation">
-      <a class="side-menu-link {% if active_page == 'companies' %}active{% endif %}" href="/companies"><i class="fa-solid fa-building"></i> Companies</a>
+      <a class="side-menu-link {% if active_page == 'companies' %}active{% endif %}" href="/companies"><i class="fa-solid fa-building"></i> Firewalls Management</a>
       {% if user and user.role == 'administrator' %}
       <details class="side-menu-group" {% if active_page == 'settings' %}open{% endif %}>
         <summary class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"><i class="fa-solid fa-gear"></i> Settings</summary>

@@ -1,15 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="card">
-  <h1>Companies</h1>
-  <p class="muted">Group enrolled OPNsense firewalls by customer, location, or organization.</p>
-  <table>
-    <thead><tr><th>Name</th><th>Created</th><th class="actions">Actions</th></tr></thead>
+  <h1>Firewalls Management</h1>
+  <p class="muted">Manage enrolled OPNsense firewalls by company.</p>
+  <table class="firewalls-management-table">
+    <thead><tr><th>Company name</th><th class="actions">Actions</th></tr></thead>
     <tbody>
     {% for company in companies %}
-      <tr><td>{{ company.name }}</td><td>{{ company.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td class="actions"><a class="icon-button" href="/companies/{{ company.id }}" title="Open"><i class="fa-solid fa-arrow-right"></i></a></td></tr>
+      <tr class="company-row" data-company-row aria-expanded="false" tabindex="0">
+        <td><i class="fa-solid fa-chevron-right row-toggle-icon"></i> {{ company.name }}</td>
+        <td class="actions">
+          <form action="/api/v1/companies/{{ company.id }}/enrollment-codes" method="post" class="inline-action-form">
+            <button class="icon-button" type="submit" title="Add Firewall" aria-label="Add Firewall"><i class="fa-solid fa-plus"></i></button>
+          </form>
+        </td>
+      </tr>
+      <tr class="company-firewalls-row" data-company-firewalls hidden>
+        <td colspan="2">
+          <div class="nested-table-wrap">
+            <table class="nested-table">
+              <thead><tr><th>Name</th><th>Hostname</th><th>OPNsense</th><th>Plugin</th><th>Tunnel IP</th><th>Status</th><th>Last seen</th><th class="actions">Actions</th></tr></thead>
+              <tbody>
+              {% for device in company.devices %}
+                <tr>
+                  <td>{{ device.name or '—' }}</td>
+                  <td>{{ device.hostname }}</td>
+                  <td>{{ device.opnsense_version or 'Unknown' }}</td>
+                  <td>{{ device.plugin_version or 'Unknown' }}</td>
+                  <td>{{ device.wg_tunnel_ip }}</td>
+                  <td><span class="status {{ device.status }}">{{ device.status }}</span></td>
+                  <td>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'Never' }}</td>
+                  <td class="actions">
+                    <a class="icon-button" href="/devices/{{ device.id }}" title="Details"><i class="fa-solid fa-circle-info"></i></a>
+                    <a class="icon-button" href="/proxy/devices/{{ device.id }}/" title="Open OPNsense UI"><i class="fa-solid fa-up-right-from-square"></i></a>
+                    <form action="/api/v1/devices/{{ device.id }}/revoke" method="post" class="inline-action-form" onsubmit="return confirm('Revoke this firewall?')"><button class="icon-button" title="Revoke"><i class="fa-solid fa-ban"></i></button></form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="8" class="muted">No firewalls enrolled yet.</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
     {% else %}
-      <tr><td colspan="3" class="muted">No companies yet.</td></tr>
+      <tr><td colspan="2" class="muted">No companies yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
