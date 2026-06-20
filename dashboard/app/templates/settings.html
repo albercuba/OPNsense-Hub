@@ -93,10 +93,12 @@
             <input class="edit-field password-edit-field" form="user-edit-{{ managed_user.id }}" type="password" name="password" placeholder="New password optional" autocomplete="new-password" data-edit-control disabled>
             <button class="icon-button" type="button" title="Edit user" aria-label="Edit user" data-edit-button><i class="fa-solid fa-pen-to-square"></i></button>
             <button class="icon-button save-button" form="user-edit-{{ managed_user.id }}" type="submit" title="Save user" aria-label="Save user" data-save-button hidden><i class="fa-solid fa-floppy-disk"></i></button>
-            {% if managed_user.id != user.id %}
+            {% if managed_user.id != user.id and managed_user.email != protected_admin_email %}
             <form action="/settings/users/{{ managed_user.id }}/delete" method="post" class="inline-delete-form">
-              <button class="icon-button danger-text" type="submit" title="Delete user" aria-label="Delete user"><i class="fa-solid fa-trash"></i></button>
+              <button class="icon-button danger-text" type="submit" title="Remove user" aria-label="Remove user"><i class="fa-solid fa-trash"></i></button>
             </form>
+            {% elif managed_user.email == protected_admin_email %}
+            <span class="protected-user" title="Default administrator cannot be removed"><i class="fa-solid fa-lock"></i></span>
             {% endif %}
           </td>
         </tr>

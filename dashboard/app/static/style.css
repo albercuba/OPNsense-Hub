@@ -575,3 +575,37 @@ td {
         width: 100%;
     }
 }
+
+/* Refinements: flatter radius, consistent menus, and top-bar user context */
+:root {
+    --radius: 6px;
+}
+.user-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--muted);
+    font: inherit;
+}
+.side-menu-sublink {
+    font-size: inherit;
+}
+.side-menu-group[open] .side-menu-submenu {
+    margin-top: 0.2rem;
+    padding: 0.25rem 0 0.25rem 0.4rem;
+    border-left: 1px solid var(--line);
+    background: rgba(248, 251, 255, 0.7);
+    border-radius: var(--radius);
+}
+select option {
+    color: var(--text);
+    background: var(--panel);
+    font: inherit;
+}
+.protected-user {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    padding: 0.2rem 0.3rem;
+}

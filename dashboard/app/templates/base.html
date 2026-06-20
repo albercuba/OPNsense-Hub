@@ -11,6 +11,9 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark"><i class="fa-solid fa-shield-halved"></i></span> OPNsense Hub</div>
     <nav class="nav">
+      {% if user %}
+      <span class="user-summary"><i class="fa-solid fa-user"></i> {{ user.email }}</span>
+      {% endif %}
       <form action="/api/v1/auth/logout" method="post"><button class="link-button" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button></form>
     </nav>
   </header>

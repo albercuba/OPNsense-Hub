@@ -284,6 +284,7 @@ def settings_page(
             "companies": companies,
             "users": users,
             "settings": integration_settings,
+            "protected_admin_email": settings.initial_admin_email.lower(),
             "active_page": "settings",
             "active_settings": section,
             "status": request.query_params.get("status"),
@@ -374,6 +375,10 @@ def delete_user(
     target = db.get(User, target_user_id)
     if not target:
         raise HTTPException(status_code=404)
+    if target.email == settings.initial_admin_email.lower():
+        raise HTTPException(
+            status_code=400, detail="the default administrator user cannot be deleted"
+        )
     db.execute(delete(CompanyUser).where(CompanyUser.user_id == target.id))
     db.delete(target)
     write_audit(db, request, "settings.user.delete", user=user)
