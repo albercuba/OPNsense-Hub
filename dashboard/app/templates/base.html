@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OPNsense Hub</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"><i class="fa-solid fa-shield-halved"></i></span> OPNsense Hub</div>
+    <nav class="nav">
+      <a href="/companies"><i class="fa-solid fa-building"></i> Companies</a>
+      <a href="/audit"><i class="fa-solid fa-list-check"></i> Audit logs</a>
+      <form action="/api/v1/auth/logout" method="post"><button class="link-button" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button></form>
+    </nav>
+  </header>
+  <main class="shell">{% block content %}{% endblock %}</main>
+  <footer class="footer">OPNsense Hub MVP · read-only control plane</footer>
+</body>
+</html>

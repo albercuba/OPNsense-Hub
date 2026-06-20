@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Environment / secrets
+.env
+*.env.local
+
+# Docker / runtime data
+*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# OPNsense/FreeBSD package build artifacts
+*.pkg
+work/

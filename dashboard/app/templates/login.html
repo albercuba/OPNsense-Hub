@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · OPNsense Hub</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login">
+  <section class="card">
+    <h1><i class="fa-solid fa-shield-halved brand-mark"></i> OPNsense Hub</h1>
+    <p class="muted">Sign in to manage enrolled firewalls.</p>
+    {% if error %}<div class="card warning">{{ error }}</div>{% endif %}
+    <form action="/api/v1/auth/login" method="post">
+      <label class="form-row">Email <input name="email" type="email" required autofocus></label>
+      <label class="form-row">Password <input name="password" type="password" required></label>
+      <button class="button" type="submit"><i class="fa-solid fa-right-to-bracket"></i> Sign in</button>
+    </form>
+  </section>
+</body>
+</html>

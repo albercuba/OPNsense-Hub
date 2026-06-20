@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>Enrollment OTP</h1>
+  <p class="muted">Enter this code in the OPNsense plugin. It is shown once, expires at {{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}, and is single-use.</p>
+  <p class="otp">{{ code }}</p>
+  <a class="button secondary" href="/companies/{{ company.id }}"><i class="fa-solid fa-arrow-left"></i> Back to company</a>
+</section>
+{% endblock %}

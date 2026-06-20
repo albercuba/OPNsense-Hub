@@ -1,0 +1,69 @@
+services:
+  opnsense-hub-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: opnsensehub
+      POSTGRES_USER: opnsensehub
+      POSTGRES_PASSWORD: opnsensehub
+    volumes:
+      - opnsense_hub_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opnsensehub -d opnsensehub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opnsense-hub-api:
+    build: ./dashboard
+    env_file: .env
+    depends_on:
+      opnsense-hub-db:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - opnsense_hub_wg:/etc/wireguard
+
+  opnsense-hub-web:
+    build: ./dashboard
+    env_file: .env
+    depends_on:
+      opnsense-hub-db:
+        condition: service_healthy
+    profiles: ["split-services"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082"]
+
+  opnsense-hub-wireguard:
+    image: linuxserver/wireguard:latest
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: UTC
+    volumes:
+      - opnsense_hub_wg:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "51820:51820/udp"
+    profiles: ["wireguard-sidecar"]
+
+  opnsense-hub-proxy:
+    image: caddy:2-alpine
+    profiles: ["reverse-proxy"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - opnsense_hub_caddy:/data
+
+volumes:
+  opnsense_hub_db:
+  opnsense_hub_wg:
+  opnsense_hub_caddy:

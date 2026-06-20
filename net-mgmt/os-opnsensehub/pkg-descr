@@ -1,0 +1,3 @@
+OPNsense Hub enrollment client plugin.
+
+This plugin lets an OPNsense firewall enroll into an OPNsense Hub dashboard with a short-lived OTP. It generates a local WireGuard keypair, sends only the public key to the Hub, and stores the returned device identity locally.

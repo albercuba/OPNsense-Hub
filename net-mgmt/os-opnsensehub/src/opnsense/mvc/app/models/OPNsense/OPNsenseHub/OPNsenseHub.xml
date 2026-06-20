@@ -1,0 +1,22 @@
+<model>
+  <mount>//OPNsense/OPNsenseHub</mount>
+  <description>OPNsense Hub settings</description>
+  <version>0.1.0</version>
+  <items>
+    <enabled type="BooleanField">
+      <default>0</default>
+      <Required>Y</Required>
+    </enabled>
+    <hub_url type="UrlField">
+      <Required>N</Required>
+    </hub_url>
+    <otp type="TextField">
+      <Required>N</Required>
+      <mask>/^[A-Za-z0-9-]{0,64}$/</mask>
+    </otp>
+    <device_id type="TextField"><Required>N</Required></device_id>
+    <assigned_tunnel_ip type="TextField"><Required>N</Required></assigned_tunnel_ip>
+    <last_heartbeat type="TextField"><Required>N</Required></last_heartbeat>
+    <last_error type="TextField"><Required>N</Required></last_error>
+  </items>
+</model>

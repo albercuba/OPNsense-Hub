@@ -1,0 +1,5 @@
+<menu>
+  <Services>
+    <OPNsenseHub VisibleName="OPNsense Hub" url="/ui/opnsensehub" order="900" />
+  </Services>
+</menu>

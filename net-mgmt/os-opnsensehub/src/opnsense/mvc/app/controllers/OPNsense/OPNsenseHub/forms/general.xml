@@ -1,0 +1,42 @@
+<form>
+  <field>
+    <id>opnsensehub.enabled</id>
+    <label>Enable</label>
+    <type>checkbox</type>
+  </field>
+  <field>
+    <id>opnsensehub.hub_url</id>
+    <label>Hub server URL</label>
+    <type>text</type>
+    <help>Example: https://hub.example.com</help>
+  </field>
+  <field>
+    <id>opnsensehub.otp</id>
+    <label>OTP enrollment code</label>
+    <type>text</type>
+  </field>
+  <field>
+    <id>opnsensehub.device_id</id>
+    <label>Device ID</label>
+    <type>text</type>
+    <readonly>Y</readonly>
+  </field>
+  <field>
+    <id>opnsensehub.assigned_tunnel_ip</id>
+    <label>Assigned tunnel IP</label>
+    <type>text</type>
+    <readonly>Y</readonly>
+  </field>
+  <field>
+    <id>opnsensehub.last_heartbeat</id>
+    <label>Last heartbeat</label>
+    <type>text</type>
+    <readonly>Y</readonly>
+  </field>
+  <field>
+    <id>opnsensehub.last_error</id>
+    <label>Last error</label>
+    <type>text</type>
+    <readonly>Y</readonly>
+  </field>
+</form>

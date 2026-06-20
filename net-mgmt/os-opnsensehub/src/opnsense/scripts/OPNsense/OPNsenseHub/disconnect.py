@@ -1,0 +1,30 @@
+#!/usr/local/bin/python3
+"""Stop the local OPNsense Hub WireGuard tunnel without deleting enrollment."""
+
+import json
+import subprocess
+from pathlib import Path
+
+STATE_FILE = Path("/var/db/opnsensehub/state.json")
+WG_CONF = Path("/usr/local/etc/wireguard/opnsensehub.conf")
+
+
+def main():
+    state = {}
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+        except Exception:
+            state = {}
+    # verify against current OPNsense plugin conventions
+    subprocess.run(
+        ["wg-quick", "down", str(WG_CONF)], capture_output=True, text=True, timeout=15
+    )
+    state["status"] = "disconnected"
+    if STATE_FILE.parent.exists():
+        STATE_FILE.write_text(json.dumps(state, indent=2))
+    print(json.dumps({"status": "disconnected", "device_id": state.get("device_id")}))
+
+
+if __name__ == "__main__":
+    main()
