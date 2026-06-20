@@ -21,6 +21,7 @@ services:
         condition: service_healthy
     ports:
       - "8083:8083"
+      - "51820:51820/udp"
     cap_add:
       - NET_ADMIN
     devices:
@@ -36,22 +37,6 @@ services:
         condition: service_healthy
     profiles: ["split-services"]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8083"]
-
-  opnsense-hub-wireguard:
-    image: linuxserver/wireguard:latest
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    environment:
-      PUID: 1000
-      PGID: 1000
-      TZ: UTC
-    volumes:
-      - opnsense_hub_wg:/config
-      - /lib/modules:/lib/modules:ro
-    ports:
-      - "51820:51820/udp"
-    profiles: ["wireguard-sidecar"]
 
   opnsense-hub-proxy:
     image: caddy:2-alpine

@@ -20,8 +20,10 @@ class Settings(BaseSettings):
     hub_wg_address: str = "100.96.0.1/16"
     hub_wg_listen_port: int = 51820
     wg_interface: str = "wg0"
+    wg_config_path: str = "/etc/wireguard/wg0.conf"
+    wg_server_private_key_path: str = "/etc/wireguard/server.key"
     wg_server_public_key: str = "replace-with-server-public-key"
-    wg_dry_run: bool = True
+    wg_dry_run: bool = False
     proxy_verify_tls: bool = False
     opnsense_gui_port: int = 443
 

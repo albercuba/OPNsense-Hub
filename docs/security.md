@@ -28,7 +28,7 @@ Never log or display these values:
 - `security: enable MFA` — implement TOTP/WebAuthn using the existing MFA-ready user model.
 - `security: harden proxy headers` — strip hop-by-hop headers, restrict methods if needed, and consider a battle-tested reverse proxy.
 - `security: pin firewall certificates` — replace `PROXY_VERIFY_TLS=false` with certificate pinning or an internal CA.
-- `security: isolate WireGuard management` — move peer updates into a minimal privileged sidecar or host service.
+- `security: isolate WireGuard management` — for higher-assurance deployments, consider moving WireGuard bootstrap and peer updates into a minimal privileged sidecar or host service.
 - `security: rate limit login and enrollment` — add IP/user rate limits to auth and enrollment endpoints.
 - `security: add CSRF protection` — server-rendered forms should get CSRF tokens before production use.
 - `security: encrypt database backups` — configs, tokens hashes, metadata, and audit data are sensitive.

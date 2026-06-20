@@ -24,7 +24,14 @@ from .models import (
 )
 from .rbac import has_company_role
 from .security import hash_secret, random_otp, random_token, utc_now, verify_secret
-from .wireguard import WireGuardError, add_peer, next_tunnel_ip, remove_peer
+from .wireguard import (
+    WireGuardError,
+    add_peer,
+    bootstrap_wireguard,
+    get_server_public_key,
+    next_tunnel_ip,
+    remove_peer,
+)
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
@@ -46,6 +53,7 @@ def bootstrap() -> None:
                 )
             )
             db.commit()
+        bootstrap_wireguard(db)
 
 
 @app.on_event("startup")
@@ -321,7 +329,7 @@ def enroll(
         "device_token": token,
         "wireguard": {
             "interface_address": f"{tunnel_ip}/32",
-            "server_public_key": settings.wg_server_public_key,
+            "server_public_key": get_server_public_key(),
             "endpoint": settings.hub_wg_endpoint,
             "allowed_ips": str(settings.hub_wg_address).split("/")[0] + "/32",
             "persistent_keepalive": 25,

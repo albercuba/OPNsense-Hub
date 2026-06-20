@@ -44,6 +44,7 @@ docker-compose.yml
 - Short-lived single-use OTP enrollment codes stored hashed.
 - Device enrollment endpoint using WireGuard public key.
 - Device tokens stored hashed; heartbeat uses bearer token auth.
+- Automatic Hub WireGuard server bootstrap and peer restore on container startup.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, and proxy access.
@@ -70,7 +71,7 @@ INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=change-me
 ```
 
-For local development, `WG_DRY_RUN=true` means enrollment succeeds without requiring a real WireGuard interface. For production, configure a real WireGuard server key/interface and set `WG_DRY_RUN=false`.
+By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, and restores enrolled peers from the database.
 
 ## Exact dashboard commands
 
@@ -83,11 +84,20 @@ docker compose up --build
 
 ## WireGuard production notes
 
-1. Generate a server private/public key pair on the Hub host.
-2. Put the public key in `WG_SERVER_PUBLIC_KEY`.
-3. Configure `HUB_WG_ENDPOINT` to the public UDP endpoint, for example `hub.example.com:51820`.
-4. Ensure UDP `51820` reaches the WireGuard interface.
-5. Set `WG_DRY_RUN=false` only after the container can run `wg set` against the configured interface.
+The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false`:
+
+1. Generates `/etc/wireguard/server.key` if it does not exist.
+2. Derives the Hub server public key from that private key.
+3. Renders `/etc/wireguard/wg0.conf` using `HUB_WG_ADDRESS` and `HUB_WG_LISTEN_PORT`.
+4. Runs `wg-quick up /etc/wireguard/wg0.conf` when `wg0` is not already running.
+5. Restores all non-revoked device peers from the database on startup.
+6. Adds each newly enrolled firewall as a `/32` peer.
+
+The server private key is persisted in the `opnsense_hub_wg` Docker volume. Back up this volume securely; losing it requires re-enrolling devices or carefully rotating WireGuard keys.
+
+Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can reach, for example `hub.example.com:51820`, and ensure UDP `51820` is allowed through the host firewall/security group.
+
+For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 
 ## OPNsense plugin build/install commands
 

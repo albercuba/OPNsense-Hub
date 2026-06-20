@@ -38,10 +38,12 @@ sequenceDiagram
 - PostgreSQL stores users, companies, enrollment codes, devices, events, and audit logs.
 - Session cookies protect dashboard UI/API routes.
 - Device token bearer auth protects post-enrollment device endpoints.
+- WireGuard server setup is bootstrapped by the app container on startup.
+- The app generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
 - Reverse proxy is implemented in FastAPI for the MVP and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
 
-For local development, `WG_DRY_RUN=true` avoids requiring kernel WireGuard access. In production, run the app with `NET_ADMIN`/`/dev/net/tun` or adapt `wireguard.py` to call a dedicated privileged sidecar.
+For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels, the app container runs with `NET_ADMIN` and `/dev/net/tun` so it can configure `wg0` itself.
 
 ## OPNsense plugin
 

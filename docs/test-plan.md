@@ -49,6 +49,7 @@ On a disposable OPNsense VM:
 
 - Verify Docker images build from a clean checkout.
 - Verify database backup and restore.
+- Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
 - Verify revocation removes the peer from `wg show`.
 - Verify company RBAC prevents cross-company proxy access.
 - Verify logs do not contain OTPs, device tokens, or private keys.

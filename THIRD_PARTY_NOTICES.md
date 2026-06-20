@@ -31,7 +31,6 @@ pip-licenses --format=markdown --with-license-file --with-urls > THIRD_PARTY_PYT
 | --- | --- | --- |
 | `python:3.12-slim` | Docker Hub official Python image | Includes Python and Debian packages under their respective licenses. Review image SBOM for release distribution. |
 | `postgres:16-alpine` | Docker Hub official PostgreSQL image | PostgreSQL License plus Alpine package licenses. |
-| `linuxserver/wireguard` | LinuxServer.io | Container image includes WireGuard tooling and Linux/Alpine packages under their respective licenses. Review upstream image notices before redistribution. |
 | `caddy:2-alpine` | Docker Hub official Caddy image | Apache-2.0 for Caddy plus Alpine package licenses. |
 | `wireguard-tools` | Debian package in dashboard image | GPL-2.0-only. Used as an external command-line tool. |
 | `iproute2` | Debian package in dashboard image | GPL-2.0-only. Used for networking support. |
