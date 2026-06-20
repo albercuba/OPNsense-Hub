@@ -3,7 +3,7 @@
 <section class="settings-header card">
   <div>
     <p class="eyebrow">Settings</p>
-    <h1>{% if active_settings == 'add-company' %}Add Company{% elif active_settings == 'manage-users' %}Manage Users{% elif active_settings == 'email-settings' %}Email Settings{% elif active_settings == 'microsoft-365' %}Microsoft 365 Integration{% elif active_settings == 'local-ad' %}Microsoft Local AD Integration{% elif active_settings == 'branding' %}Branding{% endif %}</h1>
+    <h1>{% if active_settings == 'manage-companies' %}Manage Companies{% elif active_settings == 'manage-users' %}Manage Users{% elif active_settings == 'email-settings' %}Email Settings{% elif active_settings == 'microsoft-365' %}Microsoft 365 Integration{% elif active_settings == 'local-ad' %}Microsoft Local AD Integration{% elif active_settings == 'branding' %}Branding{% endif %}</h1>
     <p class="muted">Administrative configuration for OPNsense Hub.</p>
   </div>
 </section>
@@ -12,16 +12,36 @@
 <div class="card status-card"><i class="fa-solid fa-circle-check"></i> Settings saved.</div>
 {% endif %}
 
-{% if active_settings == 'add-company' %}
+{% if active_settings == 'manage-companies' %}
 <section class="admin-card card">
   <div class="admin-card-header">
-    <h2>Add Company</h2>
-    <p class="muted">Create a company or group to organize enrolled firewalls.</p>
+    <h2>Companies</h2>
+    <p class="muted">Edit or remove existing company records.</p>
   </div>
-  <form action="/api/v1/companies" method="post" class="settings-form narrow-form">
-    <label class="form-row">Company name <input name="name" required autocomplete="organization"></label>
-    <button class="button" type="submit"><i class="fa-solid fa-plus"></i> Create company</button>
-  </form>
+  <div class="responsive-table">
+    <table>
+      <thead><tr><th>Company Name</th><th class="actions">Actions</th></tr></thead>
+      <tbody>
+      {% for company in companies %}
+        <tr>
+          <td>
+            <form id="company-edit-{{ company.id }}" action="/settings/companies/{{ company.id }}" method="post" class="inline-company-form">
+              <input name="name" value="{{ company.name }}" required autocomplete="organization" aria-label="Company Name">
+            </form>
+          </td>
+          <td class="actions">
+            <button class="icon-button" form="company-edit-{{ company.id }}" type="submit" title="Edit company" aria-label="Edit company"><i class="fa-solid fa-pen-to-square"></i></button>
+            <form action="/settings/companies/{{ company.id }}/delete" method="post" class="inline-delete-form">
+              <button class="icon-button danger-text" type="submit" title="Remove company" aria-label="Remove company"><i class="fa-solid fa-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="2" class="muted">No companies yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 

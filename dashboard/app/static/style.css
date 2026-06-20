@@ -366,10 +366,9 @@ th {
 }
 .inline-user-form {
     display: grid;
-    grid-template-columns: minmax(220px, 1.3fr) minmax(140px, 0.8fr) minmax(
-            140px,
-            0.8fr
-        ) minmax(150px, 0.7fr) minmax(220px, 1fr) auto auto;
+    grid-template-columns:
+        minmax(220px, 1.3fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr)
+        minmax(150px, 0.7fr) minmax(220px, 1fr) auto auto;
     gap: 0.5rem;
     align-items: center;
 }
@@ -377,6 +376,15 @@ th {
     display: inline-flex;
     float: right;
     margin-top: -2.65rem;
+}
+.inline-company-form input {
+    min-width: 220px;
+}
+.actions .inline-delete-form {
+    float: none;
+    margin-top: 0;
+    margin-left: 0.25rem;
+    vertical-align: middle;
 }
 .branding-preview {
     margin-top: 1rem;

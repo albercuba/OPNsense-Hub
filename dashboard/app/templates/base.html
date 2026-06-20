@@ -11,18 +11,18 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark"><i class="fa-solid fa-shield-halved"></i></span> OPNsense Hub</div>
     <nav class="nav">
-      <a href="/audit"><i class="fa-solid fa-list-check"></i> Audit logs</a>
       <form action="/api/v1/auth/logout" method="post"><button class="link-button" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button></form>
     </nav>
   </header>
   <div class="app-layout">
     <aside class="side-menu" aria-label="Primary navigation">
       <a class="side-menu-link {% if active_page == 'companies' %}active{% endif %}" href="/companies"><i class="fa-solid fa-building"></i> Companies</a>
+      <a class="side-menu-link {% if active_page == 'audit' %}active{% endif %}" href="/audit"><i class="fa-solid fa-list-check"></i> Audit Logs</a>
       {% if user and user.role == 'administrator' %}
       <details class="side-menu-group" {% if active_page == 'settings' %}open{% endif %}>
         <summary class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"><i class="fa-solid fa-gear"></i> Settings</summary>
         <div class="side-menu-submenu">
-          <a class="side-menu-sublink {% if active_settings == 'add-company' %}active{% endif %}" href="/settings/add-company">Add Company</a>
+          <a class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}" href="/settings/manage-companies">Manage Companies</a>
           <a class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}" href="/settings/manage-users">Manage Users</a>
           <a class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}" href="/settings/email-settings">Email Settings</a>
           <a class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}" href="/settings/microsoft-365">Microsoft 365 Integration</a>

@@ -253,7 +253,7 @@ def companies_page(
 @app.get("/settings", response_class=HTMLResponse)
 def settings_redirect(user: Annotated[User, Depends(current_user)]):
     require_admin(user)
-    return RedirectResponse("/settings/add-company", status_code=303)
+    return RedirectResponse("/settings/manage-companies", status_code=303)
 
 
 @app.get("/settings/{section}", response_class=HTMLResponse)
@@ -265,7 +265,7 @@ def settings_page(
 ):
     require_admin(user)
     allowed_sections = {
-        "add-company",
+        "manage-companies",
         "manage-users",
         "email-settings",
         "microsoft-365",
@@ -274,6 +274,7 @@ def settings_page(
     }
     if section not in allowed_sections:
         raise HTTPException(status_code=404)
+    companies = db.scalars(select(Company).order_by(Company.name)).all()
     users = db.scalars(select(User).order_by(User.email)).all()
     integration_settings = get_or_create_integration_settings(db)
     return templates.TemplateResponse(
@@ -281,6 +282,7 @@ def settings_page(
         {
             "request": request,
             "user": user,
+            "companies": companies,
             "users": users,
             "settings": integration_settings,
             "active_page": "settings",
@@ -526,6 +528,62 @@ def create_company(
     write_audit(db, request, "company.create", user=user, company_id=company.id)
     db.commit()
     return RedirectResponse(f"/companies/{company.id}", status_code=303)
+
+
+@app.post("/settings/companies/{company_id}")
+def update_company(
+    request: Request,
+    company_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    name: str = Form(...),
+):
+    require_admin(user)
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404)
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="company name is required")
+    company.name = normalized_name
+    write_audit(
+        db, request, "settings.company.update", user=user, company_id=company.id
+    )
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-companies?status=company-updated", status_code=303
+    )
+
+
+@app.post("/settings/companies/{company_id}/delete")
+def delete_company(
+    request: Request,
+    company_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404)
+    devices = db.scalars(select(Device).where(Device.company_id == company.id)).all()
+    for device in devices:
+        if not device.revoked_at:
+            remove_peer(device.wg_public_key)
+    device_ids = [device.id for device in devices]
+    if device_ids:
+        db.execute(delete(DeviceEvent).where(DeviceEvent.device_id.in_(device_ids)))
+    db.execute(delete(Device).where(Device.company_id == company.id))
+    db.execute(delete(EnrollmentCode).where(EnrollmentCode.company_id == company.id))
+    db.execute(delete(CompanyUser).where(CompanyUser.company_id == company.id))
+    write_audit(
+        db, request, "settings.company.delete", user=user, company_id=company.id
+    )
+    db.delete(company)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-companies?status=company-deleted", status_code=303
+    )
 
 
 @app.get("/companies/{company_id}", response_class=HTMLResponse)
