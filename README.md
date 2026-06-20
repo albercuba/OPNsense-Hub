@@ -4,9 +4,21 @@ OPNsense Hub is an MVP for enrolling OPNsense firewalls into a central dashboard
 
 > Important: the Hub dashboard/control plane does not modify firewall configuration, restore backups, reboot firewalls, or store OPNsense admin passwords. The only firewall-side configuration change is performed by the OPNsense plugin on that firewall to create its own WireGuard client tunnel.
 
+OPNsense Hub is an independent project. It is not affiliated with, endorsed by, or sponsored by Deciso B.V. or the OPNsense project unless explicitly stated by those parties.
+
 ## Architecture
 
 See `docs/architecture.md`.
+
+## License and notices
+
+This project is licensed under the BSD 2-Clause License. See `LICENSE`.
+
+Third-party dependency, container image, font, icon, and trademark notices are tracked in:
+
+- `THIRD_PARTY_NOTICES.md`
+- `docs/licensing.md`
+- `docs/release-compliance-checklist.md`
 
 ## Repository layout
 
@@ -18,7 +30,7 @@ dashboard/
   Dockerfile
   requirements.txt
 net-mgmt/os-opnsensehub/  OPNsense plugin scaffold
-docs/                     Architecture, security, test plan
+docs/                     Architecture, security, licensing, compliance, test plan
 deploy/                   Reverse proxy examples
 docker-compose.yml
 .env.example
