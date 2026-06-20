@@ -644,3 +644,25 @@ select option {
 .company-firewalls-row > td {
     padding: 0;
 }
+
+.firewalls-management-table,
+.nested-table {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+}
+.firewalls-management-table th,
+.firewalls-management-table td,
+.nested-table th,
+.nested-table td {
+    border-bottom: 1px solid var(--line);
+}
+.firewalls-management-table tr:last-child > td,
+.nested-table tr:last-child > td {
+    border-bottom: 0;
+}
+.nested-table-wrap {
+    border-radius: var(--radius);
+}
