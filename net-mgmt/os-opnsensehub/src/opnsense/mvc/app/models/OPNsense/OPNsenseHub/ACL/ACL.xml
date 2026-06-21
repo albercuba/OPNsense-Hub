@@ -2,6 +2,7 @@
   <page-services-opnsensehub>
     <name>Services: OPNsense Hub</name>
     <patterns>
+      <pattern>ui/opnsensehub</pattern>
       <pattern>ui/opnsensehub/*</pattern>
       <pattern>api/opnsensehub/*</pattern>
     </patterns>
