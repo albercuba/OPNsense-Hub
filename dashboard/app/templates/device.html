@@ -9,7 +9,14 @@
     <div><strong>Tunnel IP</strong><br>{{ device.wg_tunnel_ip }}</div>
     <div><strong>Last seen</strong><br>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'Never' }}</div>
   </div>
-  <p><a class="button" href="/proxy/devices/{{ device.id }}/"><i class="fa-solid fa-up-right-from-square"></i> Open OPNsense UI</a></p>
+  {% if device.revoked_at %}
+    <form action="/api/v1/devices/{{ device.id }}/delete" method="post" class="inline-action-form" onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.')">
+      <input type="hidden" name="redirect_to" value="/companies">
+      <button class="button danger-text" type="submit"><i class="fa-solid fa-trash"></i> Remove revoked firewall</button>
+    </form>
+  {% else %}
+    <p><a class="button" href="/proxy/devices/{{ device.id }}/"><i class="fa-solid fa-up-right-from-square"></i> Open OPNsense UI</a></p>
+  {% endif %}
 </section>
 <section class="card">
   <h2>Device events</h2>

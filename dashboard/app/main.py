@@ -890,6 +890,37 @@ def revoke_device(
     return RedirectResponse(f"/companies/{device.company_id}", status_code=303)
 
 
+@app.post("/api/v1/devices/{device_id}/delete")
+def delete_revoked_device(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    redirect_to: str = Form("/companies"),
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_role(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    if not device.revoked_at:
+        raise HTTPException(
+            status_code=400, detail="only revoked firewalls can be removed"
+        )
+    company_id = device.company_id
+    db.execute(delete(DeviceEvent).where(DeviceEvent.device_id == device.id))
+    write_audit(
+        db,
+        request,
+        "device.delete_revoked",
+        user=user,
+        company_id=company_id,
+    )
+    db.delete(device)
+    db.commit()
+    if not redirect_to.startswith("/") or redirect_to.startswith("//"):
+        redirect_to = "/companies"
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 @app.api_route(
     "/proxy/devices/{device_id}/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
