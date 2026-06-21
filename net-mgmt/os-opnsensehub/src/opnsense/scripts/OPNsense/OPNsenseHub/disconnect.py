@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
-WG_CONF = Path("/usr/local/etc/wireguard/opnsensehub.conf")
+WG_IFACE = "wgopnhub"
 
 
 def main():
@@ -16,9 +16,8 @@ def main():
             state = json.loads(STATE_FILE.read_text())
         except Exception:
             state = {}
-    # verify against current OPNsense plugin conventions
     subprocess.run(
-        ["wg-quick", "down", str(WG_CONF)], capture_output=True, text=True, timeout=15
+        ["ifconfig", WG_IFACE, "destroy"], capture_output=True, text=True, timeout=10
     )
     state["status"] = "disconnected"
     if STATE_FILE.parent.exists():

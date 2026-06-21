@@ -5,6 +5,7 @@ from pathlib import Path
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
 WG_CONF = Path("/usr/local/etc/wireguard/opnsensehub.conf")
+WG_IFACE = "wgopnhub"
 
 
 def main():
@@ -17,9 +18,9 @@ def main():
     tunnel = False
     try:
         result = subprocess.run(
-            ["wg", "show"], capture_output=True, text=True, timeout=5
+            ["wg", "show", WG_IFACE], capture_output=True, text=True, timeout=5
         )
-        tunnel = result.returncode == 0 and "interface:" in result.stdout
+        tunnel = result.returncode == 0
     except Exception:
         tunnel = False
     status = state.get("status", "disconnected")
