@@ -15,6 +15,17 @@
 {% if active_settings == 'manage-companies' %}
 <section class="admin-card card">
   <div class="admin-card-header">
+    <h2>Add company</h2>
+    <p class="muted">Create a company before enrolling firewalls for it.</p>
+  </div>
+  <form action="/settings/companies" method="post" class="settings-grid-form compact-form">
+    <label class="form-row">Company name <input name="name" required autocomplete="organization"></label>
+    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-plus"></i> Add company</button></div>
+  </form>
+</section>
+
+<section class="admin-card card">
+  <div class="admin-card-header">
     <h2>Companies</h2>
     <p class="muted">Edit or remove existing company records.</p>
   </div>

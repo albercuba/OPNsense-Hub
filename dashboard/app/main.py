@@ -535,6 +535,30 @@ def create_company(
     return RedirectResponse(f"/companies/{company.id}", status_code=303)
 
 
+@app.post("/settings/companies")
+def create_settings_company(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    name: str = Form(...),
+):
+    require_admin(user)
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="company name is required")
+    company = Company(name=normalized_name)
+    db.add(company)
+    db.flush()
+    db.add(CompanyUser(company_id=company.id, user_id=user.id, role="owner"))
+    write_audit(
+        db, request, "settings.company.create", user=user, company_id=company.id
+    )
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-companies?status=company-created", status_code=303
+    )
+
+
 @app.post("/settings/companies/{company_id}")
 def update_company(
     request: Request,
