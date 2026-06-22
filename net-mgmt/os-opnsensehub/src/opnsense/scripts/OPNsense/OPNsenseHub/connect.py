@@ -4,10 +4,12 @@
 import ipaddress
 import json
 import os
+import shutil
 import socket
 import stat
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -20,6 +22,8 @@ KEY_FILE = STATE_DIR / "wg_private.key"
 WG_CONF = Path("/usr/local/etc/wireguard/opnsensehub.conf")
 CONFIG_XML = Path("/conf/config.xml")
 WG_IFACE = "wgopnhub"
+ASSIGNED_IF_DESCR = "OPNHUB"
+RULE_DESCR = "Allow OPNsense Hub WebGUI proxy"
 PLUGIN_VERSION = "0.1.0"
 
 
@@ -54,10 +58,24 @@ def hub_error_message(body):
     return body.strip() or "HTTP enrollment failed"
 
 
-def load_settings():
+def load_config_root():
     if not CONFIG_XML.exists():
         fail("OPNsense config.xml not found")
-    root = ET.parse(CONFIG_XML).getroot()
+    return ET.parse(CONFIG_XML).getroot()
+
+
+def write_config_root(root):
+    backup = CONFIG_XML.with_name(f"config.xml.opnsensehub.{int(time.time())}.bak")
+    shutil.copy2(CONFIG_XML, backup)
+    try:
+        ET.indent(root, space="  ")
+    except AttributeError:
+        pass
+    ET.ElementTree(root).write(CONFIG_XML, encoding="utf-8", xml_declaration=True)
+
+
+def load_settings():
+    root = load_config_root()
     node = root.find("./OPNsense/OPNsenseHub")
     if node is None:
         fail("OPNsense Hub settings not found")
@@ -218,6 +236,179 @@ def load_wireguard_config():
     }
 
 
+def find_or_create(parent, tag):
+    node = parent.find(tag)
+    if node is None:
+        node = ET.SubElement(parent, tag)
+    return node
+
+
+def set_child_text(parent, tag, value):
+    child = find_or_create(parent, tag)
+    if child.text != str(value):
+        child.text = str(value)
+        return True
+    return False
+
+
+def remove_child(parent, tag):
+    child = parent.find(tag)
+    if child is None:
+        return False
+    parent.remove(child)
+    return True
+
+
+def ensure_assigned_interface(root, tunnel_ip):
+    interfaces = find_or_create(root, "interfaces")
+    interface_ip = str(ipaddress.ip_interface(tunnel_ip).ip)
+    prefix_len = str(ipaddress.ip_interface(tunnel_ip).network.prefixlen)
+
+    existing_key = None
+    for child in list(interfaces):
+        if (
+            child.findtext("if") == WG_IFACE
+            or child.findtext("descr") == ASSIGNED_IF_DESCR
+        ):
+            existing_key = child.tag
+            break
+
+    if existing_key is None:
+        used = {child.tag for child in list(interfaces)}
+        index = 1
+        while f"opt{index}" in used:
+            index += 1
+        existing_key = f"opt{index}"
+        interface = ET.SubElement(interfaces, existing_key)
+        changed = True
+    else:
+        interface = interfaces.find(existing_key)
+        changed = False
+
+    changed |= set_child_text(interface, "enable", "1")
+    changed |= set_child_text(interface, "if", WG_IFACE)
+    changed |= set_child_text(interface, "descr", ASSIGNED_IF_DESCR)
+    changed |= set_child_text(interface, "ipaddr", interface_ip)
+    changed |= set_child_text(interface, "subnet", prefix_len)
+    changed |= set_child_text(interface, "ipaddrv6", "none")
+    changed |= remove_child(interface, "type")
+
+    return existing_key, changed
+
+
+def webgui_port(root):
+    webgui = root.find("./system/webgui")
+    if webgui is None:
+        return "443"
+    port = (webgui.findtext("port") or "").strip()
+    if port:
+        return port
+    protocol = (webgui.findtext("protocol") or "https").strip().lower()
+    return "80" if protocol == "http" else "443"
+
+
+def ensure_webgui_listen_interface(root, interface_key):
+    webgui = root.find("./system/webgui")
+    if webgui is None:
+        return False
+
+    listen_nodes = webgui.findall("interfaces")
+    if not listen_nodes:
+        return False
+
+    values = []
+    for node in listen_nodes:
+        if len(list(node)) > 0:
+            values.extend((child.text or "").strip() for child in list(node))
+        else:
+            values.extend(item.strip() for item in (node.text or "").split(","))
+    values = [value for value in values if value]
+
+    if not values or interface_key in values:
+        return False
+
+    first = listen_nodes[0]
+    if len(list(first)) > 0:
+        item = ET.SubElement(first, "interface")
+        item.text = interface_key
+    elif len(listen_nodes) == 1 and "," in (first.text or ""):
+        first.text = ",".join(values + [interface_key])
+    else:
+        item = ET.SubElement(webgui, "interfaces")
+        item.text = interface_key
+    return True
+
+
+def rule_matches(rule, interface_key, hub_ip, port):
+    if rule.findtext("descr") == RULE_DESCR:
+        return True
+    return (
+        rule.findtext("type") == "pass"
+        and rule.findtext("interface") == interface_key
+        and rule.findtext("ipprotocol") == "inet"
+        and rule.findtext("protocol") == "tcp"
+        and rule.findtext("source/address") == f"{hub_ip}/32"
+        and rule.findtext("destination/network") == "(self)"
+        and rule.findtext("destination/port") == str(port)
+    )
+
+
+def configure_firewall_rule(rule, interface_key, hub_ip, port):
+    changed = False
+    changed |= set_child_text(rule, "type", "pass")
+    changed |= set_child_text(rule, "interface", interface_key)
+    changed |= set_child_text(rule, "ipprotocol", "inet")
+    changed |= set_child_text(rule, "protocol", "tcp")
+    source = find_or_create(rule, "source")
+    changed |= set_child_text(source, "address", f"{hub_ip}/32")
+    destination = find_or_create(rule, "destination")
+    changed |= set_child_text(destination, "network", "(self)")
+    changed |= set_child_text(destination, "port", port)
+    changed |= set_child_text(rule, "descr", RULE_DESCR)
+    return changed
+
+
+def ensure_firewall_rule(root, interface_key, hub_ip, port):
+    filter_node = find_or_create(root, "filter")
+    for rule in filter_node.findall("rule"):
+        if rule_matches(rule, interface_key, hub_ip, port):
+            return configure_firewall_rule(rule, interface_key, hub_ip, port)
+
+    rule = ET.SubElement(filter_node, "rule")
+    configure_firewall_rule(rule, interface_key, hub_ip, port)
+    created = ET.SubElement(rule, "created")
+    set_child_text(created, "time", str(int(time.time())))
+    set_child_text(created, "username", "OPNsense Hub")
+    return True
+
+
+def ensure_opnsense_integration(wg):
+    root = load_config_root()
+    allowed_ips = [
+        item.strip() for item in wg["allowed_ips"].split(",") if item.strip()
+    ]
+    if not allowed_ips:
+        fail("WireGuard allowed_ips is empty")
+    hub_ip = str(ipaddress.ip_network(allowed_ips[0], strict=False).network_address)
+    interface_key, changed = ensure_assigned_interface(root, wg["interface_address"])
+    port = webgui_port(root)
+    changed |= ensure_firewall_rule(root, interface_key, hub_ip, port)
+    webgui_listen_changed = ensure_webgui_listen_interface(root, interface_key)
+    changed |= webgui_listen_changed
+
+    if changed:
+        write_config_root(root)
+        run_cmd(["configctl", "interface", "reconfigure", interface_key], check=False)
+        run_cmd(["configctl", "filter", "reload"], check=False)
+        if webgui_listen_changed:
+            run_cmd(["service", "lighttpd", "onerestart"], check=False)
+    return {
+        "interface": interface_key,
+        "description": ASSIGNED_IF_DESCR,
+        "webgui_port": port,
+    }
+
+
 def destroy_tunnel():
     subprocess.run(
         ["ifconfig", WG_IFACE, "destroy"], capture_output=True, text=True, timeout=10
@@ -291,6 +482,8 @@ def main():
         state["wireguard"] = normalize_wireguard_endpoint(state["wireguard"], hub_url)
         render_wg(private_key, state["wireguard"])
         start_tunnel(private_key, state["wireguard"])
+        opnsense = ensure_opnsense_integration(state["wireguard"])
+        state["opnsense"] = opnsense
         state["status"] = "connected"
         save_state(state)
         out(
@@ -298,6 +491,8 @@ def main():
                 "status": "connected",
                 "device_id": state["device_id"],
                 "tunnel_ip": state.get("tunnel_ip"),
+                "interface": opnsense["description"],
+                "webgui_port": opnsense["webgui_port"],
             }
         )
         return
@@ -328,11 +523,16 @@ def main():
     }
     save_state(state)
     start_tunnel(private_key, wireguard)
+    opnsense = ensure_opnsense_integration(wireguard)
+    state["opnsense"] = opnsense
+    save_state(state)
     out(
         {
             "status": "connected",
             "device_id": response["device_id"],
             "tunnel_ip": response["wireguard"]["interface_address"],
+            "interface": opnsense["description"],
+            "webgui_port": opnsense["webgui_port"],
         }
     )
 

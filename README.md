@@ -115,6 +115,15 @@ Required inbound ports for a typical deployment:
 
 `Open OPNsense UI` uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT` which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`.
 
+On connect, the OPNsense plugin provisions the firewall side for Hub access:
+
+- Creates and starts the runtime WireGuard interface `wgopnhub`.
+- Assigns/enables it in OPNsense as `OPNHUB` when not already assigned.
+- Adds one narrow pass rule allowing the Hub tunnel IP, for example `100.96.0.1/32`, to reach `This Firewall` on the configured WebGUI port.
+- If WebGUI listen interfaces are explicitly restricted, adds the assigned `OPNHUB` interface to that list.
+
+It does not add customer LAN routes or broad allow rules.
+
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 
 ## OPNsense plugin build/install commands

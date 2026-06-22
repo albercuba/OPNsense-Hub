@@ -981,9 +981,16 @@ async def proxy_device(
                 content=await request.body(),
             )
     except httpx.RequestError as exc:
+        error_detail = str(exc) or repr(exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Could not reach OPNsense UI at {url}: {exc}",
+            detail=(
+                f"Could not reach OPNsense UI at {url}: "
+                f"{exc.__class__.__name__}: {error_detail}. "
+                "Verify WireGuard has a recent handshake, the firewall allows "
+                "Hub tunnel traffic to the WebGUI port, and the WebGUI listens "
+                "on the tunnel interface."
+            ),
         ) from exc
     return Response(
         content=proxied.content,

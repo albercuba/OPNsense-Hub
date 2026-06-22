@@ -27,6 +27,12 @@ $( document ).ready(function() {
         if (data && data.tunnel_ip) {
             html += '<tr><th>Tunnel IP</th><td><code>' + escapeHtml(data.tunnel_ip) + '</code></td></tr>';
         }
+        if (data && data.interface) {
+            html += '<tr><th>Interface</th><td><code>' + escapeHtml(data.interface) + '</code></td></tr>';
+        }
+        if (data && data.webgui_port) {
+            html += '<tr><th>WebGUI Port</th><td><code>' + escapeHtml(data.webgui_port) + '</code></td></tr>';
+        }
         if (data && data.detail) {
             html += '<tr><th>Detail</th><td>' + escapeHtml(data.detail) + '</td></tr>';
         }
