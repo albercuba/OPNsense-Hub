@@ -1,0 +1,2 @@
+# OPNsense/FreeBSD executes plugin scripts by shebang; CRLF breaks configd.
+net-mgmt/os-opnsensehub/src/opnsense/scripts/OPNsense/OPNsenseHub/*.py text eol=lf
