@@ -141,8 +141,16 @@ Services > OPNsense Hub
 3. Open the company and click `Generate enrollment OTP`.
 4. In OPNsense, go to `Services > OPNsense Hub`.
 5. Enter the HTTPS Hub URL and OTP.
-6. Click `Connect`.
+6. Click `Connect`. The plugin saves the current form values before starting enrollment.
 7. The firewall should appear in the company firewalls table.
+
+If enrollment fails, the OPNsense dialog should show an actionable `status: error` message, such as an invalid/expired OTP, HTTPS URL validation failure, missing WireGuard command, or Hub API HTTP status. For lab debugging, run these commands on the firewall and check the returned JSON plus configd logs:
+
+```sh
+configctl opnsensehub connect
+/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/connect.py
+tail -f /var/log/configd/latest.log
+```
 
 ## REST endpoints
 

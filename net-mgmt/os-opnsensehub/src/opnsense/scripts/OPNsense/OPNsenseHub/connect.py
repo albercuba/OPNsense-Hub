@@ -27,9 +27,31 @@ def out(payload):
     print(json.dumps(payload))
 
 
-def fail(message):
-    out({"status": "error", "message": message})
-    sys.exit(1)
+def fail(message, exit_code=0):
+    out({"status": "error", "message": str(message)})
+    sys.exit(exit_code)
+
+
+def hub_error_message(body):
+    try:
+        payload = json.loads(body)
+    except Exception:
+        return body.strip() or "HTTP enrollment failed"
+
+    detail = payload.get("detail")
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        messages = []
+        for item in detail:
+            if isinstance(item, dict) and item.get("msg"):
+                messages.append(str(item["msg"]))
+            else:
+                messages.append(str(item))
+        return "; ".join(messages)
+    if payload.get("message"):
+        return str(payload["message"])
+    return body.strip() or "HTTP enrollment failed"
 
 
 def load_settings():
@@ -122,7 +144,7 @@ def post_json(url, payload, token=None):
             body = exc.read().decode("utf-8")
         except Exception:
             body = "HTTP enrollment failed"
-        fail(body)
+        fail(f"Hub enrollment failed with HTTP {exc.code}: {hub_error_message(body)}")
     except Exception as exc:
         fail(f"Could not reach OPNsense Hub: {exc}")
 
@@ -316,4 +338,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        fail(f"Unexpected enrollment error: {exc}")

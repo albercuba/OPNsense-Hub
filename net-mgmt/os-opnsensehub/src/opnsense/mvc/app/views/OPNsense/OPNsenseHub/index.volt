@@ -6,7 +6,13 @@ $( document ).ready(function() {
     $('#saveAct').click(function(){
         saveFormToEndpoint('/api/opnsensehub/settings/set', 'frm_GeneralSettings', function(){ ajaxCall('/api/opnsensehub/service/status', {}, function(){ location.reload(); }); });
     });
-    $('#connectAct').click(function(){ ajaxCall('/api/opnsensehub/service/connect', {}, function(data){ BootstrapDialog.show({type: BootstrapDialog.TYPE_INFO, title: 'OPNsense Hub', message: JSON.stringify(data)}); }); });
+    $('#connectAct').click(function(){
+        saveFormToEndpoint('/api/opnsensehub/settings/set', 'frm_GeneralSettings', function(){
+            ajaxCall('/api/opnsensehub/service/connect', {}, function(data){
+                BootstrapDialog.show({type: BootstrapDialog.TYPE_INFO, title: 'OPNsense Hub', message: JSON.stringify(data)});
+            });
+        });
+    });
     $('#disconnectAct').click(function(){ ajaxCall('/api/opnsensehub/service/disconnect', {}, function(data){ BootstrapDialog.show({type: BootstrapDialog.TYPE_WARNING, title: 'OPNsense Hub', message: JSON.stringify(data)}); }); });
 });
 </script>
