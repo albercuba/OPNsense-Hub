@@ -24,6 +24,7 @@ CONFIG_XML = Path("/conf/config.xml")
 WG_IFACE = "wgopnhub"
 ASSIGNED_IF_DESCR = "OPNHUB"
 RULE_DESCR = "Allow OPNsense Hub WebGUI proxy"
+FLOATING_RULE_DESCR = "Allow OPNsense Hub WebGUI proxy (floating)"
 PLUGIN_VERSION = "0.1.0"
 
 
@@ -339,8 +340,8 @@ def ensure_webgui_listen_interface(root, interface_key):
     return True
 
 
-def rule_matches(rule, interface_key, hub_ip, firewall_ip, port):
-    if rule.findtext("descr") == RULE_DESCR:
+def rule_matches(rule, interface_key, hub_ip, firewall_ip, port, descr):
+    if rule.findtext("descr") == descr:
         return True
     return (
         rule.findtext("type") == "pass"
@@ -353,7 +354,9 @@ def rule_matches(rule, interface_key, hub_ip, firewall_ip, port):
     )
 
 
-def configure_firewall_rule(rule, interface_key, hub_ip, firewall_ip, port):
+def configure_firewall_rule(
+    rule, interface_key, hub_ip, firewall_ip, port, descr, floating=False
+):
     changed = False
     changed |= set_child_text(rule, "type", "pass")
     changed |= set_child_text(rule, "interface", interface_key)
@@ -362,26 +365,34 @@ def configure_firewall_rule(rule, interface_key, hub_ip, firewall_ip, port):
     changed |= set_child_text(rule, "quick", "1")
     changed |= set_child_text(rule, "statetype", "keep state")
     changed |= set_child_text(rule, "protocol", "tcp")
+    if floating:
+        changed |= set_child_text(rule, "floating", "yes")
+    else:
+        changed |= remove_child(rule, "floating")
     source = find_or_create(rule, "source")
     changed |= set_child_text(source, "address", f"{hub_ip}/32")
     destination = find_or_create(rule, "destination")
     changed |= remove_child(destination, "network")
     changed |= set_child_text(destination, "address", f"{firewall_ip}/32")
     changed |= set_child_text(destination, "port", port)
-    changed |= set_child_text(rule, "descr", RULE_DESCR)
+    changed |= set_child_text(rule, "descr", descr)
     return changed
 
 
-def ensure_firewall_rule(root, interface_key, hub_ip, firewall_ip, port):
+def ensure_firewall_rule(
+    root, interface_key, hub_ip, firewall_ip, port, descr, floating=False
+):
     filter_node = find_or_create(root, "filter")
     for rule in filter_node.findall("rule"):
-        if rule_matches(rule, interface_key, hub_ip, firewall_ip, port):
+        if rule_matches(rule, interface_key, hub_ip, firewall_ip, port, descr):
             return configure_firewall_rule(
-                rule, interface_key, hub_ip, firewall_ip, port
+                rule, interface_key, hub_ip, firewall_ip, port, descr, floating
             )
 
     rule = ET.SubElement(filter_node, "rule")
-    configure_firewall_rule(rule, interface_key, hub_ip, firewall_ip, port)
+    configure_firewall_rule(
+        rule, interface_key, hub_ip, firewall_ip, port, descr, floating
+    )
     created = ET.SubElement(rule, "created")
     set_child_text(created, "time", str(int(time.time())))
     set_child_text(created, "username", "OPNsense Hub")
@@ -399,7 +410,18 @@ def ensure_opnsense_integration(wg):
     firewall_ip = str(ipaddress.ip_interface(wg["interface_address"]).ip)
     interface_key, changed = ensure_assigned_interface(root, wg["interface_address"])
     port = webgui_port(root)
-    changed |= ensure_firewall_rule(root, interface_key, hub_ip, firewall_ip, port)
+    changed |= ensure_firewall_rule(
+        root, interface_key, hub_ip, firewall_ip, port, RULE_DESCR
+    )
+    changed |= ensure_firewall_rule(
+        root,
+        interface_key,
+        hub_ip,
+        firewall_ip,
+        port,
+        FLOATING_RULE_DESCR,
+        floating=True,
+    )
     webgui_listen_changed = ensure_webgui_listen_interface(root, interface_key)
     changed |= webgui_listen_changed
 
