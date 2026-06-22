@@ -266,7 +266,8 @@ th {
     color: var(--ok);
 }
 .status.revoked,
-.status.error {
+.status.error,
+.status.offline {
     background: #fff0f0;
     color: var(--danger);
 }

@@ -1,4 +1,7 @@
+import asyncio
+import contextlib
 import ipaddress
+import logging
 import uuid
 from datetime import timedelta
 from typing import Annotated
@@ -36,6 +39,7 @@ from .wireguard import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 app = FastAPI(title=settings.app_name)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -47,6 +51,74 @@ def tunnel_proxy_host(value: object) -> str:
     if "/" in text_value:
         return str(ipaddress.ip_interface(text_value).ip)
     return str(ipaddress.ip_address(text_value))
+
+
+def device_webgui_url(device: Device) -> str:
+    proxy_host = tunnel_proxy_host(device.wg_tunnel_ip)
+    return f"https://{proxy_host}:{settings.opnsense_gui_port}/"
+
+
+async def probe_device_webgui(
+    client: httpx.AsyncClient, device: Device
+) -> tuple[bool, str]:
+    try:
+        url = device_webgui_url(device)
+    except ValueError as exc:
+        return (
+            False,
+            f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}: {exc}",
+        )
+
+    try:
+        await client.get(url)
+    except httpx.RequestError as exc:
+        error_detail = str(exc) or repr(exc)
+        return (
+            False,
+            f"WebGUI unreachable at {url}: {exc.__class__.__name__}: {error_detail}",
+        )
+    return True, f"WebGUI reachable at {url}"
+
+
+async def run_device_health_checks_once() -> None:
+    with SessionLocal() as db:
+        devices = db.scalars(
+            select(Device).where(Device.revoked_at.is_(None)).order_by(Device.hostname)
+        ).all()
+        if not devices:
+            return
+
+        now = utc_now()
+        async with httpx.AsyncClient(
+            verify=settings.proxy_verify_tls,
+            follow_redirects=False,
+            timeout=settings.firewall_health_check_timeout_seconds,
+        ) as client:
+            for device in devices:
+                healthy, message = await probe_device_webgui(client, device)
+                new_status = "online" if healthy else "offline"
+                if device.status != new_status:
+                    device.status = new_status
+                    db.add(
+                        DeviceEvent(
+                            device_id=device.id,
+                            event_type="health_check",
+                            message=message[:1000],
+                        )
+                    )
+                if healthy:
+                    device.last_seen_at = now
+        db.commit()
+
+
+async def device_health_check_loop() -> None:
+    interval = max(1, settings.firewall_health_check_interval_seconds)
+    while True:
+        try:
+            await run_device_health_checks_once()
+        except Exception:
+            logger.exception("Firewall health check failed")
+        await asyncio.sleep(interval)
 
 
 def ensure_schema_compat() -> None:
@@ -120,8 +192,19 @@ def bootstrap() -> None:
 
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def on_startup() -> None:
     bootstrap()
+    app.state.health_check_task = asyncio.create_task(device_health_check_loop())
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    task = getattr(app.state, "health_check_task", None)
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
@@ -788,7 +871,9 @@ def heartbeat(
     device = device_from_token(db, device_id, authorization)
     device.status = str(payload.get("status", "online"))[:30]
     device.hostname = str(payload.get("hostname", device.hostname))[:255]
-    device.opnsense_version = payload.get("opnsense_version", device.opnsense_version)
+    opnsense_version = payload.get("opnsense_version")
+    if opnsense_version is not None:
+        device.opnsense_version = str(opnsense_version)[:80]
     device.last_seen_at = utc_now()
     db.add(
         DeviceEvent(device_id=device.id, event_type="heartbeat", message=device.status)
@@ -958,14 +1043,12 @@ async def proxy_device(
     )
     db.commit()
     try:
-        proxy_host = tunnel_proxy_host(device.wg_tunnel_ip)
+        url = device_webgui_url(device) + path
     except ValueError as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}",
         ) from exc
-
-    url = f"https://{proxy_host}:{settings.opnsense_gui_port}/{path}"
     try:
         async with httpx.AsyncClient(
             verify=settings.proxy_verify_tls, follow_redirects=False, timeout=30
