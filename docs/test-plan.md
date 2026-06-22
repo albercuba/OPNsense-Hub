@@ -18,7 +18,7 @@ Current coverage:
 - `/32`-only WireGuard peer route generation.
 - RBAC role ordering.
 
-## Manual MVP tests
+## Manual tests
 
 1. Start stack with `docker compose up --build`.
 2. Log in with the seeded admin user.

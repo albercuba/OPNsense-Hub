@@ -1,6 +1,6 @@
 # Third-party notices
 
-This project uses third-party software, images, fonts, and web assets. This file is a practical notice inventory for the MVP; verify exact versions and transitive dependencies during each release build.
+This project uses third-party software, images, fonts, and web assets. This file is a practical notice inventory; verify exact versions and transitive dependencies during each release build.
 
 ## Runtime Python dependencies
 

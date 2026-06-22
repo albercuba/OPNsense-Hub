@@ -5,7 +5,7 @@ OPNsense Hub is split into two separately deployable parts:
 1. `os-opnsensehub` OPNsense plugin
 2. `opnsense-hub` Dockerized dashboard/control-plane
 
-The MVP focuses on secure enrollment, read-only remote access, company grouping, audit logging, and simple WireGuard peer lifecycle management.
+The platform focuses on secure enrollment, remote firewall access, company grouping, audit logging, and WireGuard peer lifecycle management.
 
 ## High-level flow
 
@@ -42,7 +42,7 @@ sequenceDiagram
 - The app generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
 - Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
-- Reverse proxy is implemented in FastAPI for the MVP and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
+- Reverse proxying is implemented in FastAPI and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
 
 For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels, the app container runs with `NET_ADMIN` and `/dev/net/tun` so it can configure `wg0` itself.
 

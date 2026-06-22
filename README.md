@@ -1,6 +1,6 @@
 # OPNsense Hub
 
-OPNsense Hub is an MVP for enrolling OPNsense firewalls into a central dashboard with a short-lived OTP, establishing a WireGuard tunnel, and opening the firewall UI through a read-only reverse proxy path.
+OPNsense Hub enrolls OPNsense firewalls into a central dashboard with a short-lived OTP, establishes a WireGuard tunnel, and opens the firewall UI through a protected reverse proxy path.
 
 > Important: the Hub dashboard/control plane does not modify firewall configuration, restore backups, reboot firewalls, or store OPNsense admin passwords. The only firewall-side configuration change is performed by the OPNsense plugin on that firewall to create its own WireGuard client tunnel.
 
@@ -36,7 +36,7 @@ docker-compose.yml
 .env.example
 ```
 
-## MVP features
+## Features
 
 - Dashboard login with seeded initial admin.
 - Company/group creation.
@@ -204,7 +204,7 @@ docker compose config
 docker compose build
 ```
 
-## Known MVP limitations
+## Known limitations
 
 - The FastAPI proxy is intentionally simple. For production, consider Caddy/Nginx with a signed internal auth check or a hardened streaming proxy.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.

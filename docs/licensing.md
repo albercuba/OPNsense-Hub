@@ -4,7 +4,7 @@ This repository is licensed under the BSD 2-Clause License. See `LICENSE`.
 
 ## Why BSD 2-Clause
 
-BSD 2-Clause is permissive and compatible with the intended OPNsense plugin ecosystem and the MVP dashboard code. It allows source and binary redistribution while requiring preservation of copyright and disclaimer notices.
+BSD 2-Clause is permissive and compatible with the intended OPNsense plugin ecosystem and dashboard code. It allows source and binary redistribution while requiring preservation of copyright and disclaimer notices.
 
 ## Third-party notices
 
@@ -20,7 +20,7 @@ The most important compliance points are:
 
 ## CDN privacy note
 
-The MVP loads Font Awesome from cdnjs and JetBrains Mono from Google Fonts. That means users' browsers contact those third-party services. For production deployments with stricter privacy requirements, self-host these assets and include their license notices locally.
+The dashboard loads Font Awesome from cdnjs and JetBrains Mono from Google Fonts. That means users' browsers contact those third-party services. For production deployments with stricter privacy requirements, self-host these assets and include their license notices locally.
 
 ## OPNsense trademark note
 

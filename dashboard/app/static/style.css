@@ -280,6 +280,53 @@ th {
     letter-spacing: 0.08em;
     color: var(--accent);
 }
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(20, 32, 51, 0.45);
+}
+.modal-card {
+    position: relative;
+    width: min(460px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+}
+.modal-close {
+    position: absolute;
+    top: 0.8rem;
+    right: 0.8rem;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.otp-copy-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+}
+.otp-popup-code {
+    color: var(--accent);
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.copy-feedback {
+    margin-bottom: 0;
+}
 .warning {
     background: #fff7ed;
     border-color: #fed7aa;

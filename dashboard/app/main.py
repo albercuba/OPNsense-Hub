@@ -10,7 +10,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select, text
@@ -916,6 +916,15 @@ def create_enrollment_code(
     )
     write_audit(db, request, "enrollment_code.create", user=user, company_id=company.id)
     db.commit()
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse(
+            {
+                "code": code,
+                "company": company.name,
+                "expires_at": expires_at.isoformat(),
+                "expires_at_display": expires_at.strftime("%Y-%m-%d %H:%M UTC"),
+            }
+        )
     return templates.TemplateResponse(
         "otp.html",
         {

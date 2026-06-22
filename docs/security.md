@@ -1,6 +1,6 @@
 # Security notes and production hardening checklist
 
-## Current MVP protections
+## Current protections
 
 - OTP enrollment codes are generated randomly, short-lived, single-use, and stored only as PBKDF2 hashes.
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.

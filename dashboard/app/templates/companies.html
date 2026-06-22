@@ -4,13 +4,13 @@
   <h1>Firewalls Management</h1>
   <p class="muted">Manage enrolled OPNsense firewalls by company.</p>
   <table class="firewalls-management-table">
-    <thead><tr><th>Company name</th><th class="actions">Actions</th></tr></thead>
+    <thead><tr><th>Company</th><th class="actions">Actions</th></tr></thead>
     <tbody>
     {% for company in companies %}
       <tr class="company-row" data-company-row aria-expanded="false" tabindex="0">
         <td><i class="fa-solid fa-chevron-right row-toggle-icon"></i> {{ company.name }}</td>
         <td class="actions">
-          <form action="/api/v1/companies/{{ company.id }}/enrollment-codes" method="post" class="inline-action-form">
+          <form action="/api/v1/companies/{{ company.id }}/enrollment-codes" method="post" class="inline-action-form" data-enrollment-form>
             <button class="icon-button" type="submit" title="Add Firewall" aria-label="Add Firewall"><i class="fa-solid fa-plus"></i></button>
           </form>
         </td>
@@ -19,11 +19,10 @@
         <td colspan="2">
           <div class="nested-table-wrap">
             <table class="nested-table">
-              <thead><tr><th>Name</th><th>Hostname</th><th>OPNsense</th><th>Plugin</th><th>Tunnel IP</th><th>Status</th><th>Last seen</th><th class="actions">Actions</th></tr></thead>
+              <thead><tr><th>Hostname</th><th>OPNsense</th><th>Plugin</th><th>Tunnel IP</th><th>Status</th><th>Last seen</th><th class="actions">Actions</th></tr></thead>
               <tbody>
               {% for device in company.devices %}
                 <tr>
-                  <td>{{ device.name or '—' }}</td>
                   <td>{{ device.hostname }}</td>
                   <td>{{ device.opnsense_version or 'Unknown' }}</td>
                   <td>{{ device.plugin_version or 'Unknown' }}</td>
@@ -44,7 +43,7 @@
                   </td>
                 </tr>
               {% else %}
-                <tr><td colspan="8" class="muted">No firewalls enrolled yet.</td></tr>
+                <tr><td colspan="7" class="muted">No firewalls enrolled yet.</td></tr>
               {% endfor %}
               </tbody>
             </table>
