@@ -134,6 +134,14 @@ def proxy_rewrite_location(
     return location
 
 
+def proxy_rewrite_absolute_path(match: re.Match[str], path_prefix: str) -> str:
+    prefix = match.group("prefix")
+    path = match.group("path")
+    if path.startswith(("/", "proxy/devices/")):
+        return match.group(0)
+    return f"{prefix}{path_prefix}/{path}"
+
+
 def proxy_rewrite_body(
     content: bytes, content_type: str, device_id: uuid.UUID
 ) -> bytes:
@@ -147,9 +155,20 @@ def proxy_rewrite_body(
         return content
     path_prefix = proxy_path_prefix(device_id)
     text = re.sub(
-        r'(?P<attr>\b(?:href|src|action)=(["\']))/', rf"\g<attr>{path_prefix}/", text
+        r'(?P<prefix>\b(?:href|src|action)=(["\']))/(?P<path>[^"\']*)',
+        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
+        text,
     )
-    text = re.sub(r'(?P<css>url\((["\']?))/', rf"\g<css>{path_prefix}/", text)
+    text = re.sub(
+        r'(?P<prefix>url\((["\']?))/(?P<path>[^)"\']*)',
+        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
+        text,
+    )
+    text = re.sub(
+        r'(?P<prefix>["\'])/(?P<path>(?!/|proxy/devices/)[^"\']*)',
+        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
+        text,
+    )
     return text.encode("utf-8")
 
 
