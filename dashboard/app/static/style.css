@@ -265,6 +265,10 @@ th {
     background: #e9f8f0;
     color: var(--ok);
 }
+.status.warning {
+    background: #fff8e6;
+    color: #9a6700;
+}
 .status.revoked,
 .status.error,
 .status.offline {

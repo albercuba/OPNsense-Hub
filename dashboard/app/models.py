@@ -164,6 +164,8 @@ class Device(Base):
     wg_tunnel_ip: Mapped[str] = mapped_column(INET, nullable=False, unique=True)
     device_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    health_missed_checks: Mapped[int] = mapped_column(default=0, nullable=False)
+    health_success_checks: Mapped[int] = mapped_column(default=0, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

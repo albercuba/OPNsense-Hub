@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from .audit import write_audit
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
+from .health import HealthState, HealthThresholds, next_health_state
 from .models import (
     Company,
     CompanyUser,
@@ -194,6 +195,26 @@ async def probe_device_webgui(
     return True, f"WebGUI reachable at {url}"
 
 
+def device_health_status(device: Device, healthy: bool) -> str:
+    new_state = next_health_state(
+        HealthState(
+            status=device.status,
+            missed_checks=device.health_missed_checks,
+            success_checks=device.health_success_checks,
+        ),
+        healthy,
+        HealthThresholds(
+            warning_misses=settings.firewall_health_warning_misses,
+            critical_misses=settings.firewall_health_critical_misses,
+            warning_recovery_successes=settings.firewall_health_warning_recovery_successes,
+            critical_recovery_successes=settings.firewall_health_critical_recovery_successes,
+        ),
+    )
+    device.health_missed_checks = new_state.missed_checks
+    device.health_success_checks = new_state.success_checks
+    return new_state.status
+
+
 async def run_device_health_checks_once() -> None:
     with SessionLocal() as db:
         devices = db.scalars(
@@ -210,14 +231,17 @@ async def run_device_health_checks_once() -> None:
         ) as client:
             for device in devices:
                 healthy, message = await probe_device_webgui(client, device)
-                new_status = "online" if healthy else "offline"
+                new_status = device_health_status(device, healthy)
                 if device.status != new_status:
                     device.status = new_status
                     db.add(
                         DeviceEvent(
                             device_id=device.id,
                             event_type="health_check",
-                            message=message[:1000],
+                            message=(
+                                f"{message}; missed={device.health_missed_checks}; "
+                                f"successes={device.health_success_checks}"
+                            )[:1000],
                         )
                     )
                 if healthy:
@@ -246,6 +270,16 @@ def ensure_schema_compat() -> None:
         conn.execute(
             text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_missed_checks integer NOT NULL DEFAULT 0"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_success_checks integer NOT NULL DEFAULT 0"
             )
         )
         conn.execute(
@@ -984,6 +1018,8 @@ def heartbeat(
 ):
     device = device_from_token(db, device_id, authorization)
     device.status = str(payload.get("status", "online"))[:30]
+    device.health_missed_checks = 0
+    device.health_success_checks += 1
     device.hostname = str(payload.get("hostname", device.hostname))[:255]
     opnsense_version = payload.get("opnsense_version")
     if opnsense_version is not None:

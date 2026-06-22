@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS devices (
   wg_tunnel_ip inet NOT NULL UNIQUE,
   device_token_hash text NOT NULL,
   status text NOT NULL DEFAULT 'pending',
+  health_missed_checks integer NOT NULL DEFAULT 0,
+  health_success_checks integer NOT NULL DEFAULT 0,
   last_seen_at timestamptz NULL,
   revoked_at timestamptz NULL,
   created_at timestamptz NOT NULL DEFAULT now()

@@ -26,8 +26,12 @@ class Settings(BaseSettings):
     wg_dry_run: bool = False
     proxy_verify_tls: bool = False
     opnsense_gui_port: int = 443
-    firewall_health_check_interval_seconds: int = 300
+    firewall_health_check_interval_seconds: int = 60
     firewall_health_check_timeout_seconds: int = 10
+    firewall_health_warning_misses: int = 2
+    firewall_health_critical_misses: int = 3
+    firewall_health_warning_recovery_successes: int = 1
+    firewall_health_critical_recovery_successes: int = 2
 
     class Config:
         env_file = ".env"
