@@ -339,7 +339,7 @@ def ensure_webgui_listen_interface(root, interface_key):
     return True
 
 
-def rule_matches(rule, interface_key, hub_ip, port):
+def rule_matches(rule, interface_key, hub_ip, firewall_ip, port):
     if rule.findtext("descr") == RULE_DESCR:
         return True
     return (
@@ -348,12 +348,12 @@ def rule_matches(rule, interface_key, hub_ip, port):
         and rule.findtext("ipprotocol") == "inet"
         and rule.findtext("protocol") == "tcp"
         and rule.findtext("source/address") == f"{hub_ip}/32"
-        and rule.findtext("destination/network") == "(self)"
+        and rule.findtext("destination/address") == f"{firewall_ip}/32"
         and rule.findtext("destination/port") == str(port)
     )
 
 
-def configure_firewall_rule(rule, interface_key, hub_ip, port):
+def configure_firewall_rule(rule, interface_key, hub_ip, firewall_ip, port):
     changed = False
     changed |= set_child_text(rule, "type", "pass")
     changed |= set_child_text(rule, "interface", interface_key)
@@ -365,20 +365,23 @@ def configure_firewall_rule(rule, interface_key, hub_ip, port):
     source = find_or_create(rule, "source")
     changed |= set_child_text(source, "address", f"{hub_ip}/32")
     destination = find_or_create(rule, "destination")
-    changed |= set_child_text(destination, "network", "(self)")
+    changed |= remove_child(destination, "network")
+    changed |= set_child_text(destination, "address", f"{firewall_ip}/32")
     changed |= set_child_text(destination, "port", port)
     changed |= set_child_text(rule, "descr", RULE_DESCR)
     return changed
 
 
-def ensure_firewall_rule(root, interface_key, hub_ip, port):
+def ensure_firewall_rule(root, interface_key, hub_ip, firewall_ip, port):
     filter_node = find_or_create(root, "filter")
     for rule in filter_node.findall("rule"):
-        if rule_matches(rule, interface_key, hub_ip, port):
-            return configure_firewall_rule(rule, interface_key, hub_ip, port)
+        if rule_matches(rule, interface_key, hub_ip, firewall_ip, port):
+            return configure_firewall_rule(
+                rule, interface_key, hub_ip, firewall_ip, port
+            )
 
     rule = ET.SubElement(filter_node, "rule")
-    configure_firewall_rule(rule, interface_key, hub_ip, port)
+    configure_firewall_rule(rule, interface_key, hub_ip, firewall_ip, port)
     created = ET.SubElement(rule, "created")
     set_child_text(created, "time", str(int(time.time())))
     set_child_text(created, "username", "OPNsense Hub")
@@ -393,9 +396,10 @@ def ensure_opnsense_integration(wg):
     if not allowed_ips:
         fail("WireGuard allowed_ips is empty")
     hub_ip = str(ipaddress.ip_network(allowed_ips[0], strict=False).network_address)
+    firewall_ip = str(ipaddress.ip_interface(wg["interface_address"]).ip)
     interface_key, changed = ensure_assigned_interface(root, wg["interface_address"])
     port = webgui_port(root)
-    changed |= ensure_firewall_rule(root, interface_key, hub_ip, port)
+    changed |= ensure_firewall_rule(root, interface_key, hub_ip, firewall_ip, port)
     webgui_listen_changed = ensure_webgui_listen_interface(root, interface_key)
     changed |= webgui_listen_changed
 
