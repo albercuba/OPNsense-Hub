@@ -444,15 +444,28 @@ def destroy_tunnel():
     )
 
 
-def start_tunnel(private_key, wg):
-    interface = ipaddress.ip_interface(wg["interface_address"])
+def hub_route_for(wg):
     allowed_ips = [
         item.strip() for item in wg["allowed_ips"].split(",") if item.strip()
     ]
     if not allowed_ips:
         fail("WireGuard allowed_ips is empty")
-    hub_route = str(ipaddress.ip_network(allowed_ips[0], strict=False).network_address)
+    return str(ipaddress.ip_network(allowed_ips[0], strict=False).network_address)
 
+
+def ensure_hub_route(wg):
+    hub_route = hub_route_for(wg)
+    subprocess.run(
+        ["route", "delete", "-host", hub_route],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    run_cmd(["route", "add", "-host", hub_route, "-interface", WG_IFACE])
+
+
+def start_tunnel(private_key, wg):
+    interface = ipaddress.ip_interface(wg["interface_address"])
     destroy_tunnel()
     run_cmd(["ifconfig", "wg", "create", "name", WG_IFACE])
     try:
@@ -484,13 +497,7 @@ def start_tunnel(private_key, wg):
                 str(wg.get("persistent_keepalive", 25)),
             ]
         )
-        subprocess.run(
-            ["route", "delete", "-host", hub_route],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        run_cmd(["route", "add", "-host", hub_route, "-interface", WG_IFACE])
+        ensure_hub_route(wg)
     except Exception:
         destroy_tunnel()
         raise
@@ -512,6 +519,7 @@ def main():
         render_wg(private_key, state["wireguard"])
         start_tunnel(private_key, state["wireguard"])
         opnsense = ensure_opnsense_integration(state["wireguard"])
+        ensure_hub_route(state["wireguard"])
         state["opnsense"] = opnsense
         state["status"] = "connected"
         save_state(state)
@@ -553,6 +561,7 @@ def main():
     save_state(state)
     start_tunnel(private_key, wireguard)
     opnsense = ensure_opnsense_integration(wireguard)
+    ensure_hub_route(wireguard)
     state["opnsense"] = opnsense
     save_state(state)
     out(
