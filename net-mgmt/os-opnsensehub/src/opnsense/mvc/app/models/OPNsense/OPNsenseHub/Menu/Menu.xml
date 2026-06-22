@@ -1,5 +1,7 @@
 <menu>
   <Services>
-    <OPNsenseHub VisibleName="OPNsense Hub" url="/ui/opnsensehub/" order="900" />
+    <OPNsenseHub VisibleName="OPNsense Hub" cssClass="fa fa-link" order="900">
+      <Settings VisibleName="Settings" url="/ui/opnsensehub/" order="10" />
+    </OPNsenseHub>
   </Services>
 </menu>
