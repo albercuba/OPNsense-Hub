@@ -58,6 +58,31 @@ def device_webgui_url(device: Device) -> str:
     return f"https://{proxy_host}:{settings.opnsense_gui_port}/"
 
 
+PROXY_REQUEST_HEADER_BLOCKLIST = {
+    "connection",
+    "content-length",
+    "cookie",
+    "host",
+    "keep-alive",
+    "origin",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "referer",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+
+
+def proxy_request_headers(request: Request) -> dict[str, str]:
+    return {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in PROXY_REQUEST_HEADER_BLOCKLIST
+    }
+
+
 async def probe_device_webgui(
     client: httpx.AsyncClient, device: Device
 ) -> tuple[bool, str]:
@@ -1056,11 +1081,7 @@ async def proxy_device(
             proxied = await client.request(
                 request.method,
                 url,
-                headers={
-                    k: v
-                    for k, v in request.headers.items()
-                    if k.lower() not in {"host", "cookie"}
-                },
+                headers=proxy_request_headers(request),
                 content=await request.body(),
             )
     except httpx.RequestError as exc:
