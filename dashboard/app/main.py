@@ -1,3 +1,4 @@
+import ipaddress
 import uuid
 from datetime import timedelta
 from typing import Annotated
@@ -38,6 +39,14 @@ settings = get_settings()
 app = FastAPI(title=settings.app_name)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+def tunnel_proxy_host(value: object) -> str:
+    """Return a plain IP host for proxy URLs from an INET/CIDR value."""
+    text_value = str(value)
+    if "/" in text_value:
+        return str(ipaddress.ip_interface(text_value).ip)
+    return str(ipaddress.ip_address(text_value))
 
 
 def ensure_schema_compat() -> None:
@@ -948,20 +957,34 @@ async def proxy_device(
         device_id=device.id,
     )
     db.commit()
-    url = f"https://{device.wg_tunnel_ip}:{settings.opnsense_gui_port}/{path}"
-    async with httpx.AsyncClient(
-        verify=settings.proxy_verify_tls, follow_redirects=False, timeout=30
-    ) as client:
-        proxied = await client.request(
-            request.method,
-            url,
-            headers={
-                k: v
-                for k, v in request.headers.items()
-                if k.lower() not in {"host", "cookie"}
-            },
-            content=await request.body(),
-        )
+    try:
+        proxy_host = tunnel_proxy_host(device.wg_tunnel_ip)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}",
+        ) from exc
+
+    url = f"https://{proxy_host}:{settings.opnsense_gui_port}/{path}"
+    try:
+        async with httpx.AsyncClient(
+            verify=settings.proxy_verify_tls, follow_redirects=False, timeout=30
+        ) as client:
+            proxied = await client.request(
+                request.method,
+                url,
+                headers={
+                    k: v
+                    for k, v in request.headers.items()
+                    if k.lower() not in {"host", "cookie"}
+                },
+                content=await request.body(),
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach OPNsense UI at {url}: {exc}",
+        ) from exc
     return Response(
         content=proxied.content,
         status_code=proxied.status_code,

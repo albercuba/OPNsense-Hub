@@ -106,7 +106,14 @@ Do not add customer LAN networks such as `192.168.1.0/24` to WireGuard `AllowedI
 
 The server private key is persisted in the `opnsense_hub_wg` Docker volume. Back up this volume securely; losing it requires re-enrolling devices or carefully rotating WireGuard keys.
 
-Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can reach, for example `hub.example.com:51820`, and ensure UDP `51820` is allowed through the host firewall/security group.
+Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can reach, for example `hub.example.com:51820`, and ensure UDP `51820` is allowed through the host firewall/security group and forwarded to the Hub app host/container.
+
+Required inbound ports for a typical deployment:
+
+- TCP `443` to the Hub reverse proxy for browser access and firewall enrollment API calls. If running the development compose file directly, TCP `8083` reaches the FastAPI app instead.
+- UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
+
+`Open OPNsense UI` uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT` which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`.
 
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 
