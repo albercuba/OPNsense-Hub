@@ -3,13 +3,14 @@
 namespace OPNsense\OPNsenseHub\Api;
 
 use OPNsense\Base\ApiControllerBase;
+use OPNsense\Core\Backend;
 
 class ServiceController extends ApiControllerBase
 {
     private function runJsonCommand($command)
     {
         try {
-            $output = trim((string)$this->configdRun($command));
+            $output = trim((string)(new Backend())->configdRun($command));
         } catch (\Throwable $e) {
             return array('status' => 'error', 'message' => $e->getMessage());
         }
