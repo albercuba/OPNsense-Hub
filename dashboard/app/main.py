@@ -2,8 +2,10 @@ import asyncio
 import contextlib
 import ipaddress
 import logging
+import re
 import uuid
 from datetime import timedelta
+from http.cookies import SimpleCookie
 from typing import Annotated
 
 import httpx
@@ -75,12 +77,80 @@ PROXY_REQUEST_HEADER_BLOCKLIST = {
 }
 
 
-def proxy_request_headers(request: Request) -> dict[str, str]:
-    return {
+def proxy_request_headers(request: Request, device_id: uuid.UUID) -> dict[str, str]:
+    headers = {
         key: value
         for key, value in request.headers.items()
         if key.lower() not in PROXY_REQUEST_HEADER_BLOCKLIST
     }
+    cookie_header = proxy_upstream_cookie_header(request, device_id)
+    if cookie_header:
+        headers["cookie"] = cookie_header
+    return headers
+
+
+def proxy_cookie_prefix(device_id: uuid.UUID) -> str:
+    return f"opnhub_{device_id.hex}_"
+
+
+def proxy_path_prefix(device_id: uuid.UUID) -> str:
+    return f"/proxy/devices/{device_id}"
+
+
+def proxy_upstream_cookie_header(request: Request, device_id: uuid.UUID) -> str:
+    prefix = proxy_cookie_prefix(device_id)
+    upstream_cookies = []
+    for name, value in request.cookies.items():
+        if name.startswith(prefix):
+            upstream_cookies.append(f"{name[len(prefix) :]}={value}")
+    return "; ".join(upstream_cookies)
+
+
+def proxy_downstream_set_cookie_headers(
+    set_cookie_headers: list[str], device_id: uuid.UUID
+) -> list[str]:
+    rewritten = []
+    prefix = proxy_cookie_prefix(device_id)
+    path_prefix = proxy_path_prefix(device_id)
+    for header in set_cookie_headers:
+        cookies = SimpleCookie()
+        cookies.load(header)
+        for name, morsel in cookies.items():
+            morsel.set(prefix + name, morsel.value, morsel.coded_value)
+            morsel["path"] = path_prefix
+            morsel["domain"] = ""
+            rewritten.append(morsel.OutputString())
+    return rewritten
+
+
+def proxy_rewrite_location(
+    location: str, device_id: uuid.UUID, upstream_base: str
+) -> str:
+    path_prefix = proxy_path_prefix(device_id)
+    if location.startswith(upstream_base):
+        return path_prefix + "/" + location.removeprefix(upstream_base).lstrip("/")
+    if location.startswith("/") and not location.startswith(path_prefix + "/"):
+        return path_prefix + location
+    return location
+
+
+def proxy_rewrite_body(
+    content: bytes, content_type: str, device_id: uuid.UUID
+) -> bytes:
+    if not any(
+        kind in content_type.lower() for kind in ("text/html", "text/css", "javascript")
+    ):
+        return content
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return content
+    path_prefix = proxy_path_prefix(device_id)
+    text = re.sub(
+        r'(?P<attr>\b(?:href|src|action)=(["\']))/', rf"\g<attr>{path_prefix}/", text
+    )
+    text = re.sub(r'(?P<css>url\((["\']?))/', rf"\g<css>{path_prefix}/", text)
+    return text.encode("utf-8")
 
 
 async def probe_device_webgui(
@@ -1069,6 +1139,8 @@ async def proxy_device(
     db.commit()
     try:
         url = device_webgui_url(device) + path
+        if request.url.query:
+            url += "?" + request.url.query
     except ValueError as exc:
         raise HTTPException(
             status_code=500,
@@ -1081,7 +1153,7 @@ async def proxy_device(
             proxied = await client.request(
                 request.method,
                 url,
-                headers=proxy_request_headers(request),
+                headers=proxy_request_headers(request, device_id),
                 content=await request.body(),
             )
     except httpx.RequestError as exc:
@@ -1096,12 +1168,32 @@ async def proxy_device(
                 "on the tunnel interface."
             ),
         ) from exc
-    return Response(
-        content=proxied.content,
+    response_headers = {
+        k: v
+        for k, v in proxied.headers.items()
+        if k.lower()
+        not in {
+            "content-encoding",
+            "content-length",
+            "connection",
+            "location",
+            "set-cookie",
+            "transfer-encoding",
+        }
+    }
+    if location := proxied.headers.get("location"):
+        response_headers["location"] = proxy_rewrite_location(
+            location, device_id, device_webgui_url(device)
+        )
+    response = Response(
+        content=proxy_rewrite_body(
+            proxied.content, proxied.headers.get("content-type", ""), device_id
+        ),
         status_code=proxied.status_code,
-        headers={
-            k: v
-            for k, v in proxied.headers.items()
-            if k.lower() not in {"content-encoding", "transfer-encoding", "connection"}
-        },
+        headers=response_headers,
     )
+    for cookie in proxy_downstream_set_cookie_headers(
+        proxied.headers.get_list("set-cookie"), device_id
+    ):
+        response.headers.append("set-cookie", cookie)
+    return response
