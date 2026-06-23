@@ -699,7 +699,7 @@ select option {
 
 .firewalls-management-table,
 .nested-table {
-    border: 1px solid var(--line);
+    border: 0px solid var(--line);
     border-radius: var(--radius);
     border-collapse: separate;
     border-spacing: 0;
@@ -717,4 +717,5 @@ select option {
 }
 .nested-table-wrap {
     border-radius: var(--radius);
+    border: 0px;
 }
