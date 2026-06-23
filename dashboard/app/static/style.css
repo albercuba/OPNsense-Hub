@@ -665,12 +665,9 @@ select option {
 .company-row {
     cursor: pointer;
 }
-.company-row:hover {
-    background: rgba(255, 138, 31, 0.06);
-}
+.company-row:hover,
 .company-row:focus {
-    outline: 2px solid rgba(255, 138, 31, 0.25);
-    outline-offset: -2px;
+    background: rgba(255, 138, 31, 0.06);
 }
 .row-toggle-icon {
     width: 1rem;
