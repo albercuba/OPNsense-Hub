@@ -47,6 +47,14 @@ class ServiceController extends ApiControllerBase
         return array('status' => 'failed', 'message' => 'POST required');
     }
 
+    public function removeAction()
+    {
+        if ($this->request->isPost()) {
+            return $this->runJsonCommand('opnsensehub remove');
+        }
+        return array('status' => 'failed', 'message' => 'POST required');
+    }
+
     public function statusAction()
     {
         return $this->runJsonCommand('opnsensehub status');

@@ -32,7 +32,17 @@ def out(payload):
     print(json.dumps(payload))
 
 
+def update_state(**changes):
+    state = load_state()
+    state.update(changes)
+    save_state(state)
+
+
 def fail(message, exit_code=0):
+    try:
+        update_state(last_error=str(message))
+    except Exception:
+        pass
     out({"status": "error", "message": str(message)})
     sys.exit(exit_code)
 
@@ -486,6 +496,96 @@ def ensure_firewall_rule(
     return True
 
 
+def remove_matching_firewall_rules(root, descriptions):
+    filter_node = root.find("filter")
+    if filter_node is None:
+        return False
+    changed = False
+    description_set = set(descriptions)
+    for rule in list(filter_node.findall("rule")):
+        if rule.findtext("descr") in description_set:
+            filter_node.remove(rule)
+            changed = True
+    return changed
+
+
+def remove_webgui_listen_interface(root, interface_key):
+    webgui = root.find("./system/webgui")
+    if webgui is None or not interface_key:
+        return False
+
+    changed = False
+    for node in list(webgui.findall("interfaces")):
+        children = list(node)
+        if children:
+            for child in list(children):
+                if (child.text or "").strip() == interface_key:
+                    node.remove(child)
+                    changed = True
+            if len(list(node)) == 0 and not (node.text or "").strip():
+                webgui.remove(node)
+                changed = True
+            continue
+
+        values = [item.strip() for item in (node.text or "").split(",") if item.strip()]
+        if interface_key not in values:
+            continue
+        values = [value for value in values if value != interface_key]
+        if values:
+            node.text = ",".join(values)
+        else:
+            webgui.remove(node)
+        changed = True
+    return changed
+
+
+def remove_assigned_interface(root):
+    interfaces = root.find("interfaces")
+    if interfaces is None:
+        return None, False
+
+    for child in list(interfaces):
+        if (
+            child.findtext("if") == WG_IFACE
+            or child.findtext("descr") == ASSIGNED_IF_DESCR
+        ):
+            interface_key = child.tag
+            interfaces.remove(child)
+            return interface_key, True
+    return None, False
+
+
+def cleanup_opnsense_integration():
+    root = load_config_root()
+    interface_key = assigned_interface_key = None
+    interfaces = root.find("interfaces")
+    if interfaces is not None:
+        for child in list(interfaces):
+            if (
+                child.findtext("if") == WG_IFACE
+                or child.findtext("descr") == ASSIGNED_IF_DESCR
+            ):
+                assigned_interface_key = child.tag
+                break
+
+    changed = False
+    if assigned_interface_key:
+        changed |= remove_webgui_listen_interface(root, assigned_interface_key)
+    changed |= remove_matching_firewall_rules(root, [RULE_DESCR, FLOATING_RULE_DESCR])
+    interface_key, interface_removed = remove_assigned_interface(root)
+    changed |= interface_removed
+
+    if changed:
+        write_config_root(root)
+        run_cmd(["configctl", "filter", "reload"], check=False)
+        run_cmd(["service", "lighttpd", "onerestart"], check=False)
+
+    return {
+        "interface_key": interface_key or assigned_interface_key,
+        "config_changed": changed,
+    }
+
+
 def ensure_opnsense_integration(wg):
     root = load_config_root()
     allowed_ips = [
@@ -611,6 +711,7 @@ def main():
         ensure_hub_route(state["wireguard"])
         state["opnsense"] = opnsense
         state["status"] = "connected"
+        state["last_error"] = ""
         save_state(state)
         out(
             {
@@ -649,6 +750,7 @@ def main():
         "tunnel_ip": wireguard["interface_address"],
         "wireguard": wireguard,
         "status": "connected",
+        "last_error": "",
     }
     save_state(state)
     start_tunnel(private_key, wireguard)

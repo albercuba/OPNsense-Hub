@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from connect import license_metadata
+from connect import license_metadata, save_state
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
 
@@ -58,9 +58,12 @@ def main():
             body = json.loads(response.read().decode("utf-8"))
         state["status"] = "online"
         state["last_heartbeat"] = payload["timestamp"]
-        STATE_FILE.write_text(json.dumps(state, indent=2))
+        state["last_error"] = ""
+        save_state(state)
         print(json.dumps({"status": "ok", "hub_response": body}))
     except Exception:
+        state["last_error"] = "heartbeat failed"
+        save_state(state)
         print(json.dumps({"status": "error", "message": "heartbeat failed"}))
         sys.exit(1)
 

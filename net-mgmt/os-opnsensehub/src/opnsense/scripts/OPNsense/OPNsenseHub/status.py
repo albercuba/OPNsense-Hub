@@ -134,6 +134,8 @@ def main():
                 "webgui_listen": webgui_listen_status(root, interface_key),
                 "firewall_rule_present": firewall_rule_present(root),
                 "local_webgui_tcp_reachable": tcp_reachable(host, port),
+                "last_heartbeat": state.get("last_heartbeat"),
+                "last_error": state.get("last_error"),
             }
         )
     )
