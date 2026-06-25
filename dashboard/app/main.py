@@ -43,6 +43,7 @@ from .models import (
     Company,
     CompanyUser,
     Device,
+    DeviceBackup,
     DeviceEvent,
     EnrollmentCode,
     IntegrationSettings,
@@ -79,6 +80,9 @@ FIRMWARE_STATUSES = {"unknown", "none", "update", "upgrade", "error"}
 FIRMWARE_SUCCESS_STATUSES = {"none", "update", "upgrade"}
 FIRMWARE_VERSION_MAX_LENGTH = 80
 FIRMWARE_MESSAGE_MAX_LENGTH = 500
+DEVICE_BACKUP_RETENTION_MAX = 10
+DEVICE_BACKUP_INTERVAL_HOURS_MAX = 24 * 30
+DEVICE_BACKUP_CONTENT_MAX_LENGTH = 2_000_000
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -403,6 +407,31 @@ def ensure_schema_compat() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_enabled boolean NOT NULL DEFAULT false"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_retention_count integer NOT NULL DEFAULT 3"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_interval_hours integer NOT NULL DEFAULT 24"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_last_requested_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_last_uploaded_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
                   id uuid PRIMARY KEY,
@@ -454,6 +483,24 @@ def ensure_schema_compat() -> None:
                   updated_at timestamptz NOT NULL DEFAULT now()
                 )
                 """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS device_backups (
+                  id uuid PRIMARY KEY,
+                  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+                  filename text NOT NULL,
+                  content text NOT NULL,
+                  created_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_device_backups_device_id ON device_backups(device_id)"
             )
         )
 
@@ -547,6 +594,62 @@ def clean_optional(value: str | None) -> str | None:
     return stripped or None
 
 
+def parse_bounded_int(
+    value: object,
+    *,
+    field_name: str,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a number") from exc
+    if parsed < minimum or parsed > maximum:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} must be between {minimum} and {maximum}",
+        )
+    return parsed
+
+
+def backup_due(device: Device, now: datetime | None = None) -> bool:
+    if not device.backup_enabled:
+        return False
+    current_time = now or utc_now()
+    if device.backup_last_requested_at and (
+        device.backup_last_uploaded_at is None
+        or device.backup_last_uploaded_at < device.backup_last_requested_at
+    ):
+        return True
+    if device.backup_last_uploaded_at is None:
+        return True
+    return (
+        device.backup_last_uploaded_at + timedelta(hours=device.backup_interval_hours)
+        <= current_time
+    )
+
+
+def mark_device_backup_requested(device: Device, now: datetime | None = None) -> bool:
+    if not device.backup_enabled:
+        return False
+    current_time = now or utc_now()
+    if device.backup_last_requested_at and (
+        device.backup_last_uploaded_at is None
+        or device.backup_last_uploaded_at < device.backup_last_requested_at
+    ):
+        return True
+    if not backup_due(device, now=current_time):
+        return False
+    device.backup_last_requested_at = current_time
+    return True
+
+
+def normalize_backup_filename(device: Device, created_at: datetime) -> str:
+    safe_hostname = re.sub(r"[^A-Za-z0-9._-]+", "-", device.hostname).strip("-") or "firewall"
+    return f"{safe_hostname}-backup-{created_at.strftime('%Y%m%d%H%M%S')}.xml"
+
+
 def parse_license_expires_at(value: object) -> datetime | None:
     if value is None:
         return None
@@ -560,6 +663,11 @@ def parse_license_expires_at(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def parse_uploaded_backup_created_at(value: object) -> datetime:
+    parsed = parse_license_expires_at(value)
+    return parsed or utc_now()
 
 
 def normalize_device_license_payload(
@@ -1531,6 +1639,8 @@ def heartbeat(
     pending_firmware_check = device.firmware_check_requested_at is not None
     pending_firmware_check_at = device.firmware_check_requested_at
     pending_firmware_check_reason = device.firmware_check_request_reason
+    pending_backup = mark_device_backup_requested(device)
+    pending_backup_at = device.backup_last_requested_at
     db.commit()
     return {
         "ok": True,
@@ -1539,6 +1649,69 @@ def heartbeat(
         if pending_firmware_check_at
         else None,
         "firmware_check_request_reason": pending_firmware_check_reason,
+        "backup_requested": pending_backup,
+        "backup_requested_at": pending_backup_at.isoformat()
+        if pending_backup_at
+        else None,
+        "backup_retention_count": device.backup_retention_count
+        if device.backup_enabled
+        else None,
+        "backup_interval_hours": device.backup_interval_hours
+        if device.backup_enabled
+        else None,
+    }
+
+
+@app.post("/api/v1/devices/{device_id}/backups")
+def upload_device_backup(
+    device_id: uuid.UUID,
+    payload: dict[str, object],
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+):
+    device = device_from_token(db, device_id, authorization)
+    if not device.backup_enabled:
+        raise HTTPException(status_code=400, detail="backups are disabled for this firewall")
+    content = str(payload.get("content", ""))
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="backup content is required")
+    if len(content) > DEVICE_BACKUP_CONTENT_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail="backup content is too large")
+    created_at = parse_uploaded_backup_created_at(payload.get("created_at"))
+    filename = clean_optional(str(payload.get("filename", ""))) or normalize_backup_filename(
+        device, created_at
+    )
+    backup = DeviceBackup(
+        device_id=device.id,
+        filename=filename[:255],
+        content=content,
+        created_at=created_at,
+    )
+    device.backup_last_uploaded_at = utc_now()
+    device.backup_last_requested_at = None
+    db.add(backup)
+    db.flush()
+    backups = db.scalars(
+        select(DeviceBackup)
+        .where(DeviceBackup.device_id == device.id)
+        .order_by(DeviceBackup.created_at.desc(), DeviceBackup.id.desc())
+    ).all()
+    for stale_backup in backups[device.backup_retention_count :]:
+        db.delete(stale_backup)
+    db.add(
+        DeviceEvent(
+            device_id=device.id,
+            event_type="backup_uploaded",
+            message=f"Configuration backup uploaded: {backup.filename}"[:1000],
+        )
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "backup_id": str(backup.id),
+        "filename": backup.filename,
+        "created_at": backup.created_at.isoformat(),
+        "retained_count": min(len(backups), device.backup_retention_count),
     }
 
 
@@ -1584,6 +1757,11 @@ def device_page(
     device = db.get(Device, device_id)
     if not device or not has_company_role(db, user, device.company_id):
         raise HTTPException(status_code=404)
+    backups = db.scalars(
+        select(DeviceBackup)
+        .where(DeviceBackup.device_id == device.id)
+        .order_by(DeviceBackup.created_at.desc())
+    ).all()
     events = db.scalars(
         select(DeviceEvent)
         .where(DeviceEvent.device_id == device.id)
@@ -1597,8 +1775,10 @@ def device_page(
             "request": request,
             "user": user,
             "device": device,
+            "backups": backups,
             "events": events,
             "active_page": "companies",
+            "status": request.query_params.get("status"),
         },
     )
 
@@ -1634,8 +1814,82 @@ def get_device(
         "firmware_checked_at": device.firmware_checked_at.isoformat()
         if device.firmware_checked_at
         else None,
+        "backup_enabled": device.backup_enabled,
+        "backup_retention_count": device.backup_retention_count,
+        "backup_interval_hours": device.backup_interval_hours,
+        "backup_last_requested_at": device.backup_last_requested_at.isoformat()
+        if device.backup_last_requested_at
+        else None,
+        "backup_last_uploaded_at": device.backup_last_uploaded_at.isoformat()
+        if device.backup_last_uploaded_at
+        else None,
         "revoked_at": device.revoked_at.isoformat() if device.revoked_at else None,
     }
+
+
+@app.post("/devices/{device_id}/backup-settings")
+def update_device_backup_settings(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    backup_enabled: str | None = Form(None),
+    backup_retention_count: str = Form("3"),
+    backup_interval_hours: str = Form("24"),
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_role(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    device.backup_enabled = backup_enabled == "on"
+    device.backup_retention_count = parse_bounded_int(
+        backup_retention_count,
+        field_name="backup retention count",
+        minimum=1,
+        maximum=DEVICE_BACKUP_RETENTION_MAX,
+    )
+    device.backup_interval_hours = parse_bounded_int(
+        backup_interval_hours,
+        field_name="backup interval hours",
+        minimum=1,
+        maximum=DEVICE_BACKUP_INTERVAL_HOURS_MAX,
+    )
+    if device.backup_enabled:
+        mark_device_backup_requested(device)
+    else:
+        device.backup_last_requested_at = None
+    write_audit(
+        db,
+        request,
+        "device.backup_settings.update",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return RedirectResponse(
+        f"/devices/{device.id}?status=backup-settings-saved", status_code=303
+    )
+
+
+@app.get("/devices/{device_id}/backups/{backup_id}/download")
+def download_device_backup(
+    device_id: uuid.UUID,
+    backup_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_role(db, user, device.company_id):
+        raise HTTPException(status_code=404)
+    backup = db.get(DeviceBackup, backup_id)
+    if not backup or backup.device_id != device.id:
+        raise HTTPException(status_code=404)
+    headers = {"Content-Disposition": f'attachment; filename="{backup.filename}"'}
+    return Response(
+        content=backup.content.encode("utf-8"),
+        media_type="application/xml",
+        headers=headers,
+    )
 
 
 @app.post("/api/v1/devices/{device_id}/revoke")

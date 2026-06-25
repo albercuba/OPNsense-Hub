@@ -1,4 +1,8 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %} {% block content %} {% if status %}
+<div class="card status-card">
+    <i class="fa-solid fa-circle-check"></i> Backup settings saved.
+</div>
+{% endif %}
 <section class="card">
     <h1>{{ device.hostname }}</h1>
     <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
@@ -53,6 +57,91 @@
         >
     </p>
     {% endif %}
+</section>
+<section class="card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Configuration backups</h2>
+            <p class="muted">
+                Configure automatic firewall backups and download stored copies.
+            </p>
+        </div>
+    </div>
+    <form
+        action="/devices/{{ device.id }}/backup-settings"
+        method="post"
+        class="settings-grid-form"
+    >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="backup_enabled"
+                {% if device.backup_enabled %}checked{% endif %}
+            />
+            Enable configuration backups</label
+        >
+        <label class="form-row"
+            >Backups to keep
+            <input
+                type="number"
+                name="backup_retention_count"
+                min="1"
+                max="10"
+                value="{{ device.backup_retention_count }}"
+                required
+        /></label>
+        <label class="form-row"
+            >Backup interval (hours)
+            <input
+                type="number"
+                name="backup_interval_hours"
+                min="1"
+                max="720"
+                value="{{ device.backup_interval_hours }}"
+                required
+        /></label>
+        <div class="form-row">
+            <strong>Last uploaded</strong><br />{{
+            device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if
+            device.backup_last_uploaded_at else 'Never' }}
+        </div>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save backup settings
+            </button>
+        </div>
+    </form>
+</section>
+<section class="card">
+    <h2>Stored backups</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Created</th>
+                <th>Filename</th>
+                <th class="actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for backup in backups %}
+            <tr>
+                <td>{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ backup.filename }}</td>
+                <td class="actions">
+                    <a
+                        class="button secondary"
+                        href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
+                        ><i class="fa-solid fa-download"></i> Download</a
+                    >
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" class="muted">No backups stored yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </section>
 <section class="card">
     <h2>Device events</h2>

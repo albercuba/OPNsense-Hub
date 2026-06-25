@@ -220,6 +220,21 @@ class Device(Base):
     firmware_check_request_reason: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )
+    backup_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    backup_retention_count: Mapped[int] = mapped_column(
+        Integer, default=3, nullable=False
+    )
+    backup_interval_hours: Mapped[int] = mapped_column(
+        Integer, default=24, nullable=False
+    )
+    backup_last_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    backup_last_uploaded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -231,6 +246,30 @@ class Device(Base):
     )
 
     company: Mapped[Company] = relationship(back_populates="devices")
+    backups: Mapped[list["DeviceBackup"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+
+
+class DeviceBackup(Base):
+    __tablename__ = "device_backups"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+
+    device: Mapped[Device] = relationship(back_populates="backups")
 
 
 class DeviceEvent(Base):

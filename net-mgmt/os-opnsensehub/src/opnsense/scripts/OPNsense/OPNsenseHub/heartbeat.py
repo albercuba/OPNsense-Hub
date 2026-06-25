@@ -15,6 +15,7 @@ from connect import PLUGIN_VERSION, license_metadata, load_state, save_state
 from firmware_status import collect_firmware_status
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
+CONFIG_XML = Path("/conf/config.xml")
 
 
 def opnsense_version():
@@ -82,6 +83,46 @@ def request_firmware_check_pending(body):
     return bool(body.get("firmware_check_requested"))
 
 
+def backup_request_pending(body):
+    return bool(body.get("backup_requested"))
+
+
+def upload_backup(state):
+    if not CONFIG_XML.exists():
+        raise FileNotFoundError("config.xml not found")
+    created_at = heartbeat_timestamp()
+    filename = (
+        socket.gethostname().replace(" ", "-")
+        + "-"
+        + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        + ".xml"
+    )
+    req = urllib.request.Request(
+        state["hub_url"].rstrip("/")
+        + "/api/v1/devices/"
+        + state["device_id"]
+        + "/backups",
+        data=json.dumps(
+            {
+                "filename": filename,
+                "created_at": created_at,
+                "content": CONFIG_XML.read_text(),
+            }
+        ).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + state["device_token"],
+            "User-Agent": "os-opnsensehub/0.1",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    state["last_backup_at"] = created_at
+    save_state(state)
+    return body
+
+
 def main():
     if not STATE_FILE.exists():
         print(json.dumps({"status": "error", "message": "not enrolled"}))
@@ -95,6 +136,8 @@ def main():
             state["firmware"] = firmware
             save_state(state)
             response_body = send_heartbeat(state, heartbeat_payload(state, firmware))
+        if backup_request_pending(response_body):
+            upload_backup(state)
         print(json.dumps({"status": "ok", "hub_response": response_body}))
     except urllib.error.HTTPError as exc:
         state["last_error"] = f"heartbeat failed with HTTP {exc.code}"

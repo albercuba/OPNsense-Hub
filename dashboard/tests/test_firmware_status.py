@@ -4,13 +4,15 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from app.main import (
+    backup_due,
     firmware_status_ui,
     heartbeat,
     mark_devices_for_firmware_check,
     normalize_device_firmware_payload,
     run_firmware_schedule_once,
+    upload_device_backup,
 )
-from app.models import Device, DeviceEvent
+from app.models import Device, DeviceBackup, DeviceEvent
 from app.security import hash_secret
 
 
@@ -23,13 +25,21 @@ class FakeScalarResult:
 
 
 class FakeDb:
-    def __init__(self, devices=None, device=None):
+    def __init__(self, devices=None, device=None, backups=None):
         self.devices = devices or ([] if device is None else [device])
         self.device = device
+        self.backups = backups or []
         self.added = []
+        self.deleted = []
         self.committed = False
 
-    def scalars(self, _statement):
+    def scalars(self, statement):
+        statement_text = str(statement)
+        if "device_backups" in statement_text:
+            ordered = sorted(
+                self.backups, key=lambda item: (item.created_at, item.id), reverse=True
+            )
+            return FakeScalarResult(ordered)
         return FakeScalarResult(self.devices)
 
     def get(self, model, key):
@@ -39,9 +49,19 @@ class FakeDb:
 
     def add(self, obj):
         self.added.append(obj)
+        if isinstance(obj, DeviceBackup) and obj not in self.backups:
+            self.backups.append(obj)
 
     def commit(self):
         self.committed = True
+
+    def flush(self):
+        return None
+
+    def delete(self, obj):
+        self.deleted.append(obj)
+        if obj in self.backups:
+            self.backups.remove(obj)
 
 
 class FakeSessionContext:
@@ -71,6 +91,9 @@ def make_device(hostname, token="device-token", **overrides):
         firmware_update_available=False,
         firmware_update_count=0,
         firmware_reboot_required=False,
+        backup_enabled=False,
+        backup_retention_count=3,
+        backup_interval_hours=24,
         created_at=now,
     )
     for key, value in overrides.items():
@@ -148,6 +171,42 @@ def test_heartbeat_response_includes_pending_firmware_request():
     assert db.committed is True
 
 
+def test_backup_due_when_enabled_and_never_uploaded():
+    device = make_device(
+        "fw-backup-due",
+        backup_enabled=True,
+        backup_retention_count=3,
+        backup_interval_hours=24,
+    )
+
+    assert backup_due(device) is True
+
+
+def test_heartbeat_response_includes_pending_backup_request():
+    token = "device-token"
+    device = make_device(
+        "fw-backup-heartbeat",
+        token=token,
+        backup_enabled=True,
+        backup_retention_count=4,
+        backup_interval_hours=12,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {"status": "online", "hostname": "fw-backup-heartbeat"},
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["backup_requested"] is True
+    assert response["backup_requested_at"] is not None
+    assert response["backup_retention_count"] == 4
+    assert response["backup_interval_hours"] == 12
+    assert db.committed is True
+
+
 def test_heartbeat_applies_firmware_result_and_clears_pending_request():
     token = "device-token"
     device = make_device(
@@ -191,6 +250,58 @@ def test_heartbeat_applies_firmware_result_and_clears_pending_request():
     assert device.firmware_check_request_reason is None
     assert any(
         isinstance(event, DeviceEvent) and event.event_type == "heartbeat"
+        for event in db.added
+    )
+
+
+def test_upload_device_backup_rotates_to_retention_limit():
+    token = "device-token"
+    uploaded_at = datetime(2026, 6, 25, 23, 0, tzinfo=timezone.utc)
+    device = make_device(
+        "fw-backup-upload",
+        token=token,
+        backup_enabled=True,
+        backup_retention_count=2,
+        backup_interval_hours=24,
+        backup_last_requested_at=uploaded_at,
+    )
+    existing_backups = [
+        DeviceBackup(
+            id=uuid4(),
+            device_id=device.id,
+            filename="fw-backup-upload-backup-1.xml",
+            content="<config>1</config>",
+            created_at=datetime(2026, 6, 23, 23, 0, tzinfo=timezone.utc),
+        ),
+        DeviceBackup(
+            id=uuid4(),
+            device_id=device.id,
+            filename="fw-backup-upload-backup-2.xml",
+            content="<config>2</config>",
+            created_at=datetime(2026, 6, 24, 23, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    db = FakeDb(device=device, backups=existing_backups)
+
+    response = upload_device_backup(
+        device.id,
+        {
+            "filename": "fw-backup-upload-backup-3.xml",
+            "created_at": "2026-06-25T23:00:00Z",
+            "content": "<config>3</config>",
+        },
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["ok"] is True
+    assert response["filename"] == "fw-backup-upload-backup-3.xml"
+    assert len(db.backups) == 2
+    assert len(db.deleted) == 1
+    assert device.backup_last_requested_at is None
+    assert device.backup_last_uploaded_at is not None
+    assert any(
+        isinstance(event, DeviceEvent) and event.event_type == "backup_uploaded"
         for event in db.added
     )
 
