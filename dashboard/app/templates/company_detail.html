@@ -46,6 +46,14 @@
                     device.last_seen_at else 'Never' }}
                 </td>
                 <td class="actions">
+                    {% set fw = firmware_status_ui(device) %}
+                    <span
+                        class="icon-button {{ fw['class'] }}"
+                        title="{{ fw['tooltip'] }}"
+                        aria-label="{{ fw['label'] }}"
+                    >
+                        <i class="{{ fw['icon'] }}"></i>
+                    </span>
                     <a
                         class="icon-button"
                         href="/devices/{{ device.id }}"

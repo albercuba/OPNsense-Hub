@@ -54,6 +54,8 @@ docker-compose.yml
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
 - Branding logo upload with persistent storage and login/app-shell rendering.
+- Daily firmware update-status checks requested by Hub and executed locally by the OPNsense plugin at 23:00 Hub time.
+- Colored firmware status icons in the firewalls table for unknown, up to date, updates available, upgrade available, and check failed states.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
 
 ## Run locally
@@ -132,6 +134,23 @@ On connect, the OPNsense plugin provisions the firewall side for Hub access:
 - If WebGUI listen interfaces are explicitly restricted, adds the assigned `OPNHUB` interface to that list.
 
 It does not add customer LAN routes or broad allow rules, and the Hub host drops forwarded `wg0 -> wg0` traffic so enrolled firewalls cannot talk to one another through the overlay.
+
+## Firmware update status checks
+
+Firmware checks are request/report only:
+
+- The Hub scheduler marks active, non-revoked firewalls for a firmware check once per day at `23:00` Hub/container local time.
+- The Hub does not run firmware probes and does not install updates.
+- The OPNsense plugin performs the local check on the firewall with native firmware commands and reports normalized status back on heartbeat.
+- If a firewall already completed the scheduled check for that local day, the Hub does not request it again automatically.
+
+Firmware status colors in the firewalls table:
+
+- `unknown` = gray
+- `none` = green
+- `update` = blue
+- `upgrade` = orange
+- `error` = red
 
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 

@@ -1,19 +1,26 @@
 #!/usr/local/bin/python3
 import json
 import socket
-import subprocess
 import sys
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from connect import license_metadata, save_state
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from connect import PLUGIN_VERSION, license_metadata, load_state, save_state
+from firmware_status import collect_firmware_status
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
 
 
 def opnsense_version():
     try:
+        import subprocess
+
         result = subprocess.run(
             ["opnsense-version"], capture_output=True, text=True, timeout=10
         )
@@ -24,27 +31,36 @@ def opnsense_version():
     return "unknown"
 
 
-def main():
-    if not STATE_FILE.exists():
-        print(json.dumps({"status": "error", "message": "not enrolled"}))
-        sys.exit(1)
-    state = json.loads(STATE_FILE.read_text())
+def heartbeat_timestamp():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def heartbeat_payload(state, firmware=None):
     payload = {
         "status": "online",
         "hostname": socket.gethostname(),
         "opnsense_version": opnsense_version(),
-        "tunnel_ip": state.get("tunnel_ip"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "plugin_version": PLUGIN_VERSION,
+        "timestamp": heartbeat_timestamp(),
         **license_metadata(),
     }
-    url = (
+    if firmware is not None:
+        payload["firmware"] = firmware
+    return payload
+
+
+def heartbeat_url(state):
+    return (
         state["hub_url"].rstrip("/")
         + "/api/v1/devices/"
         + state["device_id"]
         + "/heartbeat"
     )
+
+
+def send_heartbeat(state, payload):
     req = urllib.request.Request(
-        url,
+        heartbeat_url(state),
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers={
@@ -53,14 +69,45 @@ def main():
             "User-Agent": "os-opnsensehub/0.1",
         },
     )
+    with urllib.request.urlopen(req, timeout=20) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    state["status"] = "online"
+    state["last_heartbeat"] = payload["timestamp"]
+    state["last_error"] = ""
+    save_state(state)
+    return body
+
+
+def request_firmware_check_pending(body):
+    return bool(body.get("firmware_check_requested"))
+
+
+def main():
+    if not STATE_FILE.exists():
+        print(json.dumps({"status": "error", "message": "not enrolled"}))
+        sys.exit(1)
+
+    state = load_state()
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        state["status"] = "online"
-        state["last_heartbeat"] = payload["timestamp"]
-        state["last_error"] = ""
+        response_body = send_heartbeat(state, heartbeat_payload(state))
+        if request_firmware_check_pending(response_body):
+            firmware = collect_firmware_status()
+            state["firmware"] = firmware
+            save_state(state)
+            response_body = send_heartbeat(state, heartbeat_payload(state, firmware))
+        print(json.dumps({"status": "ok", "hub_response": response_body}))
+    except urllib.error.HTTPError as exc:
+        state["last_error"] = f"heartbeat failed with HTTP {exc.code}"
         save_state(state)
-        print(json.dumps({"status": "ok", "hub_response": body}))
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": state["last_error"],
+                }
+            )
+        )
+        sys.exit(1)
     except Exception:
         state["last_error"] = "heartbeat failed"
         save_state(state)

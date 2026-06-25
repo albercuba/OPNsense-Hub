@@ -46,6 +46,8 @@ sequenceDiagram
 - Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
 - By default the Hub disables IPv4/IPv6 forwarding and installs an idempotent firewall rule that drops forwarded `wg0 -> wg0` traffic to preserve peer isolation.
 - Reverse proxying is implemented in FastAPI and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
+- A lightweight background scheduler marks active, non-revoked devices for a firmware status check once per day at `23:00` in the Hub process timezone.
+- The Hub only stores and displays reported firmware status; it does not probe or install firewall updates itself.
 - Branding uploads are stored in a persistent directory and served back through `/branding/logo`, with uploaded assets taking precedence over any configured fallback logo URL.
 
 For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels, the app container runs with `NET_ADMIN` and `/dev/net/tun` so it can configure `wg0` itself.
@@ -57,7 +59,8 @@ The plugin is scaffolded using standard OPNsense MVC/configd layout:
 - PHP MVC controllers only save settings and invoke configd actions.
 - Privileged operations live in Python scripts under `src/opnsense/scripts/OPNsense/OPNsenseHub`.
 - The plugin generates the WireGuard private key locally; the private key is never sent to Hub.
-- The plugin validates Hub-returned `interface_address` and `allowed_ips` before rendering config, reusing saved state, or starting the WireGuard client.
+- The plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the WireGuard client.
+- The plugin checks the Hub heartbeat response for pending firmware-check requests, runs the firmware probe locally on the firewall, and reports normalized status back to the Hub.
 - Enrollment code is cleared after successful enrollment.
 - Device token is stored locally with restrictive file permissions by the backend script.
 
@@ -71,6 +74,7 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - Dashboard users are authorized at company scope through `company_users`.
 - The Hub never stores OPNsense administrator passwords.
 - Firewall access is reverse-proxied through WireGuard and audit logged.
+- Firmware status reporting is local-first: the firewall plugin performs the check, the Hub stores the result, and no update is installed automatically.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
 - The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.
 - Firewalls must never be able to reach each other or route customer LANs through the Hub overlay.

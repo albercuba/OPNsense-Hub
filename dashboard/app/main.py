@@ -4,7 +4,7 @@ import ipaddress
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Annotated
@@ -74,6 +74,11 @@ app = FastAPI(title=settings.app_name)
 APP_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
+
+FIRMWARE_STATUSES = {"unknown", "none", "update", "upgrade", "error"}
+FIRMWARE_SUCCESS_STATUSES = {"none", "update", "upgrade"}
+FIRMWARE_VERSION_MAX_LENGTH = 80
+FIRMWARE_MESSAGE_MAX_LENGTH = 500
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -287,6 +292,29 @@ async def device_health_check_loop() -> None:
         await asyncio.sleep(interval)
 
 
+async def run_firmware_schedule_once(now: datetime | None = None) -> int:
+    current_time = now or datetime.now().astimezone()
+    if current_time.hour != 23:
+        return 0
+    with SessionLocal() as db:
+        marked = mark_devices_for_firmware_check(
+            db, reason="scheduled", now=current_time
+        )
+        if marked:
+            db.commit()
+            logger.info("Marked %s firewalls for scheduled firmware check", marked)
+        return marked
+
+
+async def firmware_check_schedule_loop() -> None:
+    while True:
+        try:
+            await run_firmware_schedule_once()
+        except Exception:
+            logger.exception("Firmware check scheduler failed")
+        await asyncio.sleep(60)
+
+
 def ensure_schema_compat() -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -316,6 +344,61 @@ def ensure_schema_compat() -> None:
         conn.execute(
             text(
                 "ALTER TABLE devices ADD COLUMN IF NOT EXISTS license_expires_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_status text NOT NULL DEFAULT 'unknown'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_available boolean NOT NULL DEFAULT false"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_type text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_current_version text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_available_version text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_count integer NOT NULL DEFAULT 0"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_reboot_required boolean NOT NULL DEFAULT false"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_status_message text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_checked_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_check_requested_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_check_request_reason text NULL"
             )
         )
         conn.execute(
@@ -402,16 +485,20 @@ async def on_startup() -> None:
     apply_startup_hardening(settings)
     bootstrap()
     app.state.health_check_task = asyncio.create_task(device_health_check_loop())
+    app.state.firmware_schedule_task = asyncio.create_task(
+        firmware_check_schedule_loop()
+    )
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    task = getattr(app.state, "health_check_task", None)
-    if task is None:
-        return
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    for task_name in ("health_check_task", "firmware_schedule_task"):
+        task = getattr(app.state, task_name, None)
+        if task is None:
+            continue
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
@@ -517,6 +604,196 @@ def device_license_expiration(device: Device, now: datetime | None = None) -> st
     return expiration_date.strftime("%m-%d-%Y")
 
 
+def parse_firmware_checked_at(value: object) -> datetime | None:
+    return parse_license_expires_at(value)
+
+
+def truncate_optional_text(value: object, max_length: int) -> str | None:
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    if not text_value:
+        return None
+    return text_value[:max_length]
+
+
+def normalize_device_firmware_payload(
+    payload: dict[str, object], now: datetime | None = None
+) -> dict[str, object] | None:
+    raw_firmware = payload.get("firmware")
+    if raw_firmware is None:
+        return None
+    current_time = now or utc_now()
+    if not isinstance(raw_firmware, dict):
+        return {
+            "status": "error",
+            "update_available": False,
+            "update_type": None,
+            "current_version": None,
+            "available_version": None,
+            "update_count": 0,
+            "reboot_required": False,
+            "message": "Invalid firmware status payload reported by firewall",
+            "checked_at": current_time,
+        }
+
+    raw_status = truncate_optional_text(raw_firmware.get("status"), 30)
+    normalized_status = (raw_status or "error").lower()
+    message = truncate_optional_text(
+        raw_firmware.get("message"), FIRMWARE_MESSAGE_MAX_LENGTH
+    )
+    if normalized_status not in {"none", "update", "upgrade", "error"}:
+        normalized_status = "error"
+        if not message:
+            message = "Invalid firmware status reported by firewall"
+
+    raw_update_type = truncate_optional_text(raw_firmware.get("update_type"), 30)
+    normalized_update_type = raw_update_type.lower() if raw_update_type else None
+    if normalized_update_type not in {None, "none", "update", "upgrade", "error"}:
+        normalized_update_type = None
+
+    try:
+        update_count = max(0, int(raw_firmware.get("update_count", 0) or 0))
+    except (TypeError, ValueError):
+        update_count = 0
+
+    checked_at = (
+        parse_firmware_checked_at(raw_firmware.get("checked_at")) or current_time
+    )
+    update_available = bool(raw_firmware.get("update_available"))
+    if normalized_status in {"update", "upgrade"}:
+        update_available = True
+    elif normalized_status == "none":
+        update_available = False
+
+    return {
+        "status": normalized_status,
+        "update_available": update_available,
+        "update_type": normalized_update_type,
+        "current_version": truncate_optional_text(
+            raw_firmware.get("current_version"), FIRMWARE_VERSION_MAX_LENGTH
+        ),
+        "available_version": truncate_optional_text(
+            raw_firmware.get("available_version"), FIRMWARE_VERSION_MAX_LENGTH
+        ),
+        "update_count": update_count,
+        "reboot_required": bool(raw_firmware.get("reboot_required")),
+        "message": message,
+        "checked_at": checked_at,
+    }
+
+
+def apply_device_firmware_payload(
+    device: Device, payload: dict[str, object], now: datetime | None = None
+) -> bool:
+    firmware = normalize_device_firmware_payload(payload, now=now)
+    if firmware is None:
+        return False
+    device.firmware_status = str(firmware["status"])
+    device.firmware_update_available = bool(firmware["update_available"])
+    device.firmware_update_type = firmware["update_type"]
+    device.firmware_current_version = firmware["current_version"]
+    device.firmware_available_version = firmware["available_version"]
+    device.firmware_update_count = int(firmware["update_count"])
+    device.firmware_reboot_required = bool(firmware["reboot_required"])
+    device.firmware_status_message = firmware["message"]
+    device.firmware_checked_at = firmware["checked_at"]
+    device.firmware_check_requested_at = None
+    device.firmware_check_request_reason = None
+    return True
+
+
+def firmware_status_local_date(value: datetime | None) -> date | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone().date()
+
+
+def device_has_firmware_check_for_day(device: Device, scheduled_day) -> bool:
+    return firmware_status_local_date(device.firmware_checked_at) == scheduled_day
+
+
+def device_has_pending_firmware_request_for_day(device: Device, scheduled_day) -> bool:
+    return (
+        device.firmware_check_request_reason == "scheduled"
+        and firmware_status_local_date(device.firmware_check_requested_at)
+        == scheduled_day
+    )
+
+
+def mark_devices_for_firmware_check(
+    db: Session, reason: str = "scheduled", now: datetime | None = None
+) -> int:
+    scheduled_time = now or datetime.now().astimezone()
+    requested_at = scheduled_time.astimezone(timezone.utc)
+    scheduled_day = scheduled_time.date()
+    devices = db.scalars(
+        select(Device).where(Device.revoked_at.is_(None)).order_by(Device.hostname)
+    ).all()
+    marked = 0
+    for device in devices:
+        if device.revoked_at is not None:
+            continue
+        if device_has_firmware_check_for_day(device, scheduled_day):
+            continue
+        if device_has_pending_firmware_request_for_day(device, scheduled_day):
+            continue
+        device.firmware_check_requested_at = requested_at
+        device.firmware_check_request_reason = reason[:30]
+        marked += 1
+    return marked
+
+
+def firmware_status_ui(device: Device) -> dict[str, str]:
+    status = (device.firmware_status or "unknown").lower()
+    if status not in FIRMWARE_STATUSES:
+        status = "unknown"
+    checked_at_text = None
+    if device.firmware_checked_at:
+        checked_at_text = device.firmware_checked_at.astimezone().strftime(
+            "%Y-%m-%d %H:%M"
+        )
+
+    mapping = {
+        "unknown": {
+            "label": "Unknown",
+            "class": "text-muted",
+            "icon": "fa-solid fa-circle-question",
+            "tooltip": "Firmware status unknown",
+        },
+        "none": {
+            "label": "Up to date",
+            "class": "text-success",
+            "icon": "fa-solid fa-circle-check",
+            "tooltip": f"Up to date: {device.firmware_current_version or device.opnsense_version or 'Unknown'}",
+        },
+        "update": {
+            "label": "Updates available",
+            "class": "text-info",
+            "icon": "fa-solid fa-circle-exclamation",
+            "tooltip": f"Updates available: {device.firmware_available_version or device.firmware_current_version or 'Unknown'}",
+        },
+        "upgrade": {
+            "label": "Upgrade available",
+            "class": "text-warning",
+            "icon": "fa-solid fa-triangle-exclamation",
+            "tooltip": f"Upgrade available: {device.firmware_available_version or 'Unknown'}",
+        },
+        "error": {
+            "label": "Check failed",
+            "class": "text-danger",
+            "icon": "fa-solid fa-circle-xmark",
+            "tooltip": f"Update check failed: {device.firmware_status_message or 'Unknown error'}",
+        },
+    }
+    result = dict(mapping[status])
+    if checked_at_text:
+        result["tooltip"] = f"{result['tooltip']}\nLast checked: {checked_at_text}"
+    return result
+
+
 def current_brand_logo_url(db: Session | None = None) -> str | None:
     if uploaded_logo_path(settings.branding_upload_dir):
         return "/branding/logo"
@@ -539,6 +816,7 @@ def render_template(
     payload.setdefault("brand_logo_url", current_brand_logo_url(db))
     payload.setdefault("device_license_label", device_license_label)
     payload.setdefault("device_license_expiration", device_license_expiration)
+    payload.setdefault("firmware_status_ui", firmware_status_ui)
     return templates.TemplateResponse(
         template_name,
         payload,
@@ -1239,12 +1517,29 @@ def heartbeat(
     if plugin_version is not None:
         device.plugin_version = str(plugin_version)[:80]
     apply_device_license_payload(device, payload)
+    firmware_applied = apply_device_firmware_payload(device, payload)
     device.last_seen_at = utc_now()
+    event_message = device.status
+    if firmware_applied:
+        event_message = (
+            f"{device.status}; firmware={device.firmware_status}; "
+            f"updates={device.firmware_update_count}"
+        )[:1000]
     db.add(
-        DeviceEvent(device_id=device.id, event_type="heartbeat", message=device.status)
+        DeviceEvent(device_id=device.id, event_type="heartbeat", message=event_message)
     )
+    pending_firmware_check = device.firmware_check_requested_at is not None
+    pending_firmware_check_at = device.firmware_check_requested_at
+    pending_firmware_check_reason = device.firmware_check_request_reason
     db.commit()
-    return {"ok": True}
+    return {
+        "ok": True,
+        "firmware_check_requested": pending_firmware_check,
+        "firmware_check_requested_at": pending_firmware_check_at.isoformat()
+        if pending_firmware_check_at
+        else None,
+        "firmware_check_request_reason": pending_firmware_check_reason,
+    }
 
 
 @app.get("/api/v1/companies/{company_id}/devices")
@@ -1267,6 +1562,12 @@ def list_devices(
             "license": device_license_label(d),
             "license_expires_at": d.license_expires_at.isoformat()
             if d.license_expires_at
+            else None,
+            "firmware_status": d.firmware_status,
+            "firmware_update_available": d.firmware_update_available,
+            "firmware_available_version": d.firmware_available_version,
+            "firmware_checked_at": d.firmware_checked_at.isoformat()
+            if d.firmware_checked_at
             else None,
         }
         for d in devices
@@ -1322,6 +1623,17 @@ def get_device(
         else None,
         "tunnel_ip": str(device.wg_tunnel_ip),
         "status": device.status,
+        "firmware_status": device.firmware_status,
+        "firmware_update_available": device.firmware_update_available,
+        "firmware_update_type": device.firmware_update_type,
+        "firmware_current_version": device.firmware_current_version,
+        "firmware_available_version": device.firmware_available_version,
+        "firmware_update_count": device.firmware_update_count,
+        "firmware_reboot_required": device.firmware_reboot_required,
+        "firmware_status_message": device.firmware_status_message,
+        "firmware_checked_at": device.firmware_checked_at.isoformat()
+        if device.firmware_checked_at
+        else None,
         "revoked_at": device.revoked_at.isoformat() if device.revoked_at else None,
     }
 

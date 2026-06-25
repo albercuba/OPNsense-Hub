@@ -193,6 +193,33 @@ class Device(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
     health_missed_checks: Mapped[int] = mapped_column(default=0, nullable=False)
     health_success_checks: Mapped[int] = mapped_column(default=0, nullable=False)
+    firmware_status: Mapped[str] = mapped_column(
+        String(30), default="unknown", nullable=False
+    )
+    firmware_update_available: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    firmware_update_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    firmware_current_version: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )
+    firmware_available_version: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )
+    firmware_update_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    firmware_reboot_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    firmware_status_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firmware_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firmware_check_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firmware_check_request_reason: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

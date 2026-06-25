@@ -525,13 +525,24 @@
         enctype="multipart/form-data"
         class="settings-form narrow-form"
     >
-        <label class="form-row"
-            >Upload logo
-            <input
-                type="file"
-                name="branding_logo_file"
-                accept="image/png,image/jpeg,image/webp"
-        /></label>
+        <div class="form-row">
+            <span>Upload logo</span>
+            <div class="file-upload-control">
+                <input
+                    class="file-upload-input"
+                    id="branding_logo_file"
+                    type="file"
+                    name="branding_logo_file"
+                    accept="image/png,image/jpeg,image/webp"
+                />
+                <label class="button secondary" for="branding_logo_file">
+                    <i class="fa-solid fa-upload"></i> Choose logo file
+                </label>
+                <span class="file-upload-name" data-file-upload-name
+                    >No file selected</span
+                >
+            </div>
+        </div>
         <label class="form-row"
             >Fallback logo URL
             <input
@@ -540,8 +551,8 @@
                 placeholder="https://example.com/logo.png"
         /></label>
         <p class="muted">
-            Uploaded PNG, JPEG, or WebP logos take precedence over the fallback
-            URL.
+            Uploaded PNG, JPEG, or WebP logos are used for the header, login
+            page, and favicon before the fallback URL.
         </p>
         <label class="checkbox-label"
             ><input type="checkbox" name="remove_logo" /> Remove uploaded logo
@@ -557,4 +568,19 @@
     </div>
     {% endif %}
 </section>
+<script>
+    (function () {
+        const input = document.getElementById("branding_logo_file");
+        const fileName = document.querySelector("[data-file-upload-name]");
+        if (!input || !fileName) {
+            return;
+        }
+        input.addEventListener("change", function () {
+            fileName.textContent =
+                input.files && input.files.length
+                    ? input.files[0].name
+                    : "No file selected";
+        });
+    })();
+</script>
 {% endif %} {% endblock %}

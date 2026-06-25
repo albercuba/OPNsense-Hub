@@ -30,9 +30,9 @@ class FakeDb:
         return FakeResult([(value,) for value in self.tunnel_ips])
 
 
-def load_connect_module():
+def load_plugin_module(filename, module_name):
     root = Path(__file__).resolve().parents[2]
-    connect_path = (
+    module_path = (
         root
         / "net-mgmt"
         / "os-opnsensehub"
@@ -41,14 +41,22 @@ def load_connect_module():
         / "scripts"
         / "OPNsense"
         / "OPNsenseHub"
-        / "connect.py"
+        / filename
     )
-    spec = importlib.util.spec_from_file_location("opnsensehub_connect", connect_path)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_connect_module():
+    return load_plugin_module("connect.py", "opnsensehub_connect")
+
+
+def load_firmware_status_module():
+    return load_plugin_module("firmware_status.py", "opnsensehub_firmware_status")
 
 
 def test_validate_public_key_accepts_wireguard_shape():
@@ -148,3 +156,79 @@ def test_plugin_license_metadata_defaults_to_community_without_license(monkeypat
         "license_type": "Community",
         "license_expires_at": None,
     }
+
+
+def test_plugin_firmware_parser_maps_up_to_date_payload():
+    firmware_status = load_firmware_status_module()
+
+    parsed = firmware_status.parse_firmware_product(
+        {
+            "product_version": "25.7.11",
+            "product_latest": "25.7.11",
+            "all_packages": [],
+            "status_msg": "System is up to date",
+        },
+        now=__import__("datetime").datetime(
+            2026, 6, 25, 23, 3, tzinfo=__import__("datetime").timezone.utc
+        ),
+    )
+
+    assert parsed["status"] == "none"
+    assert parsed["update_available"] is False
+    assert parsed["current_version"] == "25.7.11"
+    assert parsed["available_version"] == "25.7.11"
+
+
+def test_plugin_firmware_parser_maps_update_payload():
+    firmware_status = load_firmware_status_module()
+
+    parsed = firmware_status.parse_firmware_product(
+        {
+            "product_version": "25.7.10",
+            "product_latest": "25.7.11",
+            "all_packages": [
+                {"name": "opnsense", "new_version": "25.7.11"},
+                {"name": "php", "new_version": "8.3.20"},
+            ],
+            "status_msg": "There are 2 updates available.",
+        }
+    )
+
+    assert parsed["status"] == "update"
+    assert parsed["update_available"] is True
+    assert parsed["update_type"] == "update"
+    assert parsed["update_count"] == 2
+
+
+def test_plugin_firmware_parser_maps_upgrade_payload():
+    firmware_status = load_firmware_status_module()
+
+    parsed = firmware_status.parse_firmware_product(
+        {
+            "product_version": "25.7.11",
+            "upgrade_major_version": "26.1",
+            "upgrade_sets": [{"name": "26.1", "new_version": "26.1"}],
+            "status_msg": "A major upgrade is available.",
+        }
+    )
+
+    assert parsed["status"] == "upgrade"
+    assert parsed["update_available"] is True
+    assert parsed["update_type"] == "upgrade"
+    assert parsed["available_version"] == "26.1"
+
+
+def test_plugin_firmware_parser_maps_error_payload():
+    firmware_status = load_firmware_status_module()
+
+    parsed = firmware_status.parse_firmware_product(
+        {
+            "status": "error",
+            "message": "firmware probe failed",
+            "product_version": "25.7.11",
+        }
+    )
+
+    assert parsed["status"] == "error"
+    assert parsed["update_available"] is False
+    assert parsed["message"] == "firmware probe failed"
