@@ -47,54 +47,49 @@
                     Management</a
                 >
                 {% if user and user.role == 'administrator' %}
-                <details
-                    class="side-menu-group"
-                    {%
-                    if
-                    active_page=""
-                    ="settings"
-                    %}open{%
-                    endif
-                    %}
-                >
-                    <summary
-                        class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"
-                    >
-                        <i class="fa-solid fa-gear"></i> Settings
-                    </summary>
-                    <div class="side-menu-submenu">
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
-                            href="/settings/manage-companies"
-                            >Manage Companies</a
+                    {% if active_page == 'settings' %}
+                    <details class="side-menu-group" open>
+                    {% else %}
+                    <details class="side-menu-group">
+                    {% endif %}
+                        <summary
+                            class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"
                         >
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
-                            href="/settings/manage-users"
-                            >Manage Users</a
-                        >
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
-                            href="/settings/email-settings"
-                            >Email Settings</a
-                        >
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
-                            href="/settings/microsoft-365"
-                            >Microsoft 365 Integration</a
-                        >
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
-                            href="/settings/local-ad"
-                            >Microsoft Local AD Integration</a
-                        >
-                        <a
-                            class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
-                            href="/settings/branding"
-                            >Branding</a
-                        >
-                    </div>
-                </details>
+                            <i class="fa-solid fa-gear"></i> Settings
+                        </summary>
+                        <div class="side-menu-submenu">
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
+                                href="/settings/manage-companies"
+                                >Manage Companies</a
+                            >
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
+                                href="/settings/manage-users"
+                                >Manage Users</a
+                            >
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
+                                href="/settings/email-settings"
+                                >Email Settings</a
+                            >
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
+                                href="/settings/microsoft-365"
+                                >Microsoft 365 Integration</a
+                            >
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
+                                href="/settings/local-ad"
+                                >Microsoft Local AD Integration</a
+                            >
+                            <a
+                                class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
+                                href="/settings/branding"
+                                >Branding</a
+                            >
+                        </div>
+                    </details>
                 {% endif %}
             </aside>
             <main class="shell">{% block content %}{% endblock %}</main>
