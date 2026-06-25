@@ -114,7 +114,7 @@ $( document ).ready(function() {
   <div class="col-md-12 opnsensehub-actions">
     <button class="btn btn-primary" id="saveAct" type="button"><b>Save</b></button>
     <button class="btn btn-success" id="connectAct" type="button"><b>Connect</b></button>
-    <button class="btn btn-danger" id="disconnectAct" type="button"><b>Disconnect</b></button>
+    <button class="btn btn-warning" id="disconnectAct" type="button"><b>Disconnect</b></button>
     <button class="btn btn-danger" id="removeAct" type="button"><b>Remove</b></button>
   </div>
 </div>
