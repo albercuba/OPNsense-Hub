@@ -11,7 +11,6 @@
             Integration{% elif active_settings == 'branding' %}Branding{% endif
             %}
         </h1>
-        <p class="muted">Administrative configuration for OPNsense Hub.</p>
     </div>
 </section>
 
@@ -23,7 +22,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Add company</h2>
-        <p class="muted">Create a company before enrolling firewalls for it.</p>
     </div>
     <form
         action="/settings/companies"
@@ -127,10 +125,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Create user</h2>
-        <p class="muted">
-            Dashboard roles control access to global settings. Company access
-            still uses company-level RBAC.
-        </p>
     </div>
     <form action="/settings/users" method="post" class="settings-grid-form">
         <label class="form-row"
