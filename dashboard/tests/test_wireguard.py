@@ -120,3 +120,31 @@ def test_plugin_validate_wireguard_payload_rejects_broad_allowed_ips():
                 "allowed_ips": "100.96.0.0/16",
             }
         )
+
+
+def test_plugin_license_metadata_marks_business_when_license_present(monkeypatch):
+    connect = load_connect_module()
+    monkeypatch.setattr(
+        connect,
+        "firmware_product",
+        lambda: {"product_license": {"valid_to": "2026-12-31"}},
+    )
+
+    metadata = connect.license_metadata()
+
+    assert metadata == {
+        "license_type": "Business",
+        "license_expires_at": "2026-12-31",
+    }
+
+
+def test_plugin_license_metadata_defaults_to_community_without_license(monkeypatch):
+    connect = load_connect_module()
+    monkeypatch.setattr(connect, "firmware_product", lambda: {})
+
+    metadata = connect.license_metadata()
+
+    assert metadata == {
+        "license_type": "Community",
+        "license_expires_at": None,
+    }

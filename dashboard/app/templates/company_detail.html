@@ -1,47 +1,133 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "base.html" %} {% block content %}
 <section class="card">
-  <h1>{{ company.name }}</h1>
-  <form action="/api/v1/companies/{{ company.id }}/enrollment-codes" method="post" data-enrollment-form>
-    <button class="button" type="submit"><i class="fa-solid fa-key"></i> Generate enrollment OTP</button>
-  </form>
+    <h1>{{ company.name }}</h1>
+    <form
+        action="/api/v1/companies/{{ company.id }}/enrollment-codes"
+        method="post"
+        data-enrollment-form
+    >
+        <button class="button" type="submit">
+            <i class="fa-solid fa-key"></i> Generate enrollment OTP
+        </button>
+    </form>
 </section>
 <section class="card">
-  <h2>Firewalls</h2>
-  <table>
-    <thead><tr><th>Hostname</th><th>OPNsense</th><th>Plugin</th><th>Tunnel IP</th><th>Status</th><th>Last seen</th><th class="actions">Actions</th></tr></thead>
-    <tbody>
-    {% for device in devices %}
-      <tr>
-        <td>{{ device.hostname }}</td>
-        <td>{{ device.opnsense_version or 'Unknown' }}</td>
-        <td>{{ device.plugin_version or 'Unknown' }}</td>
-        <td>{{ device.wg_tunnel_ip }}</td>
-        <td><span class="status {{ device.status }}">{{ device.status }}</span></td>
-        <td>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'Never' }}</td>
-        <td class="actions">
-          <a class="icon-button" href="/devices/{{ device.id }}" title="Details"><i class="fa-solid fa-circle-info"></i></a>
-          {% if device.revoked_at %}
-            <form action="/api/v1/devices/{{ device.id }}/delete" method="post" class="inline-action-form" onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.')">
-              <input type="hidden" name="redirect_to" value="/companies/{{ company.id }}">
-              <button class="icon-button danger-text" title="Remove"><i class="fa-solid fa-trash"></i></button>
-            </form>
-          {% else %}
-            <a class="icon-button" href="/proxy/devices/{{ device.id }}/" title="Open OPNsense UI" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-up-right-from-square"></i></a>
-            <form action="/api/v1/devices/{{ device.id }}/revoke" method="post" class="inline-action-form" onsubmit="return confirm('Revoke this firewall?')"><button class="icon-button" title="Revoke"><i class="fa-solid fa-ban"></i></button></form>
-          {% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="7" class="muted">No firewalls enrolled yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    <h2>Firewalls</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>OPNsense</th>
+                <th>Plugin</th>
+                <th>License</th>
+                <th>Expiration</th>
+                <th>Tunnel IP</th>
+                <th>Status</th>
+                <th>Last seen</th>
+                <th class="actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device in devices %}
+            <tr>
+                <td>{{ device.hostname }}</td>
+                <td>{{ device.opnsense_version or 'Unknown' }}</td>
+                <td>{{ device.plugin_version or 'Unknown' }}</td>
+                <td>{{ device_license_label(device) }}</td>
+                <td>{{ device_license_expiration(device) }}</td>
+                <td>{{ device.wg_tunnel_ip }}</td>
+                <td>
+                    <span class="status {{ device.status }}"
+                        >{{ device.status }}</span
+                    >
+                </td>
+                <td>
+                    {{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if
+                    device.last_seen_at else 'Never' }}
+                </td>
+                <td class="actions">
+                    <a
+                        class="icon-button"
+                        href="/devices/{{ device.id }}"
+                        title="Details"
+                        ><i class="fa-solid fa-circle-info"></i
+                    ></a>
+                    {% if device.revoked_at %}
+                    <form
+                        action="/api/v1/devices/{{ device.id }}/delete"
+                        method="post"
+                        class="inline-action-form"
+                        onsubmit="
+                            return confirm(
+                                'Remove this revoked firewall? This cannot be undone.',
+                            );
+                        "
+                    >
+                        <input
+                            type="hidden"
+                            name="redirect_to"
+                            value="/companies/{{ company.id }}"
+                        />
+                        <button class="icon-button danger-text" title="Remove">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </form>
+                    {% else %}
+                    <a
+                        class="icon-button"
+                        href="/proxy/devices/{{ device.id }}/"
+                        title="Open OPNsense UI"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        ><i class="fa-solid fa-up-right-from-square"></i
+                    ></a>
+                    <form
+                        action="/api/v1/devices/{{ device.id }}/revoke"
+                        method="post"
+                        class="inline-action-form"
+                        onsubmit="return confirm('Revoke this firewall?');"
+                    >
+                        <button class="icon-button" title="Revoke">
+                            <i class="fa-solid fa-ban"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="9" class="muted">No firewalls enrolled yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </section>
 <section class="card">
-  <h2>Recent enrollment codes</h2>
-  <table><thead><tr><th>Created</th><th>Expires</th><th>Used</th></tr></thead><tbody>
-  {% for code in codes %}<tr><td>{{ code.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ code.expires_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ code.used_at.strftime('%Y-%m-%d %H:%M') if code.used_at else 'No' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No codes generated.</td></tr>{% endfor %}
-  </tbody></table>
+    <h2>Recent enrollment codes</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Created</th>
+                <th>Expires</th>
+                <th>Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for code in codes %}
+            <tr>
+                <td>{{ code.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ code.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>
+                    {{ code.used_at.strftime('%Y-%m-%d %H:%M') if code.used_at
+                    else 'No' }}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" class="muted">No codes generated.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </section>
 {% endblock %}

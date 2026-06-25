@@ -183,6 +183,10 @@ class Device(Base):
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     opnsense_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     plugin_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    license_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    license_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     wg_public_key: Mapped[str] = mapped_column(String(80), nullable=False)
     wg_tunnel_ip: Mapped[str] = mapped_column(INET, nullable=False, unique=True)
     device_token_hash: Mapped[str] = mapped_column(Text, nullable=False)

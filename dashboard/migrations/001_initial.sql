@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS devices (
   hostname text NOT NULL,
   opnsense_version text NULL,
   plugin_version text NULL,
+  license_type text NULL,
+  license_expires_at timestamptz NULL,
   wg_public_key text NOT NULL,
   wg_tunnel_ip inet NOT NULL UNIQUE,
   device_token_hash text NOT NULL,

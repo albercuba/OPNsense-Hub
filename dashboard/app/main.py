@@ -4,7 +4,7 @@ import ipaddress
 import logging
 import re
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Annotated
@@ -311,6 +311,14 @@ def ensure_schema_compat() -> None:
             )
         )
         conn.execute(
+            text("ALTER TABLE devices ADD COLUMN IF NOT EXISTS license_type text NULL")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS license_expires_at timestamptz NULL"
+            )
+        )
+        conn.execute(
             text(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -452,6 +460,63 @@ def clean_optional(value: str | None) -> str | None:
     return stripped or None
 
 
+def parse_license_expires_at(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    if not text_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def normalize_device_license_payload(
+    payload: dict[str, object],
+) -> tuple[str | None, datetime | None]:
+    raw_license_type = clean_optional(
+        str(payload.get("license_type", ""))
+        if payload.get("license_type") is not None
+        else None
+    )
+    if not raw_license_type:
+        return None, None
+    normalized_type = raw_license_type.lower()
+    if normalized_type not in {"business", "community"}:
+        return None, None
+    if normalized_type == "community":
+        return "community", None
+    return "business", parse_license_expires_at(payload.get("license_expires_at"))
+
+
+def apply_device_license_payload(device: Device, payload: dict[str, object]) -> None:
+    license_type, license_expires_at = normalize_device_license_payload(payload)
+    if license_type is None:
+        return
+    device.license_type = license_type
+    device.license_expires_at = license_expires_at
+
+
+def device_license_label(device: Device) -> str:
+    return "Business" if device.license_type == "business" else "Community"
+
+
+def device_license_expiration(device: Device, now: datetime | None = None) -> str:
+    if device.license_type != "business":
+        return "-"
+    if not device.license_expires_at:
+        return "-"
+    current_time = now or utc_now()
+    expiration_date = device.license_expires_at.astimezone(timezone.utc).date()
+    if expiration_date < current_time.date():
+        return "Expired"
+    return expiration_date.strftime("%m-%d-%Y")
+
+
 def current_brand_logo_url(db: Session | None = None) -> str | None:
     if uploaded_logo_path(settings.branding_upload_dir):
         return "/branding/logo"
@@ -472,6 +537,8 @@ def render_template(
 ):
     payload = dict(context)
     payload.setdefault("brand_logo_url", current_brand_logo_url(db))
+    payload.setdefault("device_license_label", device_license_label)
+    payload.setdefault("device_license_expiration", device_license_expiration)
     return templates.TemplateResponse(
         template_name,
         payload,
@@ -1107,6 +1174,7 @@ def enroll(
         status="online",
         last_seen_at=now,
     )
+    apply_device_license_payload(device, payload)
     try:
         add_peer(wg_public_key, tunnel_ip)
     except WireGuardError as exc:
@@ -1167,6 +1235,10 @@ def heartbeat(
     opnsense_version = payload.get("opnsense_version")
     if opnsense_version is not None:
         device.opnsense_version = str(opnsense_version)[:80]
+    plugin_version = payload.get("plugin_version")
+    if plugin_version is not None:
+        device.plugin_version = str(plugin_version)[:80]
+    apply_device_license_payload(device, payload)
     device.last_seen_at = utc_now()
     db.add(
         DeviceEvent(device_id=device.id, event_type="heartbeat", message=device.status)
@@ -1192,6 +1264,10 @@ def list_devices(
             "status": d.status,
             "tunnel_ip": str(d.wg_tunnel_ip),
             "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+            "license": device_license_label(d),
+            "license_expires_at": d.license_expires_at.isoformat()
+            if d.license_expires_at
+            else None,
         }
         for d in devices
     ]
@@ -1240,6 +1316,10 @@ def get_device(
         "hostname": device.hostname,
         "opnsense_version": device.opnsense_version,
         "plugin_version": device.plugin_version,
+        "license": device_license_label(device),
+        "license_expires_at": device.license_expires_at.isoformat()
+        if device.license_expires_at
+        else None,
         "tunnel_ip": str(device.wg_tunnel_ip),
         "status": device.status,
         "revoked_at": device.revoked_at.isoformat() if device.revoked_at else None,

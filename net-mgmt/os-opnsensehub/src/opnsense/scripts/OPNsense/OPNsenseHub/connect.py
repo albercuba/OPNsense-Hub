@@ -142,6 +142,38 @@ def opnsense_version():
     return "unknown"
 
 
+def firmware_product():
+    try:
+        result = subprocess.run(
+            ["/usr/local/opnsense/scripts/firmware/product.php"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return {}
+    if result.returncode != 0:
+        return {}
+    try:
+        payload = json.loads(result.stdout)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def license_metadata():
+    product = firmware_product()
+    product_license = product.get("product_license")
+    if isinstance(product_license, dict) and product_license:
+        valid_to = str(product_license.get("valid_to", "")).strip()
+        return {
+            "license_type": "Business",
+            "license_expires_at": valid_to or None,
+        }
+    return {"license_type": "Community", "license_expires_at": None}
+
+
 def post_json(url, payload, token=None):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -603,6 +635,7 @@ def main():
             "opnsense_version": opnsense_version(),
             "plugin_version": PLUGIN_VERSION,
             "wg_public_key": pub,
+            **license_metadata(),
         },
     )
     wireguard = validate_wireguard_payload(

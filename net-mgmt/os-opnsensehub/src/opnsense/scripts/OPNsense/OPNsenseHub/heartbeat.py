@@ -7,6 +7,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from connect import license_metadata
+
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
 
 
@@ -33,6 +35,7 @@ def main():
         "opnsense_version": opnsense_version(),
         "tunnel_ip": state.get("tunnel_ip"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        **license_metadata(),
     }
     url = (
         state["hub_url"].rstrip("/")

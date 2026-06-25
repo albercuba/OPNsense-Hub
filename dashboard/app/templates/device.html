@@ -1,27 +1,82 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "base.html" %} {% block content %}
 <section class="card">
-  <h1>{{ device.hostname }}</h1>
-  <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
-  <div class="grid">
-    <div><strong>OPNsense</strong><br>{{ device.opnsense_version or 'Unknown' }}</div>
-    <div><strong>Plugin</strong><br>{{ device.plugin_version or 'Unknown' }}</div>
-    <div><strong>Tunnel IP</strong><br>{{ device.wg_tunnel_ip }}</div>
-    <div><strong>Last seen</strong><br>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'Never' }}</div>
-  </div>
-  {% if device.revoked_at %}
-    <form action="/api/v1/devices/{{ device.id }}/delete" method="post" class="inline-action-form" onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.')">
-      <input type="hidden" name="redirect_to" value="/companies">
-      <button class="button danger-text" type="submit"><i class="fa-solid fa-trash"></i> Remove revoked firewall</button>
+    <h1>{{ device.hostname }}</h1>
+    <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
+    <div class="grid">
+        <div>
+            <strong>OPNsense</strong><br />{{ device.opnsense_version or
+            'Unknown' }}
+        </div>
+        <div>
+            <strong>Plugin</strong><br />{{ device.plugin_version or 'Unknown'
+            }}
+        </div>
+        <div>
+            <strong>License</strong><br />{{ device_license_label(device) }}
+        </div>
+        <div>
+            <strong>Expiration</strong><br />{{
+            device_license_expiration(device) }}
+        </div>
+        <div><strong>Tunnel IP</strong><br />{{ device.wg_tunnel_ip }}</div>
+        <div>
+            <strong>Last seen</strong><br />{{
+            device.last_seen_at.strftime('%Y-%m-%d %H:%M') if
+            device.last_seen_at else 'Never' }}
+        </div>
+    </div>
+    {% if device.revoked_at %}
+    <form
+        action="/api/v1/devices/{{ device.id }}/delete"
+        method="post"
+        class="inline-action-form"
+        onsubmit="
+            return confirm(
+                'Remove this revoked firewall? This cannot be undone.',
+            );
+        "
+    >
+        <input type="hidden" name="redirect_to" value="/companies" />
+        <button class="button danger-text" type="submit">
+            <i class="fa-solid fa-trash"></i> Remove revoked firewall
+        </button>
     </form>
-  {% else %}
-    <p><a class="button" href="/proxy/devices/{{ device.id }}/" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-up-right-from-square"></i> Open OPNsense UI</a></p>
-  {% endif %}
+    {% else %}
+    <p>
+        <a
+            class="button"
+            href="/proxy/devices/{{ device.id }}/"
+            target="_blank"
+            rel="noopener noreferrer"
+            ><i class="fa-solid fa-up-right-from-square"></i> Open OPNsense
+            UI</a
+        >
+    </p>
+    {% endif %}
 </section>
 <section class="card">
-  <h2>Device events</h2>
-  <table><thead><tr><th>Time</th><th>Type</th><th>Message</th></tr></thead><tbody>
-  {% for event in events %}<tr><td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ event.event_type }}</td><td>{{ event.message or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No events yet.</td></tr>{% endfor %}
-  </tbody></table>
+    <h2>Device events</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr>
+                <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ event.event_type }}</td>
+                <td>{{ event.message or '' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" class="muted">No events yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </section>
 {% endblock %}
