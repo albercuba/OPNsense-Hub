@@ -1,3 +1,10 @@
+<style>
+.opnsensehub-actions {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+</style>
+
 <script>
 $( document ).ready(function() {
     var data_get_map = {'frm_GeneralSettings': '/api/opnsensehub/settings/get'};
@@ -104,7 +111,7 @@ $( document ).ready(function() {
 
 <div class="content-box">
   {{ partial('layout_partials/base_form', ['fields': formGeneral, 'id': 'frm_GeneralSettings']) }}
-  <div class="col-md-12">
+  <div class="col-md-12 opnsensehub-actions">
     <button class="btn btn-primary" id="saveAct" type="button"><b>Save</b></button>
     <button class="btn btn-success" id="connectAct" type="button"><b>Connect</b></button>
     <button class="btn btn-danger" id="disconnectAct" type="button"><b>Disconnect</b></button>
