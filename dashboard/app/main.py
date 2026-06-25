@@ -6,19 +6,38 @@ import re
 import uuid
 from datetime import timedelta
 from http.cookies import SimpleCookie
+from pathlib import Path
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from .audit import write_audit
+from .branding import (
+    BrandingError,
+    clear_uploaded_logo,
+    save_uploaded_logo,
+    uploaded_logo_path,
+    validate_branding_upload,
+)
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
+from .hardening import apply_startup_hardening
 from .health import HealthState, HealthThresholds, next_health_state
 from .models import (
     Company,
@@ -27,10 +46,18 @@ from .models import (
     DeviceEvent,
     EnrollmentCode,
     IntegrationSettings,
+    SessionToken,
     User,
 )
 from .rbac import has_company_role
-from .security import hash_secret, random_otp, random_token, utc_now, verify_secret
+from .security import (
+    hash_secret,
+    hash_session_token,
+    random_otp,
+    random_token,
+    utc_now,
+    verify_secret,
+)
 from .wireguard import (
     WireGuardError,
     add_peer,
@@ -44,8 +71,9 @@ from .wireguard import (
 settings = get_settings()
 logger = logging.getLogger(__name__)
 app = FastAPI(title=settings.app_name)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+APP_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -285,6 +313,28 @@ def ensure_schema_compat() -> None:
         conn.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS sessions (
+                  id uuid PRIMARY KEY,
+                  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  token_hash text NOT NULL UNIQUE,
+                  created_at timestamptz NOT NULL DEFAULT now(),
+                  expires_at timestamptz NOT NULL,
+                  revoked_at timestamptz NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)"
+            )
+        )
+        conn.execute(
+            text(
+                """
                 CREATE TABLE IF NOT EXISTS integration_settings (
                   id integer PRIMARY KEY DEFAULT 1,
                   smtp_enabled boolean NOT NULL DEFAULT false,
@@ -341,6 +391,7 @@ def bootstrap() -> None:
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    apply_startup_hardening(settings)
     bootstrap()
     app.state.health_check_task = asyncio.create_task(device_health_check_loop())
 
@@ -356,14 +407,8 @@ async def on_shutdown() -> None:
 
 
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
-    user_id = request.cookies.get(settings.session_cookie_name)
-    if not user_id:
-        raise HTTPException(status_code=401)
-    try:
-        parsed = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=401) from None
-    user = db.get(User, parsed)
+    session = session_from_request(request, db)
+    user = db.get(User, session.user_id)
     if not user:
         raise HTTPException(status_code=401)
     return user
@@ -407,6 +452,60 @@ def clean_optional(value: str | None) -> str | None:
     return stripped or None
 
 
+def current_brand_logo_url(db: Session | None = None) -> str | None:
+    if uploaded_logo_path(settings.branding_upload_dir):
+        return "/branding/logo"
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    try:
+        integration_settings = db.get(IntegrationSettings, 1)
+        return integration_settings.branding_logo_url if integration_settings else None
+    finally:
+        if close_db:
+            db.close()
+
+
+def render_template(
+    db: Session | None, template_name: str, context: dict, status_code: int = 200
+):
+    payload = dict(context)
+    payload.setdefault("brand_logo_url", current_brand_logo_url(db))
+    return templates.TemplateResponse(
+        template_name,
+        payload,
+        status_code=status_code,
+    )
+
+
+def create_user_session(db: Session, user: User) -> str:
+    token = random_token(48)
+    now = utc_now()
+    db.add(
+        SessionToken(
+            user_id=user.id,
+            token_hash=hash_session_token(settings.secret_key, token),
+            created_at=now,
+            expires_at=now + timedelta(hours=settings.session_ttl_hours),
+        )
+    )
+    return token
+
+
+def session_from_request(request: Request, db: Session) -> SessionToken:
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token:
+        raise HTTPException(status_code=401)
+    token_hash = hash_session_token(settings.secret_key, token)
+    session = db.scalar(
+        select(SessionToken).where(SessionToken.token_hash == token_hash)
+    )
+    if not session or session.revoked_at or session.expires_at <= utc_now():
+        raise HTTPException(status_code=401)
+    return session
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Annotated[Session, Depends(get_db)]):
     user = ui_user(request, db)
@@ -417,7 +516,7 @@ def index(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return render_template(None, "login.html", {"request": request, "error": None})
 
 
 @app.post("/api/v1/auth/login")
@@ -430,18 +529,21 @@ def login(
 ):
     user = db.scalar(select(User).where(User.email == email.lower().strip()))
     if not user or not verify_secret(password, user.password_hash):
-        return templates.TemplateResponse(
+        return render_template(
+            db,
             "login.html",
             {"request": request, "error": "Invalid email or password"},
             status_code=401,
         )
+    token = create_user_session(db, user)
     response = RedirectResponse("/companies", status_code=303)
     response.set_cookie(
         settings.session_cookie_name,
-        str(user.id),
+        token,
         httponly=True,
         secure=settings.session_secure,
         samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
     )
     write_audit(db, request, "auth.login", user=user)
     db.commit()
@@ -454,6 +556,8 @@ def logout(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
 ):
+    session = session_from_request(request, db)
+    session.revoked_at = utc_now()
     write_audit(db, request, "auth.logout", user=user)
     db.commit()
     response = RedirectResponse("/login", status_code=303)
@@ -479,7 +583,8 @@ def companies_page(
         .where(CompanyUser.user_id == user.id)
         .order_by(Company.name)
     ).all()
-    return templates.TemplateResponse(
+    return render_template(
+        db,
         "companies.html",
         {
             "request": request,
@@ -517,7 +622,8 @@ def settings_page(
     companies = db.scalars(select(Company).order_by(Company.name)).all()
     users = db.scalars(select(User).order_by(User.email)).all()
     integration_settings = get_or_create_integration_settings(db)
-    return templates.TemplateResponse(
+    return render_template(
+        db,
         "settings.html",
         {
             "request": request,
@@ -723,19 +829,45 @@ def update_local_ad_settings(
     return RedirectResponse("/settings/local-ad?status=local-ad-saved", status_code=303)
 
 
+@app.get("/branding/logo")
+def branding_logo():
+    logo_path = uploaded_logo_path(settings.branding_upload_dir)
+    if not logo_path:
+        raise HTTPException(status_code=404)
+    media_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".webp": "image/webp",
+    }[logo_path.suffix]
+    return FileResponse(logo_path, media_type=media_type)
+
+
 @app.post("/settings/branding")
-def update_branding_settings(
+async def update_branding_settings(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
     branding_logo_url: str = Form(""),
     remove_logo: str | None = Form(None),
+    branding_logo_file: UploadFile | None = File(None),
 ):
     require_admin(user)
     integration_settings = get_or_create_integration_settings(db)
-    integration_settings.branding_logo_url = (
-        None if remove_logo == "on" else clean_optional(branding_logo_url)
-    )
+    integration_settings.branding_logo_url = clean_optional(branding_logo_url)
+    if remove_logo == "on":
+        clear_uploaded_logo(settings.branding_upload_dir)
+        integration_settings.branding_logo_url = None
+    elif branding_logo_file and branding_logo_file.filename:
+        content = await branding_logo_file.read()
+        try:
+            extension, _content_type = validate_branding_upload(
+                branding_logo_file,
+                content,
+                settings.branding_logo_max_bytes,
+            )
+        except BrandingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        save_uploaded_logo(settings.branding_upload_dir, extension, content)
     integration_settings.updated_at = utc_now()
     write_audit(db, request, "settings.branding.update", user=user)
     db.commit()
@@ -872,7 +1004,8 @@ def company_detail(
         .order_by(EnrollmentCode.created_at.desc())
         .limit(5)
     ).all()
-    return templates.TemplateResponse(
+    return render_template(
+        db,
         "company_detail.html",
         {
             "request": request,
@@ -925,7 +1058,8 @@ def create_enrollment_code(
                 "expires_at_display": expires_at.strftime("%Y-%m-%d %H:%M UTC"),
             }
         )
-    return templates.TemplateResponse(
+    return render_template(
+        db,
         "otp.html",
         {
             "request": request,
@@ -1079,7 +1213,8 @@ def device_page(
         .order_by(DeviceEvent.created_at.desc())
         .limit(25)
     ).all()
-    return templates.TemplateResponse(
+    return render_template(
+        db,
         "device.html",
         {
             "request": request,

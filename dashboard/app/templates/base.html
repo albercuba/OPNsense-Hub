@@ -1,42 +1,107 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OPNsense Hub</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark"><i class="fa-solid fa-shield-halved"></i></span> OPNsense Hub</div>
-    <nav class="nav">
-      {% if user %}
-      <span class="user-summary"><i class="fa-solid fa-user"></i> {{ user.email }}</span>
-      {% endif %}
-      <form action="/api/v1/auth/logout" method="post"><button class="link-button" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button></form>
-    </nav>
-  </header>
-  <div class="app-layout">
-    <aside class="side-menu" aria-label="Primary navigation">
-      <a class="side-menu-link {% if active_page == 'companies' %}active{% endif %}" href="/companies"><i class="fa-solid fa-building"></i> Firewalls Management</a>
-      {% if user and user.role == 'administrator' %}
-      <details class="side-menu-group" {% if active_page == 'settings' %}open{% endif %}>
-        <summary class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"><i class="fa-solid fa-gear"></i> Settings</summary>
-        <div class="side-menu-submenu">
-          <a class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}" href="/settings/manage-companies">Manage Companies</a>
-          <a class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}" href="/settings/manage-users">Manage Users</a>
-          <a class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}" href="/settings/email-settings">Email Settings</a>
-          <a class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}" href="/settings/microsoft-365">Microsoft 365 Integration</a>
-          <a class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}" href="/settings/local-ad">Microsoft Local AD Integration</a>
-          <a class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}" href="/settings/branding">Branding</a>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>OPNsense Hub</title>
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        />
+        <link rel="stylesheet" href="/static/style.css" />
+    </head>
+    <body>
+        <header class="topbar">
+            <div class="brand">
+                {% if brand_logo_url %}
+                <img
+                    class="brand-logo"
+                    src="{{ brand_logo_url }}"
+                    alt="OPNsense Hub logo"
+                />
+                {% else %}
+                <span class="brand-mark"
+                    ><i class="fa-solid fa-shield-halved"></i
+                ></span>
+                {% endif %} OPNsense Hub
+            </div>
+            <nav class="nav">
+                {% if user %}
+                <span class="user-summary"
+                    ><i class="fa-solid fa-user"></i> {{ user.email }}</span
+                >
+                {% endif %}
+                <form action="/api/v1/auth/logout" method="post">
+                    <button class="link-button" type="submit">
+                        <i class="fa-solid fa-right-from-bracket"></i> Sign out
+                    </button>
+                </form>
+            </nav>
+        </header>
+        <div class="app-layout">
+            <aside class="side-menu" aria-label="Primary navigation">
+                <a
+                    class="side-menu-link {% if active_page == 'companies' %}active{% endif %}"
+                    href="/companies"
+                    ><i class="fa-solid fa-building"></i> Firewalls
+                    Management</a
+                >
+                {% if user and user.role == 'administrator' %}
+                <details
+                    class="side-menu-group"
+                    {%
+                    if
+                    active_page=""
+                    ="settings"
+                    %}open{%
+                    endif
+                    %}
+                >
+                    <summary
+                        class="side-menu-link {% if active_page == 'settings' %}active{% endif %}"
+                    >
+                        <i class="fa-solid fa-gear"></i> Settings
+                    </summary>
+                    <div class="side-menu-submenu">
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
+                            href="/settings/manage-companies"
+                            >Manage Companies</a
+                        >
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
+                            href="/settings/manage-users"
+                            >Manage Users</a
+                        >
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
+                            href="/settings/email-settings"
+                            >Email Settings</a
+                        >
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
+                            href="/settings/microsoft-365"
+                            >Microsoft 365 Integration</a
+                        >
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
+                            href="/settings/local-ad"
+                            >Microsoft Local AD Integration</a
+                        >
+                        <a
+                            class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
+                            href="/settings/branding"
+                            >Branding</a
+                        >
+                    </div>
+                </details>
+                {% endif %}
+            </aside>
+            <main class="shell">{% block content %}{% endblock %}</main>
         </div>
-      </details>
-      {% endif %}
-    </aside>
-    <main class="shell">{% block content %}{% endblock %}</main>
-  </div>
-  <footer class="footer">OPNsense Hub · secure firewall control plane</footer>
-  <script src="/static/app.js"></script>
-</body>
+        <footer class="footer">
+            OPNsense Hub · secure firewall control plane
+        </footer>
+        <script src="/static/app.js"></script>
+    </body>
 </html>

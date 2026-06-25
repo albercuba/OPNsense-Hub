@@ -39,6 +39,7 @@ docker-compose.yml
 ## Features
 
 - Dashboard login with seeded initial admin.
+- Random server-side dashboard session tokens stored hashed with expiration and revocation.
 - Company/group creation.
 - Company-scoped RBAC model in the database.
 - Short-lived single-use OTP enrollment codes stored hashed.
@@ -46,11 +47,13 @@ docker-compose.yml
 - Device tokens stored hashed; heartbeat uses bearer token auth.
 - Automatic Hub WireGuard server bootstrap and peer restore on container startup.
 - `/32`-only WireGuard routes for firewall web UI access; customer LAN subnets are never routed.
+- Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and optional automatic Hub firewall isolation rules.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, and proxy access.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
+- Branding logo upload with persistent storage and login/app-shell rendering.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
 
 ## Run locally
@@ -73,7 +76,9 @@ INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=change-me
 ```
 
-By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, and restores enrolled peers from the database.
+By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, restores enrolled peers from the database, disables IP forwarding inside the container, and installs an idempotent `wg0 -> wg0` forward-drop rule unless you explicitly opt out.
+
+Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
 
 ## Exact dashboard commands
 
@@ -90,12 +95,15 @@ OPNsense Hub is a management overlay for opening each firewall's own web UI. It 
 
 The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false`:
 
-1. Generates `/etc/wireguard/server.key` if it does not exist.
-2. Derives the Hub server public key from that private key.
-3. Renders `/etc/wireguard/wg0.conf` using `HUB_WG_ADDRESS` and `HUB_WG_LISTEN_PORT`.
-4. Runs `wg-quick up /etc/wireguard/wg0.conf` when `wg0` is not already running.
-5. Restores all non-revoked device peers from the database on startup.
-6. Adds each newly enrolled firewall as a `/32` peer.
+1. Validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` before allocating peers.
+2. Generates `/etc/wireguard/server.key` if it does not exist.
+3. Derives the Hub server public key from that private key.
+4. Renders `/etc/wireguard/wg0.conf` using `HUB_WG_ADDRESS` and `HUB_WG_LISTEN_PORT`.
+5. Runs `wg-quick up /etc/wireguard/wg0.conf` when `wg0` is not already running.
+6. Restores all non-revoked device peers from the database on startup.
+7. Adds each newly enrolled firewall as a `/32` peer.
+8. Disables IPv4/IPv6 forwarding unless `HUB_ENABLE_IP_FORWARDING=true`.
+9. Installs an idempotent isolation rule that drops forwarded `wg0 -> wg0` traffic when `HUB_MANAGE_FIREWALL_RULES=true`.
 
 AllowedIPs are intentionally narrow:
 
@@ -117,14 +125,32 @@ Required inbound ports for a typical deployment:
 
 On connect, the OPNsense plugin provisions the firewall side for Hub access:
 
+- Validates that the returned WireGuard `interface_address` is IPv4 `/32` and that `allowed_ips` contains exactly one Hub tunnel IPv4 `/32`.
 - Creates and starts the runtime WireGuard interface `wgopnhub`.
 - Assigns/enables it in OPNsense as `OPNHUB` when not already assigned.
 - Adds one narrow pass rule allowing the Hub tunnel IP, for example `100.96.0.1/32`, to reach `This Firewall` on the configured WebGUI port.
 - If WebGUI listen interfaces are explicitly restricted, adds the assigned `OPNHUB` interface to that list.
 
-It does not add customer LAN routes or broad allow rules.
+It does not add customer LAN routes or broad allow rules, and the Hub host drops forwarded `wg0 -> wg0` traffic so enrolled firewalls cannot talk to one another through the overlay.
 
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
+
+## Production defaults
+
+Set `APP_ENV=production` to enable strict startup validation. In production the app refuses to start when any of these remain insecure:
+
+- `SECRET_KEY=change-me` or a too-short secret
+- `INITIAL_ADMIN_EMAIL=admin@example.com`
+- `INITIAL_ADMIN_PASSWORD=change-me` or a weak password
+- `SESSION_SECURE=false`
+- `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
+- `PROXY_VERIFY_TLS=false` unless `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`
+
+In development the same conditions remain usable but are logged as warnings.
+
+## Branding uploads
+
+The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRANDING_LOGO_MAX_BYTES` and stores them under `BRANDING_UPLOAD_DIR`. Uploaded branding takes precedence over `branding_logo_url`, appears on the login page and dashboard shell, and can be removed with the Branding settings form.
 
 ## OPNsense plugin build/install commands
 
@@ -160,7 +186,7 @@ Services > OPNsense Hub
 6. Click `Connect`. The plugin saves the current form values before starting enrollment.
 7. The firewall should appear in the company firewalls table.
 
-If enrollment fails, the OPNsense dialog should show an actionable `status: error` message, such as an invalid/expired OTP, HTTPS URL validation failure, missing WireGuard command, or Hub API HTTP status. For lab debugging, run these commands on the firewall and check the returned JSON plus configd logs:
+If enrollment fails, the OPNsense dialog should show an actionable `status: error` message, such as an invalid/expired OTP, HTTPS URL validation failure, unsafe `AllowedIPs`, missing WireGuard command, or Hub API HTTP status. For lab debugging, run these commands on the firewall and check the returned JSON plus configd logs:
 
 ```sh
 configctl opnsensehub connect

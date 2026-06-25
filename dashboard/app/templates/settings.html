@@ -1,191 +1,578 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "base.html" %} {% block content %}
 <section class="settings-header card">
-  <div>
-    <p class="eyebrow">Settings</p>
-    <h1>{% if active_settings == 'manage-companies' %}Manage Companies{% elif active_settings == 'manage-users' %}Manage Users{% elif active_settings == 'email-settings' %}Email Settings{% elif active_settings == 'microsoft-365' %}Microsoft 365 Integration{% elif active_settings == 'local-ad' %}Microsoft Local AD Integration{% elif active_settings == 'branding' %}Branding{% endif %}</h1>
-    <p class="muted">Administrative configuration for OPNsense Hub.</p>
-  </div>
+    <div>
+        <p class="eyebrow">Settings</p>
+        <h1>
+            {% if active_settings == 'manage-companies' %}Manage Companies{%
+            elif active_settings == 'manage-users' %}Manage Users{% elif
+            active_settings == 'email-settings' %}Email Settings{% elif
+            active_settings == 'microsoft-365' %}Microsoft 365 Integration{%
+            elif active_settings == 'local-ad' %}Microsoft Local AD
+            Integration{% elif active_settings == 'branding' %}Branding{% endif
+            %}
+        </h1>
+        <p class="muted">Administrative configuration for OPNsense Hub.</p>
+    </div>
 </section>
 
 {% if status %}
-<div class="card status-card"><i class="fa-solid fa-circle-check"></i> Settings saved.</div>
-{% endif %}
-
-{% if active_settings == 'manage-companies' %}
+<div class="card status-card">
+    <i class="fa-solid fa-circle-check"></i> Settings saved.
+</div>
+{% endif %} {% if active_settings == 'manage-companies' %}
 <section class="admin-card card">
-  <div class="admin-card-header">
-    <h2>Add company</h2>
-    <p class="muted">Create a company before enrolling firewalls for it.</p>
-  </div>
-  <form action="/settings/companies" method="post" class="settings-grid-form compact-form">
-    <label class="form-row">Company name <input name="name" required autocomplete="organization"></label>
-    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-plus"></i> Add company</button></div>
-  </form>
+    <div class="admin-card-header">
+        <h2>Add company</h2>
+        <p class="muted">Create a company before enrolling firewalls for it.</p>
+    </div>
+    <form
+        action="/settings/companies"
+        method="post"
+        class="settings-grid-form compact-form"
+    >
+        <label class="form-row"
+            >Company name
+            <input name="name" required autocomplete="organization"
+        /></label>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-plus"></i> Add company
+            </button>
+        </div>
+    </form>
 </section>
 
 <section class="admin-card card">
-  <div class="admin-card-header">
-    <h2>Companies</h2>
-    <p class="muted">Edit or remove existing company records.</p>
-  </div>
-  <div class="responsive-table">
-    <table>
-      <thead><tr><th>Company Name</th><th class="actions">Actions</th></tr></thead>
-      <tbody>
-      {% for company in companies %}
-        <tr class="editable-row" data-editable-row>
-          <td>
-            <form id="company-edit-{{ company.id }}" action="/settings/companies/{{ company.id }}" method="post" class="inline-company-form"></form>
-            <input class="edit-field" form="company-edit-{{ company.id }}" name="name" value="{{ company.name }}" required autocomplete="organization" aria-label="Company Name" data-edit-control disabled>
-          </td>
-          <td class="actions">
-            <button class="icon-button" type="button" title="Edit company" aria-label="Edit company" data-edit-button><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="icon-button save-button" form="company-edit-{{ company.id }}" type="submit" title="Save company" aria-label="Save company" data-save-button hidden><i class="fa-solid fa-floppy-disk"></i></button>
-            <form action="/settings/companies/{{ company.id }}/delete" method="post" class="inline-delete-form">
-              <button class="icon-button danger-text" type="submit" title="Remove company" aria-label="Remove company"><i class="fa-solid fa-trash"></i></button>
-            </form>
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="2" class="muted">No companies yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    <div class="admin-card-header">
+        <h2>Companies</h2>
+        <p class="muted">Edit or remove existing company records.</p>
+    </div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company Name</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for company in companies %}
+                <tr class="editable-row" data-editable-row>
+                    <td>
+                        <form
+                            id="company-edit-{{ company.id }}"
+                            action="/settings/companies/{{ company.id }}"
+                            method="post"
+                            class="inline-company-form"
+                        ></form>
+                        <input
+                            class="edit-field"
+                            form="company-edit-{{ company.id }}"
+                            name="name"
+                            value="{{ company.name }}"
+                            required
+                            autocomplete="organization"
+                            aria-label="Company Name"
+                            data-edit-control
+                            disabled
+                        />
+                    </td>
+                    <td class="actions">
+                        <button
+                            class="icon-button"
+                            type="button"
+                            title="Edit company"
+                            aria-label="Edit company"
+                            data-edit-button
+                        >
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button
+                            class="icon-button save-button"
+                            form="company-edit-{{ company.id }}"
+                            type="submit"
+                            title="Save company"
+                            aria-label="Save company"
+                            data-save-button
+                            hidden
+                        >
+                            <i class="fa-solid fa-floppy-disk"></i>
+                        </button>
+                        <form
+                            action="/settings/companies/{{ company.id }}/delete"
+                            method="post"
+                            class="inline-delete-form"
+                        >
+                            <button
+                                class="icon-button danger-text"
+                                type="submit"
+                                title="Remove company"
+                                aria-label="Remove company"
+                            >
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" class="muted">No companies yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
-{% endif %}
-
-{% if active_settings == 'manage-users' %}
+{% endif %} {% if active_settings == 'manage-users' %}
 <section class="admin-card card">
-  <div class="admin-card-header">
-    <h2>Create user</h2>
-    <p class="muted">Dashboard roles control access to global settings. Company access still uses company-level RBAC.</p>
-  </div>
-  <form action="/settings/users" method="post" class="settings-grid-form">
-    <label class="form-row">Email <input type="email" name="email" required autocomplete="email"></label>
-    <label class="form-row">First name <input name="first_name" autocomplete="given-name"></label>
-    <label class="form-row">Last name <input name="last_name" autocomplete="family-name"></label>
-    <label class="form-row">Password <input type="password" name="password" required autocomplete="new-password"></label>
-    <label class="form-row">Role
-      <select name="role">
-        <option value="user">User</option>
-        <option value="administrator">Administrator</option>
-      </select>
-    </label>
-    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-user-plus"></i> Create user</button></div>
-  </form>
-</section>
-
-<section class="admin-card card">
-  <div class="admin-card-header"><h2>Existing users</h2></div>
-  <div class="responsive-table">
-    <table>
-      <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>MFA ready</th><th class="actions">Actions</th></tr></thead>
-      <tbody>
-      {% for managed_user in users %}
-        <tr class="editable-row" data-editable-row>
-          <td>
-            <form id="user-edit-{{ managed_user.id }}" action="/settings/users/{{ managed_user.id }}" method="post"></form>
-            <input class="edit-field" form="user-edit-{{ managed_user.id }}" type="email" name="email" value="{{ managed_user.email }}" required data-edit-control disabled>
-          </td>
-          <td class="user-name-fields">
-            <input class="edit-field" form="user-edit-{{ managed_user.id }}" name="first_name" value="{{ managed_user.first_name or '' }}" placeholder="First name" data-edit-control disabled>
-            <input class="edit-field" form="user-edit-{{ managed_user.id }}" name="last_name" value="{{ managed_user.last_name or '' }}" placeholder="Last name" data-edit-control disabled>
-          </td>
-          <td>
-            <select class="edit-field" form="user-edit-{{ managed_user.id }}" name="role" data-edit-control disabled>
-              <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>User</option>
-              <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>Administrator</option>
+    <div class="admin-card-header">
+        <h2>Create user</h2>
+        <p class="muted">
+            Dashboard roles control access to global settings. Company access
+            still uses company-level RBAC.
+        </p>
+    </div>
+    <form action="/settings/users" method="post" class="settings-grid-form">
+        <label class="form-row"
+            >Email
+            <input type="email" name="email" required autocomplete="email"
+        /></label>
+        <label class="form-row"
+            >First name <input name="first_name" autocomplete="given-name"
+        /></label>
+        <label class="form-row"
+            >Last name <input name="last_name" autocomplete="family-name"
+        /></label>
+        <label class="form-row"
+            >Password
+            <input
+                type="password"
+                name="password"
+                required
+                autocomplete="new-password"
+        /></label>
+        <label class="form-row"
+            >Role
+            <select name="role">
+                <option value="user">User</option>
+                <option value="administrator">Administrator</option>
             </select>
-          </td>
-          <td><span class="status">{% if managed_user.mfa_enabled %}enabled{% else %}ready{% endif %}</span></td>
-          <td class="actions">
-            <input class="edit-field password-edit-field" form="user-edit-{{ managed_user.id }}" type="password" name="password" placeholder="New password optional" autocomplete="new-password" data-edit-control disabled>
-            <button class="icon-button" type="button" title="Edit user" aria-label="Edit user" data-edit-button><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="icon-button save-button" form="user-edit-{{ managed_user.id }}" type="submit" title="Save user" aria-label="Save user" data-save-button hidden><i class="fa-solid fa-floppy-disk"></i></button>
-            {% if managed_user.id != user.id and managed_user.email != protected_admin_email %}
-            <form action="/settings/users/{{ managed_user.id }}/delete" method="post" class="inline-delete-form">
-              <button class="icon-button danger-text" type="submit" title="Remove user" aria-label="Remove user"><i class="fa-solid fa-trash"></i></button>
-            </form>
-            {% elif managed_user.email == protected_admin_email %}
-            <span class="protected-user" title="Default administrator cannot be removed"><i class="fa-solid fa-lock"></i></span>
-            {% endif %}
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="5" class="muted">No users yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </label>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-user-plus"></i> Create user
+            </button>
+        </div>
+    </form>
 </section>
-{% endif %}
 
-{% if active_settings == 'email-settings' %}
 <section class="admin-card card">
-  <div class="admin-card-header">
-    <h2>Email Settings</h2>
-    <p class="muted">Enable either SMTP or Microsoft Graph sendMail. Only one delivery method can be active at a time.</p>
-  </div>
-  <form action="/settings/email" method="post" class="settings-grid-form">
-    <label class="checkbox-label full-row"><input type="checkbox" name="smtp_enabled" {% if settings.smtp_enabled %}checked{% endif %}> Enable SMTP</label>
-    <label class="form-row">SMTP host <input name="smtp_host" value="{{ settings.smtp_host or '' }}"></label>
-    <label class="form-row">SMTP port <input type="number" name="smtp_port" value="{{ settings.smtp_port or '' }}"></label>
-    <label class="form-row">SMTP username <input name="smtp_username" value="{{ settings.smtp_username or '' }}" autocomplete="off"></label>
-    <label class="form-row">SMTP password <input type="password" name="smtp_password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
-    <label class="form-row">From address <input type="email" name="smtp_from" value="{{ settings.smtp_from or '' }}"></label>
-
-    <label class="checkbox-label full-row divider-top"><input type="checkbox" name="graph_enabled" {% if settings.graph_enabled %}checked{% endif %}> Enable Graph sendMail</label>
-    <label class="form-row">Tenant ID <input name="graph_tenant_id" value="{{ settings.graph_tenant_id or '' }}"></label>
-    <label class="form-row">Client ID <input name="graph_client_id" value="{{ settings.graph_client_id or '' }}"></label>
-    <label class="form-row">Client secret <input type="password" name="graph_client_secret" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
-    <label class="form-row">Sender mailbox <input type="email" name="graph_sender" value="{{ settings.graph_sender or '' }}"></label>
-    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save email settings</button></div>
-  </form>
+    <div class="admin-card-header"><h2>Existing users</h2></div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>MFA ready</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for managed_user in users %}
+                <tr class="editable-row" data-editable-row>
+                    <td>
+                        <form
+                            id="user-edit-{{ managed_user.id }}"
+                            action="/settings/users/{{ managed_user.id }}"
+                            method="post"
+                        ></form>
+                        <input
+                            class="edit-field"
+                            form="user-edit-{{ managed_user.id }}"
+                            type="email"
+                            name="email"
+                            value="{{ managed_user.email }}"
+                            required
+                            data-edit-control
+                            disabled
+                        />
+                    </td>
+                    <td class="user-name-fields">
+                        <input
+                            class="edit-field"
+                            form="user-edit-{{ managed_user.id }}"
+                            name="first_name"
+                            value="{{ managed_user.first_name or '' }}"
+                            placeholder="First name"
+                            data-edit-control
+                            disabled
+                        />
+                        <input
+                            class="edit-field"
+                            form="user-edit-{{ managed_user.id }}"
+                            name="last_name"
+                            value="{{ managed_user.last_name or '' }}"
+                            placeholder="Last name"
+                            data-edit-control
+                            disabled
+                        />
+                    </td>
+                    <td>
+                        <select
+                            class="edit-field"
+                            form="user-edit-{{ managed_user.id }}"
+                            name="role"
+                            data-edit-control
+                            disabled
+                        >
+                            <option
+                                value="user"
+                                {%
+                                if
+                                managed_user.role=""
+                                ="user"
+                                %}selected{%
+                                endif
+                                %}
+                            >
+                                User
+                            </option>
+                            <option
+                                value="administrator"
+                                {%
+                                if
+                                managed_user.role=""
+                                ="administrator"
+                                %}selected{%
+                                endif
+                                %}
+                            >
+                                Administrator
+                            </option>
+                        </select>
+                    </td>
+                    <td>
+                        <span class="status"
+                            >{% if managed_user.mfa_enabled %}enabled{% else
+                            %}ready{% endif %}</span
+                        >
+                    </td>
+                    <td class="actions">
+                        <input
+                            class="edit-field password-edit-field"
+                            form="user-edit-{{ managed_user.id }}"
+                            type="password"
+                            name="password"
+                            placeholder="New password optional"
+                            autocomplete="new-password"
+                            data-edit-control
+                            disabled
+                        />
+                        <button
+                            class="icon-button"
+                            type="button"
+                            title="Edit user"
+                            aria-label="Edit user"
+                            data-edit-button
+                        >
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button
+                            class="icon-button save-button"
+                            form="user-edit-{{ managed_user.id }}"
+                            type="submit"
+                            title="Save user"
+                            aria-label="Save user"
+                            data-save-button
+                            hidden
+                        >
+                            <i class="fa-solid fa-floppy-disk"></i>
+                        </button>
+                        {% if managed_user.id != user.id and managed_user.email
+                        != protected_admin_email %}
+                        <form
+                            action="/settings/users/{{ managed_user.id }}/delete"
+                            method="post"
+                            class="inline-delete-form"
+                        >
+                            <button
+                                class="icon-button danger-text"
+                                type="submit"
+                                title="Remove user"
+                                aria-label="Remove user"
+                            >
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </form>
+                        {% elif managed_user.email == protected_admin_email %}
+                        <span
+                            class="protected-user"
+                            title="Default administrator cannot be removed"
+                            ><i class="fa-solid fa-lock"></i
+                        ></span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="muted">No users yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
-{% endif %}
-
-{% if active_settings == 'microsoft-365' %}
+{% endif %} {% if active_settings == 'email-settings' %}
 <section class="admin-card card">
-  <div class="admin-card-header"><h2>Microsoft 365 Integration</h2></div>
-  <form action="/settings/microsoft" method="post" class="settings-grid-form">
-    <label class="checkbox-label full-row"><input type="checkbox" name="microsoft_enabled" {% if settings.microsoft_enabled %}checked{% endif %}> Enable Microsoft 365 sign-in</label>
-    <label class="form-row">Tenant ID <input name="microsoft_tenant_id" value="{{ settings.microsoft_tenant_id or '' }}"></label>
-    <label class="form-row">Frontend client ID <input name="microsoft_client_id" value="{{ settings.microsoft_client_id or '' }}"></label>
-    <label class="form-row">Backend API audience <input name="microsoft_audience" value="{{ settings.microsoft_audience or '' }}"></label>
-    <label class="form-row">Authority URL <input name="microsoft_authority" value="{{ settings.microsoft_authority or '' }}" placeholder="https://login.microsoftonline.com/{tenant}"></label>
-    <label class="form-row">Entra admin group name/id <input name="microsoft_admin_group" value="{{ settings.microsoft_admin_group or '' }}"></label>
-    <label class="form-row">Entra user group name/id <input name="microsoft_user_group" value="{{ settings.microsoft_user_group or '' }}"></label>
-    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Microsoft settings</button></div>
-  </form>
-</section>
-{% endif %}
+    <div class="admin-card-header">
+        <h2>Email Settings</h2>
+        <p class="muted">
+            Enable either SMTP or Microsoft Graph sendMail. Only one delivery
+            method can be active at a time.
+        </p>
+    </div>
+    <form action="/settings/email" method="post" class="settings-grid-form">
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="smtp_enabled"
+                {%
+                if
+                settings.smtp_enabled
+                %}checked{%
+                endif
+                %}
+            />
+            Enable SMTP</label
+        >
+        <label class="form-row"
+            >SMTP host
+            <input name="smtp_host" value="{{ settings.smtp_host or '' }}"
+        /></label>
+        <label class="form-row"
+            >SMTP port
+            <input
+                type="number"
+                name="smtp_port"
+                value="{{ settings.smtp_port or '' }}"
+        /></label>
+        <label class="form-row"
+            >SMTP username
+            <input
+                name="smtp_username"
+                value="{{ settings.smtp_username or '' }}"
+                autocomplete="off"
+        /></label>
+        <label class="form-row"
+            >SMTP password
+            <input
+                type="password"
+                name="smtp_password"
+                placeholder="Leave blank to keep current"
+                autocomplete="new-password"
+        /></label>
+        <label class="form-row"
+            >From address
+            <input
+                type="email"
+                name="smtp_from"
+                value="{{ settings.smtp_from or '' }}"
+        /></label>
 
-{% if active_settings == 'local-ad' %}
-<section class="admin-card card">
-  <div class="admin-card-header"><h2>Microsoft Local AD Integration</h2></div>
-  <form action="/settings/local-ad" method="post" class="settings-grid-form">
-    <label class="checkbox-label full-row"><input type="checkbox" name="ad_enabled" {% if settings.ad_enabled %}checked{% endif %}> Enable Local AD sign-in</label>
-    <label class="form-row">AD host <input name="ad_host" value="{{ settings.ad_host or '' }}" placeholder="ldaps://ad.example.com"></label>
-    <label class="form-row">Base DN <input name="ad_base_dn" value="{{ settings.ad_base_dn or '' }}" placeholder="DC=example,DC=com"></label>
-    <label class="form-row">Bind DN <input name="ad_bind_dn" value="{{ settings.ad_bind_dn or '' }}" placeholder="CN=service,OU=Users,DC=example,DC=com"></label>
-    <div class="form-row submit-row"><button class="button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Local AD settings</button></div>
-  </form>
+        <label class="checkbox-label full-row divider-top"
+            ><input
+                type="checkbox"
+                name="graph_enabled"
+                {%
+                if
+                settings.graph_enabled
+                %}checked{%
+                endif
+                %}
+            />
+            Enable Graph sendMail</label
+        >
+        <label class="form-row"
+            >Tenant ID
+            <input
+                name="graph_tenant_id"
+                value="{{ settings.graph_tenant_id or '' }}"
+        /></label>
+        <label class="form-row"
+            >Client ID
+            <input
+                name="graph_client_id"
+                value="{{ settings.graph_client_id or '' }}"
+        /></label>
+        <label class="form-row"
+            >Client secret
+            <input
+                type="password"
+                name="graph_client_secret"
+                placeholder="Leave blank to keep current"
+                autocomplete="new-password"
+        /></label>
+        <label class="form-row"
+            >Sender mailbox
+            <input
+                type="email"
+                name="graph_sender"
+                value="{{ settings.graph_sender or '' }}"
+        /></label>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save email settings
+            </button>
+        </div>
+    </form>
 </section>
-{% endif %}
-
-{% if active_settings == 'branding' %}
+{% endif %} {% if active_settings == 'microsoft-365' %}
 <section class="admin-card card">
-  <div class="admin-card-header"><h2>Branding</h2></div>
-  <form action="/settings/branding" method="post" class="settings-form narrow-form">
-    <label class="form-row">Logo URL <input name="branding_logo_url" value="{{ settings.branding_logo_url or '' }}" placeholder="https://example.com/logo.svg"></label>
-    <label class="checkbox-label"><input type="checkbox" name="remove_logo"> Remove logo</label>
-    <button class="button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save branding</button>
-  </form>
-  {% if settings.branding_logo_url %}
-  <div class="branding-preview"><img src="{{ settings.branding_logo_url }}" alt="Current logo"></div>
-  {% endif %}
+    <div class="admin-card-header"><h2>Microsoft 365 Integration</h2></div>
+    <form action="/settings/microsoft" method="post" class="settings-grid-form">
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="microsoft_enabled"
+                {%
+                if
+                settings.microsoft_enabled
+                %}checked{%
+                endif
+                %}
+            />
+            Enable Microsoft 365 sign-in</label
+        >
+        <label class="form-row"
+            >Tenant ID
+            <input
+                name="microsoft_tenant_id"
+                value="{{ settings.microsoft_tenant_id or '' }}"
+        /></label>
+        <label class="form-row"
+            >Frontend client ID
+            <input
+                name="microsoft_client_id"
+                value="{{ settings.microsoft_client_id or '' }}"
+        /></label>
+        <label class="form-row"
+            >Backend API audience
+            <input
+                name="microsoft_audience"
+                value="{{ settings.microsoft_audience or '' }}"
+        /></label>
+        <label class="form-row"
+            >Authority URL
+            <input
+                name="microsoft_authority"
+                value="{{ settings.microsoft_authority or '' }}"
+                placeholder="https://login.microsoftonline.com/{tenant}"
+        /></label>
+        <label class="form-row"
+            >Entra admin group name/id
+            <input
+                name="microsoft_admin_group"
+                value="{{ settings.microsoft_admin_group or '' }}"
+        /></label>
+        <label class="form-row"
+            >Entra user group name/id
+            <input
+                name="microsoft_user_group"
+                value="{{ settings.microsoft_user_group or '' }}"
+        /></label>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save Microsoft settings
+            </button>
+        </div>
+    </form>
 </section>
-{% endif %}
-{% endblock %}
+{% endif %} {% if active_settings == 'local-ad' %}
+<section class="admin-card card">
+    <div class="admin-card-header"><h2>Microsoft Local AD Integration</h2></div>
+    <form action="/settings/local-ad" method="post" class="settings-grid-form">
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="ad_enabled"
+                {%
+                if
+                settings.ad_enabled
+                %}checked{%
+                endif
+                %}
+            />
+            Enable Local AD sign-in</label
+        >
+        <label class="form-row"
+            >AD host
+            <input
+                name="ad_host"
+                value="{{ settings.ad_host or '' }}"
+                placeholder="ldaps://ad.example.com"
+        /></label>
+        <label class="form-row"
+            >Base DN
+            <input
+                name="ad_base_dn"
+                value="{{ settings.ad_base_dn or '' }}"
+                placeholder="DC=example,DC=com"
+        /></label>
+        <label class="form-row"
+            >Bind DN
+            <input
+                name="ad_bind_dn"
+                value="{{ settings.ad_bind_dn or '' }}"
+                placeholder="CN=service,OU=Users,DC=example,DC=com"
+        /></label>
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save Local AD settings
+            </button>
+        </div>
+    </form>
+</section>
+{% endif %} {% if active_settings == 'branding' %}
+<section class="admin-card card">
+    <div class="admin-card-header"><h2>Branding</h2></div>
+    <form
+        action="/settings/branding"
+        method="post"
+        enctype="multipart/form-data"
+        class="settings-form narrow-form"
+    >
+        <label class="form-row"
+            >Upload logo
+            <input
+                type="file"
+                name="branding_logo_file"
+                accept="image/png,image/jpeg,image/webp"
+        /></label>
+        <label class="form-row"
+            >Fallback logo URL
+            <input
+                name="branding_logo_url"
+                value="{{ settings.branding_logo_url or '' }}"
+                placeholder="https://example.com/logo.png"
+        /></label>
+        <p class="muted">
+            Uploaded PNG, JPEG, or WebP logos take precedence over the fallback
+            URL.
+        </p>
+        <label class="checkbox-label"
+            ><input type="checkbox" name="remove_logo" /> Remove uploaded logo
+            and fallback URL</label
+        >
+        <button class="button" type="submit">
+            <i class="fa-solid fa-floppy-disk"></i> Save branding
+        </button>
+    </form>
+    {% if brand_logo_url %}
+    <div class="branding-preview">
+        <img src="{{ brand_logo_url }}" alt="Current logo" />
+    </div>
+    {% endif %}
+</section>
+{% endif %} {% endblock %}

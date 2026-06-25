@@ -216,6 +216,61 @@ def normalize_wireguard_endpoint(wg, hub_url):
     return wg
 
 
+def validate_wireguard_payload(wg):
+    if not isinstance(wg, dict):
+        fail("Hub returned an invalid WireGuard payload")
+
+    try:
+        interface = ipaddress.ip_interface(str(wg.get("interface_address", "")).strip())
+    except ValueError as exc:
+        fail(f"Hub returned an invalid WireGuard interface_address: {exc}")
+    if not isinstance(interface, ipaddress.IPv4Interface):
+        fail(
+            "Hub returned a non-IPv4 WireGuard interface_address; expected an IPv4 /32"
+        )
+    if interface.network.prefixlen != 32:
+        fail(
+            "Hub returned an unsafe WireGuard interface_address; expected the firewall tunnel IP as an IPv4 /32"
+        )
+
+    allowed_ip_values = [
+        item.strip()
+        for item in str(wg.get("allowed_ips", "")).split(",")
+        if item.strip()
+    ]
+    if len(allowed_ip_values) != 1:
+        fail(
+            "Hub returned an unsafe WireGuard allowed_ips value; expected exactly one IPv4 /32 for the Hub tunnel IP"
+        )
+    try:
+        allowed_network = ipaddress.ip_network(allowed_ip_values[0], strict=False)
+    except ValueError as exc:
+        fail(f"Hub returned an invalid WireGuard allowed_ips CIDR: {exc}")
+    if not isinstance(allowed_network, ipaddress.IPv4Network):
+        fail(
+            "Hub returned a non-IPv4 allowed_ips value; expected the Hub tunnel IPv4 /32"
+        )
+    if allowed_network.prefixlen != 32:
+        fail(
+            "Hub returned an unsafe WireGuard allowed_ips route; expected only the Hub tunnel IPv4 /32, not a LAN or Hub network"
+        )
+    if allowed_network.network_address == ipaddress.IPv4Address("0.0.0.0"):
+        fail(
+            "Hub returned 0.0.0.0/0 for allowed_ips; only the Hub tunnel IP /32 is permitted"
+        )
+    if allowed_network.network_address == interface.ip:
+        fail(
+            "Hub returned the firewall's own WireGuard interface_address in allowed_ips; expected only the Hub tunnel IP /32"
+        )
+
+    normalized = dict(wg)
+    normalized["interface_address"] = str(interface)
+    normalized["allowed_ips"] = str(allowed_network)
+    if "persistent_keepalive" in normalized:
+        normalized["persistent_keepalive"] = int(normalized["persistent_keepalive"])
+    return normalized
+
+
 def load_wireguard_config():
     if not WG_CONF.exists():
         return None
@@ -515,7 +570,9 @@ def main():
             state["wireguard"] = wireguard
 
     if state.get("device_id") and state.get("wireguard"):
-        state["wireguard"] = normalize_wireguard_endpoint(state["wireguard"], hub_url)
+        state["wireguard"] = validate_wireguard_payload(
+            normalize_wireguard_endpoint(state["wireguard"], hub_url)
+        )
         render_wg(private_key, state["wireguard"])
         start_tunnel(private_key, state["wireguard"])
         opnsense = ensure_opnsense_integration(state["wireguard"])
@@ -548,7 +605,9 @@ def main():
             "wg_public_key": pub,
         },
     )
-    wireguard = normalize_wireguard_endpoint(response["wireguard"], hub_url)
+    wireguard = validate_wireguard_payload(
+        normalize_wireguard_endpoint(response["wireguard"], hub_url)
+    )
     render_wg(private_key, wireguard)
     state = {
         "hub_url": hub_url,

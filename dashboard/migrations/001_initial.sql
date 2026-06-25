@@ -11,6 +11,15 @@ CREATE TABLE IF NOT EXISTS users (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz NULL
+);
+
 CREATE TABLE IF NOT EXISTS integration_settings (
   id integer PRIMARY KEY DEFAULT 1,
   smtp_enabled boolean NOT NULL DEFAULT false,
@@ -100,6 +109,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_devices_company ON devices(company_id);
 CREATE INDEX IF NOT EXISTS idx_audit_company ON audit_logs(company_id);
 CREATE INDEX IF NOT EXISTS idx_enrollment_company ON enrollment_codes(company_id);

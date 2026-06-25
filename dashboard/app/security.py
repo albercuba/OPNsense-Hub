@@ -45,3 +45,17 @@ def verify_secret(secret: str, encoded: str) -> bool:
         return hmac.compare_digest(actual, expected)
     except Exception:
         return False
+
+
+def hash_session_token(secret_key: str, token: str) -> str:
+    return hmac.new(
+        secret_key.encode("utf-8"), token.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def password_is_strong_enough(password: str, min_length: int = 12) -> bool:
+    if len(password) < min_length:
+        return False
+    has_alpha = any(ch.isalpha() for ch in password)
+    has_digit = any(ch.isdigit() for ch in password)
+    return has_alpha and has_digit

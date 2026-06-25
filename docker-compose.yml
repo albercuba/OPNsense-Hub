@@ -28,6 +28,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - opnsense_hub_wg:/etc/wireguard
+      - opnsense_hub_branding:/var/lib/opnsense-hub/branding
 
   opnsense-hub-web:
     build: ./dashboard
@@ -37,6 +38,8 @@ services:
         condition: service_healthy
     profiles: ["split-services"]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8083"]
+    volumes:
+      - opnsense_hub_branding:/var/lib/opnsense-hub/branding
 
   opnsense-hub-proxy:
     image: caddy:2-alpine
@@ -51,4 +54,5 @@ services:
 volumes:
   opnsense_hub_db:
   opnsense_hub_wg:
+  opnsense_hub_branding:
   opnsense_hub_caddy:

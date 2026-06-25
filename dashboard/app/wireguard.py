@@ -2,6 +2,7 @@ import ipaddress
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import select
@@ -15,6 +16,16 @@ WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 
 class WireGuardError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ValidatedWireGuardConfig:
+    network: ipaddress.IPv4Network
+    hub_interface: ipaddress.IPv4Interface
+
+    @property
+    def hub_ip(self) -> ipaddress.IPv4Address:
+        return self.hub_interface.ip
 
 
 def _run(args: list[str], input_text: str | None = None, timeout: int = 15) -> str:
@@ -41,6 +52,46 @@ def validate_public_key(public_key: str) -> None:
         raise WireGuardError("invalid WireGuard public key format")
 
 
+def validate_hub_wireguard_config(
+    hub_wg_cidr: str, hub_wg_address: str, allow_broad_wg_cidr: bool = False
+) -> ValidatedWireGuardConfig:
+    try:
+        network = ipaddress.ip_network(hub_wg_cidr, strict=False)
+    except ValueError as exc:
+        raise WireGuardError(f"invalid HUB_WG_CIDR: {exc}") from exc
+    if not isinstance(network, ipaddress.IPv4Network):
+        raise WireGuardError("HUB_WG_CIDR must be an IPv4 network")
+    if network.prefixlen == 0:
+        raise WireGuardError("HUB_WG_CIDR must not be 0.0.0.0/0")
+    if network.prefixlen < 12 and not allow_broad_wg_cidr:
+        raise WireGuardError(
+            "HUB_WG_CIDR is too broad for a management overlay; use /12 or narrower or set ALLOW_BROAD_WG_CIDR=true"
+        )
+
+    try:
+        hub_interface = ipaddress.ip_interface(hub_wg_address)
+    except ValueError as exc:
+        raise WireGuardError(f"invalid HUB_WG_ADDRESS: {exc}") from exc
+    if not isinstance(hub_interface, ipaddress.IPv4Interface):
+        raise WireGuardError("HUB_WG_ADDRESS must be an IPv4 interface")
+    if hub_interface.ip not in network:
+        raise WireGuardError("HUB_WG_ADDRESS must be inside HUB_WG_CIDR")
+    if hub_interface.ip == network.network_address:
+        raise WireGuardError("HUB_WG_ADDRESS must not be the network address")
+    if hub_interface.ip == network.broadcast_address:
+        raise WireGuardError("HUB_WG_ADDRESS must not be the broadcast address")
+    return ValidatedWireGuardConfig(network=network, hub_interface=hub_interface)
+
+
+def get_validated_hub_wireguard_config() -> ValidatedWireGuardConfig:
+    settings = get_settings()
+    return validate_hub_wireguard_config(
+        settings.hub_wg_cidr,
+        settings.hub_wg_address,
+        allow_broad_wg_cidr=settings.allow_broad_wg_cidr,
+    )
+
+
 def _paths() -> tuple[Path, Path]:
     settings = get_settings()
     config_path = Path(settings.wg_config_path)
@@ -51,6 +102,7 @@ def _paths() -> tuple[Path, Path]:
 def ensure_server_keypair() -> str:
     """Create/persist the Hub WireGuard server key and return its public key."""
     settings = get_settings()
+    get_validated_hub_wireguard_config()
     if settings.wg_dry_run:
         return settings.wg_server_public_key
 
@@ -77,13 +129,14 @@ def get_server_public_key() -> str:
 
 def render_server_config() -> None:
     settings = get_settings()
+    validated = get_validated_hub_wireguard_config()
     if settings.wg_dry_run:
         return
     config_path, key_path = _paths()
     ensure_server_keypair()
     text = f"""[Interface]
 PrivateKey = {key_path.read_text().strip()}
-Address = {settings.hub_wg_address}
+Address = {validated.hub_interface}
 ListenPort = {settings.hub_wg_listen_port}
 SaveConfig = false
 """
@@ -113,7 +166,6 @@ def ensure_server_interface() -> None:
     config_path, key_path = _paths()
     if not interface_exists():
         _run(["wg-quick", "up", str(config_path)], timeout=20)
-    # Make runtime settings explicit in case the interface already existed.
     _run(
         [
             "wg",
@@ -140,6 +192,7 @@ def sync_existing_peers(db: Session) -> None:
 def bootstrap_wireguard(db: Session) -> None:
     """Fully configure WireGuard and restore peers from the database on app startup."""
     settings = get_settings()
+    get_validated_hub_wireguard_config()
     if settings.wg_dry_run:
         return
     ensure_server_interface()
@@ -159,18 +212,38 @@ def peer_allowed_ips(tunnel_ip: str) -> str:
 
 def client_allowed_ips() -> str:
     """Return the only route the firewall installs for the Hub: Hub tunnel /32."""
-    settings = get_settings()
-    hub_ip = ipaddress.ip_interface(settings.hub_wg_address).ip
-    return f"{hub_ip}/32"
+    validated = get_validated_hub_wireguard_config()
+    return f"{validated.hub_ip}/32"
 
 
 def next_tunnel_ip(db: Session) -> str:
-    settings = get_settings()
-    network = ipaddress.ip_network(settings.hub_wg_cidr, strict=False)
-    used = {str(row[0]) for row in db.execute(select(Device.wg_tunnel_ip)).all()}
-    hub_ip = str(ipaddress.ip_interface(settings.hub_wg_address).ip)
-    used.add(hub_ip)
-    for ip in network.hosts():
+    validated = get_validated_hub_wireguard_config()
+    used = {str(validated.hub_ip)}
+    for row in db.execute(select(Device.wg_tunnel_ip)).all():
+        value = str(row[0])
+        try:
+            ip = ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise WireGuardError(
+                f"stored device tunnel IP is invalid: {value}"
+            ) from exc
+        if not isinstance(ip, ipaddress.IPv4Address):
+            raise WireGuardError(
+                f"stored device tunnel IP is not IPv4 and cannot be allocated safely: {value}"
+            )
+        if ip not in validated.network:
+            raise WireGuardError(
+                f"stored device tunnel IP {value} is outside HUB_WG_CIDR {validated.network}"
+            )
+        if ip in {
+            validated.network.network_address,
+            validated.network.broadcast_address,
+        }:
+            raise WireGuardError(
+                f"stored device tunnel IP {value} is not a usable host address inside HUB_WG_CIDR"
+            )
+        used.add(str(ip))
+    for ip in validated.network.hosts():
         value = str(ip)
         if value not in used:
             return value
@@ -179,8 +252,17 @@ def next_tunnel_ip(db: Session) -> str:
 
 def add_peer(public_key: str, tunnel_ip: str) -> None:
     settings = get_settings()
+    validated = get_validated_hub_wireguard_config()
     validate_public_key(public_key)
-    ipaddress.ip_address(tunnel_ip)
+    ip = ipaddress.ip_address(tunnel_ip)
+    if not isinstance(ip, ipaddress.IPv4Address):
+        raise WireGuardError("tunnel_ip must be IPv4")
+    if ip not in validated.network:
+        raise WireGuardError(
+            f"tunnel_ip {ip} is outside HUB_WG_CIDR {validated.network}"
+        )
+    if ip == validated.hub_ip:
+        raise WireGuardError("tunnel_ip must not equal HUB_WG_ADDRESS")
     if settings.wg_dry_run:
         return
     ensure_server_interface()
@@ -191,7 +273,7 @@ def add_peer(public_key: str, tunnel_ip: str) -> None:
         "peer",
         public_key,
         "allowed-ips",
-        peer_allowed_ips(tunnel_ip),
+        peer_allowed_ips(str(ip)),
     ]
     _run(cmd, timeout=10)
 
