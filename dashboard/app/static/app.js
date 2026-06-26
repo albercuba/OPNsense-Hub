@@ -140,7 +140,7 @@ document.addEventListener("DOMContentLoaded", () => {
         detailRow?.querySelectorAll("[data-device-row]") || [],
       );
       const companyMatches =
-        !selectedCompany || companyName === selectedCompany;
+        !selectedCompany || companyName.includes(selectedCompany);
 
       let visibleDevices = 0;
       deviceRows.forEach((deviceRow) => {
