@@ -274,6 +274,7 @@ select:focus {
     font-weight: 700;
     cursor: pointer;
     text-decoration: none;
+    width: fit-content;
 }
 .button.secondary {
     background: var(--accent-soft);
