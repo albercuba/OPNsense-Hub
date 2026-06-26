@@ -100,38 +100,38 @@
                 value="{{ device.backup_retention_count }}"
                 required
         /></label>
-        <label class="form-row"
-            >Backup interval
-            <input
-                type="number"
-                name="backup_interval_value"
-                min="1"
-                max="999"
-                value="{{ device.backup_interval_value }}"
-                required
-        /></label>
-        <label class="form-row"
-            >Interval unit
-            <select name="backup_interval_unit">
-                <option
-                    value="hours"
-                    {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
-                >
-                    Hours
-                </option>
-                <option
-                    value="days"
-                    {% if device.backup_interval_unit == 'days' %}selected{% endif %}
-                >
-                    Days
-                </option>
-                <option
-                    value="months"
-                    {% if device.backup_interval_unit == 'months' %}selected{% endif %}
-                >
-                    Months
-                </option>
-            </select>
+        <label class="form-row full-row"
+            >Backup every
+            <div class="inline-field-group">
+                <input
+                    type="number"
+                    name="backup_interval_value"
+                    min="1"
+                    max="999"
+                    value="{{ device.backup_interval_value }}"
+                    required
+                />
+                <select name="backup_interval_unit">
+                    <option
+                        value="hours"
+                        {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
+                    >
+                        Hours
+                    </option>
+                    <option
+                        value="days"
+                        {% if device.backup_interval_unit == 'days' %}selected{% endif %}
+                    >
+                        Days
+                    </option>
+                    <option
+                        value="months"
+                        {% if device.backup_interval_unit == 'months' %}selected{% endif %}
+                    >
+                        Months
+                    </option>
+                </select>
+            </div>
         </label>
         <div class="form-row">
             <strong>Last uploaded</strong><br />{{

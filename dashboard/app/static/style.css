@@ -183,6 +183,11 @@ h3 {
     gap: 0.45rem;
     margin-bottom: 1rem;
 }
+.inline-field-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.8fr);
+    gap: 0.75rem;
+}
 input,
 select {
     width: 100%;
@@ -582,6 +587,9 @@ p {
     gap: 0.25rem;
     margin-bottom: 0.5rem;
 }
+.inline-field-group {
+    gap: 0.5rem;
+}
 input,
 select,
 .button {
@@ -669,6 +677,9 @@ td {
 @media (max-width: 900px) {
     .app-layout {
         padding: 0 0.5rem;
+    }
+    .inline-field-group {
+        grid-template-columns: 1fr;
     }
     .user-name-fields {
         grid-template-columns: 1fr;
