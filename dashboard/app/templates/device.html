@@ -65,161 +65,167 @@
     </p>
     {% endif %}
 </section>
-<section class="card">
-    <div class="admin-card-header">
-        <h2>Configuration backups</h2>
+<section class="dual-settings-grid">
+    <section class="card">
+        <div class="admin-card-header">
+            <h2>Configuration backups</h2>
+            <form
+                action="/devices/{{ device.id }}/backup-now"
+                method="post"
+                class="inline-action-form"
+            >
+                <button class="button secondary" type="submit">
+                    <i class="fa-solid fa-box-archive"></i> Backup now
+                </button>
+            </form>
+        </div>
         <form
-            action="/devices/{{ device.id }}/backup-now"
+            action="/devices/{{ device.id }}/backup-settings"
             method="post"
-            class="inline-action-form"
+            class="settings-grid-form"
         >
-            <button class="button secondary" type="submit">
-                <i class="fa-solid fa-box-archive"></i> Backup now
-            </button>
-        </form>
-    </div>
-    <form
-        action="/devices/{{ device.id }}/backup-settings"
-        method="post"
-        class="settings-grid-form"
-    >
-        <label class="checkbox-label full-row"
-            ><input
-                type="checkbox"
-                name="backup_enabled"
-                {% if device.backup_enabled %}checked{% endif %}
-            />
-            Enable configuration backups</label
-        >
-        <label class="form-row"
-            >Backups to keep
-            <input
-                type="number"
-                name="backup_retention_count"
-                min="1"
-                max="10"
-                value="{{ device.backup_retention_count }}"
-                required
-        /></label>
-        <label class="form-row full-row"
-            >Backup every
-            <div class="inline-field-group">
-                <input
-                    class="backup-interval-field"
-                    type="number"
-                    name="backup_interval_value"
-                    min="1"
-                    max="999"
-                    value="{{ device.backup_interval_value }}"
-                    required
+            <label class="checkbox-label full-row"
+                ><input
+                    type="checkbox"
+                    name="backup_enabled"
+                    {% if device.backup_enabled %}checked{% endif %}
                 />
-                <select
-                    class="backup-interval-field"
-                    name="backup_interval_unit"
-                >
-                    <option
-                        value="hours"
-                        {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
-                    >
-                        Hours
-                    </option>
-                    <option
-                        value="days"
-                        {% if device.backup_interval_unit == 'days' %}selected{% endif %}
-                    >
-                        Days
-                    </option>
-                    <option
-                        value="months"
-                        {% if device.backup_interval_unit == 'months' %}selected{% endif %}
-                    >
-                        Months
-                    </option>
-                </select>
+                Enable configuration backups</label
+            >
+            <div class="backup-settings-row full-row">
+                <label class="form-row">
+                    Backups to keep
+                    <input
+                        class="backup-retention-field"
+                        type="number"
+                        name="backup_retention_count"
+                        min="1"
+                        max="10"
+                        value="{{ device.backup_retention_count }}"
+                        required
+                    />
+                </label>
+                <label class="form-row">
+                    Backup every
+                    <div class="inline-field-group">
+                        <input
+                            class="backup-interval-field"
+                            type="number"
+                            name="backup_interval_value"
+                            min="1"
+                            max="999"
+                            value="{{ device.backup_interval_value }}"
+                            required
+                        />
+                        <select
+                            class="backup-interval-field"
+                            name="backup_interval_unit"
+                        >
+                            <option
+                                value="hours"
+                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
+                            >
+                                Hours
+                            </option>
+                            <option
+                                value="days"
+                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
+                            >
+                                Days
+                            </option>
+                            <option
+                                value="months"
+                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
+                            >
+                                Months
+                            </option>
+                        </select>
+                    </div>
+                </label>
             </div>
-        </label>
-        <div class="form-row">
-            <strong>Last uploaded</strong><br />{{
-            device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if
-            device.backup_last_uploaded_at else 'Never' }}
+            <div class="form-row">
+                <strong>Last uploaded</strong><br />{{
+                device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if
+                device.backup_last_uploaded_at else 'Never' }}
+            </div>
+            <div class="form-row submit-row">
+                <button class="button" type="submit">
+                    <i class="fa-solid fa-floppy-disk"></i> Save backup settings
+                </button>
+            </div>
+        </form>
+    </section>
+    <section class="card">
+        <div class="admin-card-header">
+            <h2>Email notifications</h2>
         </div>
-        <div class="form-row submit-row">
-            <button class="button" type="submit">
-                <i class="fa-solid fa-floppy-disk"></i> Save backup settings
-            </button>
-        </div>
-    </form>
-</section>
-<section class="card">
-    <div class="admin-card-header">
-        <h2>Email notifications</h2>
-    </div>
-    {% if not email_settings_configured %}
-    <p class="warning">
-        Email settings are not configured. Configure SMTP or Microsoft Graph
-        email settings in Hub Settings before enabling firewall notifications.
-    </p>
-    {% endif %} {% if not can_edit_notification_settings %}
-    <p class="warning">
-        Company admin access is required to edit firewall notification
-        settings.
-    </p>
-    {% endif %}
-    <form
-        action="/devices/{{ device.id }}/email-notification-settings"
-        method="post"
-        class="settings-grid-form"
-    >
-        <label class="checkbox-label full-row"
-            ><input
-                type="checkbox"
-                name="email_notifications_enabled"
-                {% if device.email_notifications_enabled %}checked{% endif %}
-                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
-            />
-            Enable email notifications</label
-        >
-        <label class="form-row full-row"
-            >Recipient email address
-            <input
-                type="email"
-                name="email_notification_recipient"
-                value="{{ device.email_notification_recipient or '' }}"
-                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
-            />
-        </label>
-        <label class="checkbox-label"
-            ><input
-                type="checkbox"
-                name="email_notify_on_warning"
-                {% if device.email_notify_on_warning %}checked{% endif %}
-                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
-            />
-            When status becomes warning</label
-        >
-        <label class="checkbox-label"
-            ><input
-                type="checkbox"
-                name="email_notify_on_critical"
-                {% if device.email_notify_on_critical %}checked{% endif %}
-                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
-            />
-            When status becomes critical</label
-        >
-        <div class="form-row">
-            <strong>Last notified</strong><br />{{
-            device.email_last_notified_at.strftime('%Y-%m-%d %H:%M') if
-            device.email_last_notified_at else 'Never' }}
-        </div>
-        {% if email_settings_configured and can_edit_notification_settings %}
-        <div class="form-row submit-row">
-            <button class="button" type="submit">
-                <i class="fa-solid fa-floppy-disk"></i> Save email
-                notifications
-            </button>
-        </div>
+        {% if not email_settings_configured %}
+        <p class="warning">
+            Email settings are not configured. Configure SMTP or Microsoft Graph
+            email settings in Hub Settings before enabling firewall notifications.
+        </p>
+        {% endif %} {% if not can_edit_notification_settings %}
+        <p class="warning">
+            Company admin access is required to edit firewall notification
+            settings.
+        </p>
         {% endif %}
-    </form>
+        <form
+            action="/devices/{{ device.id }}/email-notification-settings"
+            method="post"
+            class="settings-grid-form"
+        >
+            <label class="checkbox-label full-row"
+                ><input
+                    type="checkbox"
+                    name="email_notifications_enabled"
+                    {% if device.email_notifications_enabled %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                Enable email notifications</label
+            >
+            <label class="form-row full-row"
+                >Recipient email address
+                <input
+                    type="email"
+                    name="email_notification_recipient"
+                    value="{{ device.email_notification_recipient or '' }}"
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+            </label>
+            <label class="checkbox-label"
+                ><input
+                    type="checkbox"
+                    name="email_notify_on_warning"
+                    {% if device.email_notify_on_warning %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                When status becomes warning</label
+            >
+            <label class="checkbox-label"
+                ><input
+                    type="checkbox"
+                    name="email_notify_on_critical"
+                    {% if device.email_notify_on_critical %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                When status becomes critical</label
+            >
+            <div class="form-row">
+                <strong>Last notified</strong><br />{{
+                device.email_last_notified_at.strftime('%Y-%m-%d %H:%M') if
+                device.email_last_notified_at else 'Never' }}
+            </div>
+            {% if email_settings_configured and can_edit_notification_settings %}
+            <div class="form-row submit-row">
+                <button class="button" type="submit">
+                    <i class="fa-solid fa-floppy-disk"></i> Save email
+                    notifications
+                </button>
+            </div>
+            {% endif %}
+        </form>
+    </section>
 </section>
 <section class="card">
     <h2>Stored backups</h2>

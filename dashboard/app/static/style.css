@@ -170,6 +170,12 @@ a {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 1rem;
 }
+.dual-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
 h1,
 h2,
 h3 {
@@ -193,6 +199,17 @@ h3 {
     width: 6%;
     min-width: 6%;
     flex: 0 0 6%;
+}
+.backup-retention-field {
+    width: 6%;
+    min-width: 6%;
+    flex: 0 0 6%;
+}
+.backup-settings-row {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 1rem;
+    align-items: start;
 }
 input,
 select {
@@ -518,6 +535,9 @@ th {
     .app-layout {
         grid-template-columns: 1fr;
     }
+    .dual-settings-grid {
+        grid-template-columns: 1fr;
+    }
     .side-menu {
         position: static;
         margin-top: 1rem;
@@ -594,6 +614,9 @@ p {
     margin-bottom: 0.5rem;
 }
 .inline-field-group {
+    gap: 0.5rem;
+}
+.backup-settings-row {
     gap: 0.5rem;
 }
 input,
@@ -683,6 +706,9 @@ td {
 @media (max-width: 900px) {
     .app-layout {
         padding: 0 0.5rem;
+    }
+    .backup-settings-row {
+        grid-template-columns: 1fr;
     }
     .user-name-fields {
         grid-template-columns: 1fr;
