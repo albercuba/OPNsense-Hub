@@ -104,6 +104,7 @@
             >Backup every
             <div class="inline-field-group">
                 <input
+                    class="backup-interval-field"
                     type="number"
                     name="backup_interval_value"
                     min="1"
@@ -111,7 +112,10 @@
                     value="{{ device.backup_interval_value }}"
                     required
                 />
-                <select name="backup_interval_unit">
+                <select
+                    class="backup-interval-field"
+                    name="backup_interval_unit"
+                >
                     <option
                         value="hours"
                         {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
