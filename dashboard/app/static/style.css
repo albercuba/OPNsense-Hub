@@ -156,10 +156,12 @@ a {
     width: 100%;
     margin: 2rem auto;
     min-width: 0;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
 }
 .shell > section {
-    margin-left: 0.75rem;
-    margin-right: 0.75rem;
+    margin-left: 0;
+    margin-right: 0;
 }
 .card {
     background: var(--panel);
@@ -880,9 +882,9 @@ td {
     .app-layout {
         padding: 0 0.5rem;
     }
-    .shell > section {
-        margin-left: 0.5rem;
-        margin-right: 0.5rem;
+    .shell {
+        padding-left: 0;
+        padding-right: 0;
     }
     .backup-settings-row {
         grid-template-columns: 1fr;
