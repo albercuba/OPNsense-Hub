@@ -8,6 +8,10 @@ from .models import CompanyUser, User
 ROLE_ORDER = {"viewer": 1, "admin": 2, "owner": 3}
 
 
+def is_global_admin(user: User) -> bool:
+    return user.role == "administrator"
+
+
 def get_company_role(db: Session, user: User, company_id: uuid.UUID) -> str | None:
     return db.scalar(
         select(CompanyUser.role).where(
@@ -21,3 +25,9 @@ def has_company_role(
 ) -> bool:
     role = get_company_role(db, user, company_id)
     return role is not None and ROLE_ORDER.get(role, 0) >= ROLE_ORDER[minimum]
+
+
+def has_company_access(
+    db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
+) -> bool:
+    return is_global_admin(user) or has_company_role(db, user, company_id, minimum)

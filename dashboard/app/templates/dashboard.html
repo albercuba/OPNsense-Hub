@@ -1,0 +1,492 @@
+{% extends "base.html" %} {% block content %}
+<section id="dashboard-filters-card" class="card dashboard-card dashboard-filters-card">
+    <div class="admin-card-header">
+        <div>
+            <h1>Dashboard</h1>
+            <p class="muted">
+                High-level operational overview for the firewalls you can access.
+            </p>
+        </div>
+    </div>
+    <form class="dashboard-filters-form" method="get" action="/dashboard">
+        <label class="form-row">
+            <span>Company</span>
+            <select name="company_id">
+                <option value="">All companies</option>
+                {% for company in filter_companies %}
+                <option
+                    value="{{ company.id }}"
+                    {% if filters.company_id == company.id|string %}selected{% endif %}
+                >
+                    {{ company.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="form-row">
+            <span>Status</span>
+            <select name="status">
+                <option value="" {% if not filters.status %}selected{% endif %}>All statuses</option>
+                <option value="online" {% if filters.status == 'online' %}selected{% endif %}>Online</option>
+                <option value="warning" {% if filters.status == 'warning' %}selected{% endif %}>Warning</option>
+                <option value="critical" {% if filters.status == 'critical' %}selected{% endif %}>Critical</option>
+                <option value="revoked" {% if filters.status == 'revoked' %}selected{% endif %}>Revoked</option>
+                <option value="other" {% if filters.status == 'other' %}selected{% endif %}>Other / Unknown</option>
+            </select>
+        </label>
+        <label class="checkbox-label dashboard-filter-checkbox">
+            <input
+                type="checkbox"
+                name="include_revoked"
+                value="true"
+                {% if filters.include_revoked %}checked{% endif %}
+            />
+            Show revoked
+        </label>
+        <div class="dashboard-filter-actions">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-filter"></i> Apply filters
+            </button>
+            <a class="button secondary" href="/dashboard">
+                <i class="fa-solid fa-rotate-left"></i> Reset
+            </a>
+        </div>
+    </form>
+</section>
+
+<section id="dashboard-summary-card" class="dashboard-summary-grid">
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Total firewalls</span>
+        <strong>{{ summary.total_firewalls }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Online</span>
+        <strong>{{ summary.online }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Warning</span>
+        <strong>{{ summary.warning }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Critical</span>
+        <strong>{{ summary.critical }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Revoked</span>
+        <strong>{{ summary.revoked }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Backups overdue</span>
+        <strong>{{ summary.backups_overdue }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Firmware updates</span>
+        <strong>{{ summary.firmware_updates_available }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Firmware upgrades</span>
+        <strong>{{ summary.firmware_upgrades_available }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Firmware check failures</span>
+        <strong>{{ summary.firmware_check_failures }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Licenses expiring soon</span>
+        <strong>{{ summary.licenses_expiring_soon }}</strong>
+    </article>
+    <article class="card dashboard-card dashboard-summary-tile">
+        <span class="muted">Notification failures</span>
+        <strong>{{ summary.email_notification_failures }}</strong>
+    </article>
+</section>
+
+<section id="dashboard-overview-grid" class="dashboard-top-grid">
+    <article id="dashboard-status-chart-card" class="card dashboard-card dashboard-status-chart-card">
+        <h2>Firewall status</h2>
+        <div class="dashboard-chart-layout">
+            <div
+                class="dashboard-donut-chart"
+                role="img"
+                aria-label="Firewall status breakdown chart"
+                style="background: {{ status_chart_style }};"
+            >
+                <div class="dashboard-donut-center">
+                    <strong>{{ summary.total_firewalls }}</strong>
+                    <span>Total</span>
+                </div>
+            </div>
+            <ul class="dashboard-chart-legend">
+                {% for item in status_chart_legend %}
+                <li>
+                    <span class="dashboard-legend-swatch" style="background: {{ item.color }};"></span>
+                    <span>{{ item.label }}</span>
+                    <span class="muted">{{ item.count }} ({{ item.percentage }}%)</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </article>
+
+    <article id="dashboard-health-overview-card" class="card dashboard-card dashboard-health-overview-card">
+        <h2>Firewall health overview</h2>
+        <div class="dashboard-mini-section">
+            <h3>Recently offline</h3>
+            <ul class="dashboard-link-list">
+                {% for item in health_overview.recently_offline %}
+                <li>
+                    <a href="{{ item.link }}">{{ item.device.hostname }}</a>
+                    <span class="muted">{{ item.company.name }}</span>
+                </li>
+                {% else %}
+                <li class="muted">No recent offline events.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="dashboard-mini-section">
+            <h3>Most missed health checks</h3>
+            <ul class="dashboard-link-list">
+                {% for device in health_overview.most_missed %}
+                <li>
+                    <a href="/devices/{{ device.id }}">{{ device.hostname }}</a>
+                    <span class="muted">{{ device.health_missed_checks }} missed</span>
+                </li>
+                {% else %}
+                <li class="muted">No missed checks.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="dashboard-mini-section">
+            <h3>Recovered in the last 24 hours</h3>
+            <ul class="dashboard-link-list">
+                {% for item in health_overview.recovered_recently %}
+                <li>
+                    <a href="{{ item.link }}">{{ item.device.hostname }}</a>
+                    <span class="muted">{{ item.company.name }}</span>
+                </li>
+                {% else %}
+                <li class="muted">No recent recoveries.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="dashboard-mini-section">
+            <h3>Warning or critical</h3>
+            <ul class="dashboard-link-list">
+                {% for device in health_overview.warning_critical %}
+                <li>
+                    <a href="/devices/{{ device.id }}">{{ device.hostname }}</a>
+                    <span class="status {{ 'offline' if device.status == 'offline' else device.status }}">
+                        {{ 'critical' if device.status == 'offline' else device.status }}
+                    </span>
+                </li>
+                {% else %}
+                <li class="muted">No firewalls currently need health attention.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </article>
+</section>
+
+<section id="dashboard-attention-card" class="card dashboard-card dashboard-attention-card">
+    <h2>Attention required</h2>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Firewall</th>
+                    <th>Company</th>
+                    <th>Description</th>
+                    <th>Suggested action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in attention_items %}
+                <tr>
+                    <td>
+                        <span class="status dashboard-severity {{ item.severity }}">{{ item.severity }}</span>
+                    </td>
+                    <td>{{ item.category }}</td>
+                    <td>{{ item.firewall }}</td>
+                    <td>{{ item.company }}</td>
+                    <td>{{ item.description }}</td>
+                    <td><a href="{{ item.link }}">{{ item.action }}</a></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="muted">No actionable issues in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="dashboard-backup-card" class="card dashboard-card dashboard-backup-card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Backup status</h2>
+            <p class="muted">
+                Enabled: {{ backup_summary.enabled }} · Disabled: {{ backup_summary.disabled }} ·
+                Overdue: {{ backup_summary.overdue }} · Never backed up: {{ backup_summary.never }}
+            </p>
+            <p class="muted">
+                Last successful backup:
+                {% if backup_summary.last_successful_backup %}
+                <a href="/devices/{{ backup_summary.last_successful_backup.id }}">
+                    {{ backup_summary.last_successful_backup.hostname }}
+                </a>
+                at {{ format_datetime(backup_summary.last_successful_backup.backup_last_uploaded_at) }}
+                {% else %}
+                None
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Firewall</th>
+                    <th>Company</th>
+                    <th>Backup status</th>
+                    <th>Last backup</th>
+                    <th>Retention</th>
+                    <th>Interval</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in backup_rows %}
+                <tr>
+                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
+                    <td>{{ row.company.name if row.company else '-' }}</td>
+                    <td><span class="{{ row.backup_status.class }}">{{ row.backup_status.label }}</span></td>
+                    <td>{{ format_datetime(row.device.backup_last_uploaded_at) if row.device.backup_last_uploaded_at else 'Never' }}</td>
+                    <td>{{ row.retention }}</td>
+                    <td>{{ row.interval }}</td>
+                    <td><a href="{{ row.action_link }}">Review</a></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="muted">No backup attention items in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="dashboard-firmware-card" class="card dashboard-card dashboard-firmware-card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Firmware status</h2>
+            <p class="muted">
+                Up to date: {{ firmware_summary.up_to_date }} · Updates: {{ firmware_summary.updates }} ·
+                Upgrades: {{ firmware_summary.upgrades }} · Check failed: {{ firmware_summary.check_failed }} ·
+                Unknown: {{ firmware_summary.unknown }}
+            </p>
+        </div>
+    </div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Firewall</th>
+                    <th>Company</th>
+                    <th>Status</th>
+                    <th>Current version</th>
+                    <th>Available version</th>
+                    <th>Update count</th>
+                    <th>Reboot required</th>
+                    <th>Last checked</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in firmware_attention_rows %}
+                <tr>
+                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
+                    <td>{{ row.company.name if row.company else '-' }}</td>
+                    <td><span class="{{ row.firmware.class }}">{{ row.firmware.label }}</span></td>
+                    <td>{{ row.device.firmware_current_version or 'Unknown' }}</td>
+                    <td>{{ row.device.firmware_available_version or 'Unknown' }}</td>
+                    <td>{{ row.device.firmware_update_count }}</td>
+                    <td>{{ 'Yes' if row.device.firmware_reboot_required else 'No' }}</td>
+                    <td>{{ format_datetime(row.device.firmware_checked_at) if row.device.firmware_checked_at else 'Never' }}</td>
+                    <td><a href="{{ row.action_link }}">Review</a></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="muted">No firmware attention items in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="dashboard-company-overview-card" class="card dashboard-card dashboard-company-overview-card">
+    <h2>Company overview</h2>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Firewalls</th>
+                    <th>Online</th>
+                    <th>Warning</th>
+                    <th>Critical</th>
+                    <th>Revoked</th>
+                    <th>Backups overdue</th>
+                    <th>Firmware attention</th>
+                    <th>Licenses expiring soon</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in company_overview %}
+                <tr>
+                    <td><a href="/companies/{{ row.company.id }}">{{ row.company.name }}</a></td>
+                    <td>{{ row.firewalls }}</td>
+                    <td>{{ row.online }}</td>
+                    <td>{{ row.warning }}</td>
+                    <td>{{ row.critical }}</td>
+                    <td>{{ row.revoked }}</td>
+                    <td>{{ row.backups_overdue }}</td>
+                    <td>{{ row.firmware_attention }}</td>
+                    <td>{{ row.licenses_expiring }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="muted">No companies in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="dashboard-license-card" class="card dashboard-card dashboard-license-card">
+    <div class="admin-card-header">
+        <div>
+            <h2>License overview</h2>
+            <p class="muted">
+                Business: {{ license_summary.business }} · Community: {{ license_summary.community }} ·
+                Expired: {{ license_summary.expired }} · Within 30 days: {{ license_summary.within_30_days }} ·
+                Within 7 days: {{ license_summary.within_7_days }}
+            </p>
+        </div>
+    </div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Firewall</th>
+                    <th>Company</th>
+                    <th>License</th>
+                    <th>Expiration date</th>
+                    <th>Days left</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in license_rows %}
+                <tr>
+                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
+                    <td>{{ row.company.name if row.company else '-' }}</td>
+                    <td>{{ row.license_status.label }}</td>
+                    <td>{{ format_datetime(row.device.license_expires_at) if row.device.license_expires_at else '-' }}</td>
+                    <td>
+                        {% if row.license_status.days_left is not none %}
+                            {{ row.license_status.days_left }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td><a href="{{ row.action_link }}">Review</a></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="muted">No expiring business licenses in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="dashboard-notification-health-card" class="card dashboard-card dashboard-notification-health-card">
+    <h2>Notification health</h2>
+    <div class="dashboard-notification-grid">
+        <div>
+            <span class="muted">Hub email settings configured</span>
+            <p>{{ 'Yes' if notification_health.email_settings_configured else 'No' }}</p>
+        </div>
+        {% if notification_health.supported %}
+        <div>
+            <span class="muted">Firewalls with notifications enabled</span>
+            <p>{{ notification_health.enabled_count }}</p>
+        </div>
+        <div>
+            <span class="muted">Enabled but missing recipient</span>
+            <p>{{ notification_health.missing_recipient_count }}</p>
+        </div>
+        <div>
+            <span class="muted">Notification send failures</span>
+            <p>{{ notification_health.failure_count }}</p>
+        </div>
+        {% else %}
+        <div class="dashboard-notification-message">
+            <p class="muted">Per-firewall notification settings are not available yet.</p>
+        </div>
+        {% endif %}
+    </div>
+    <p class="muted">
+        {% if notification_health.last_notification_sent %}
+        Last notification sent at
+        {{ format_datetime(notification_health.last_notification_sent.event.created_at) }}
+        {% if notification_health.last_notification_sent.device %}
+        for
+        <a href="/devices/{{ notification_health.last_notification_sent.device.id }}">
+            {{ notification_health.last_notification_sent.device.hostname }}
+        </a>.
+        {% endif %}
+        {% else %}
+        No notification emails have been sent yet.
+        {% endif %}
+    </p>
+</section>
+
+<section id="dashboard-recent-events-card" class="card dashboard-card dashboard-recent-events-card">
+    <h2>Recent events</h2>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Firewall</th>
+                    <th>Company</th>
+                    <th>Event type</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in recent_events %}
+                <tr>
+                    <td>{{ format_datetime(row.event.created_at) }}</td>
+                    <td><a href="{{ row.link }}">{{ row.device.hostname }}</a></td>
+                    <td>{{ row.company.name if row.company else '-' }}</td>
+                    <td>{{ row.event.event_type }}</td>
+                    <td>{{ row.event.message or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="muted">No device events in the current view.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

@@ -29,9 +29,19 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select, text
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from .audit import write_audit
+from .backups import (
+    DEVICE_BACKUP_INTERVAL_HOURS_MAX,
+    DEVICE_BACKUP_INTERVAL_UNITS,
+    DEVICE_BACKUP_INTERVAL_VALUE_MAX,
+    DEVICE_BACKUP_RETENTION_MAX,
+    backup_due,
+    backup_interval_delta,
+    backup_request_pending,
+    mark_device_backup_requested,
+)
 from .branding import (
     BrandingError,
     clear_uploaded_logo,
@@ -40,9 +50,15 @@ from .branding import (
     validate_branding_upload,
 )
 from .config import get_settings
+from .dashboard import accessible_companies_for_user, build_dashboard_context
 from .database import Base, SessionLocal, engine, get_db
 from .hardening import apply_startup_hardening
 from .health import HealthState, HealthThresholds, next_health_state
+from .integration import (
+    email_settings_configured,
+    graph_email_configured,
+    smtp_email_configured,
+)
 from .models import (
     Company,
     CompanyUser,
@@ -84,11 +100,7 @@ FIRMWARE_STATUSES = {"unknown", "none", "update", "upgrade", "error"}
 FIRMWARE_SUCCESS_STATUSES = {"none", "update", "upgrade"}
 FIRMWARE_VERSION_MAX_LENGTH = 80
 FIRMWARE_MESSAGE_MAX_LENGTH = 500
-DEVICE_BACKUP_RETENTION_MAX = 10
-DEVICE_BACKUP_INTERVAL_HOURS_MAX = 24 * 30
 DEVICE_BACKUP_CONTENT_MAX_LENGTH = 2_000_000
-DEVICE_BACKUP_INTERVAL_UNITS = {"hours", "days", "months"}
-DEVICE_BACKUP_INTERVAL_VALUE_MAX = 999
 
 
 def app_timezone_info() -> ZoneInfo:
@@ -652,9 +664,17 @@ def require_company(
     db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
 ) -> Company:
     company = db.get(Company, company_id)
-    if not company or not has_company_role(db, user, company_id, minimum):
+    if not company or not has_company_access(db, user, company_id, minimum):
         raise HTTPException(status_code=404, detail="company not found")
     return company
+
+
+def has_company_access(
+    db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
+) -> bool:
+    return user.role == "administrator" or has_company_role(
+        db, user, company_id, minimum
+    )
 
 
 def require_admin(user: User) -> None:
@@ -683,33 +703,6 @@ def is_valid_email_address(value: str | None) -> bool:
     if not value:
         return False
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
-
-
-def smtp_email_configured(integration_settings: IntegrationSettings | None) -> bool:
-    if not integration_settings or not integration_settings.smtp_enabled:
-        return False
-    return bool(
-        integration_settings.smtp_host
-        and integration_settings.smtp_port
-        and integration_settings.smtp_from
-    )
-
-
-def graph_email_configured(integration_settings: IntegrationSettings | None) -> bool:
-    if not integration_settings or not integration_settings.graph_enabled:
-        return False
-    return bool(
-        integration_settings.graph_tenant_id
-        and integration_settings.graph_client_id
-        and integration_settings.graph_client_secret
-        and integration_settings.graph_sender
-    )
-
-
-def email_settings_configured(integration_settings: IntegrationSettings | None) -> bool:
-    return smtp_email_configured(integration_settings) or graph_email_configured(
-        integration_settings
-    )
 
 
 def send_smtp_email(
@@ -804,47 +797,6 @@ def parse_backup_interval_unit(value: object) -> str:
             detail="backup interval unit must be hours, days, or months",
         )
     return normalized
-
-
-def backup_interval_delta(device: Device) -> timedelta:
-    unit = (device.backup_interval_unit or "hours").lower()
-    value = max(1, int(device.backup_interval_value or 1))
-    if unit == "days":
-        return timedelta(days=value)
-    if unit == "months":
-        return timedelta(days=value * 30)
-    return timedelta(hours=value)
-
-
-def backup_request_pending(device: Device) -> bool:
-    return bool(
-        device.backup_last_requested_at
-        and (
-            device.backup_last_uploaded_at is None
-            or device.backup_last_uploaded_at < device.backup_last_requested_at
-        )
-    )
-
-
-def backup_due(device: Device, now: datetime | None = None) -> bool:
-    if not device.backup_enabled:
-        return False
-    current_time = now or utc_now()
-    if backup_request_pending(device):
-        return True
-    if device.backup_last_uploaded_at is None:
-        return True
-    return device.backup_last_uploaded_at + backup_interval_delta(device) <= current_time
-
-
-def mark_device_backup_requested(device: Device, now: datetime | None = None) -> bool:
-    current_time = now or utc_now()
-    if backup_request_pending(device):
-        return True
-    if not backup_due(device, now=current_time):
-        return False
-    device.backup_last_requested_at = current_time
-    return True
 
 
 def normalize_backup_filename(device: Device, created_at: datetime) -> str:
@@ -1260,7 +1212,7 @@ def index(request: Request, db: Annotated[Session, Depends(get_db)]):
     user = ui_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    return RedirectResponse("/companies", status_code=303)
+    return RedirectResponse("/dashboard", status_code=303)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1285,7 +1237,7 @@ def login(
             status_code=401,
         )
     token = create_user_session(db, user)
-    response = RedirectResponse("/companies", status_code=303)
+    response = RedirectResponse("/dashboard", status_code=303)
     response.set_cookie(
         settings.session_cookie_name,
         token,
@@ -1319,19 +1271,54 @@ def me(user: Annotated[User, Depends(current_user)]):
     return {"id": str(user.id), "email": user.email, "mfa_enabled": user.mfa_enabled}
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    company_id: str | None = None,
+    status: str | None = None,
+    include_revoked: str | None = None,
+):
+    context = build_dashboard_context(
+        db,
+        user,
+        {
+            "company_id": company_id,
+            "status": status,
+            "include_revoked": include_revoked,
+        },
+    )
+    context.update(
+        {
+            "request": request,
+            "user": user,
+            "active_page": "dashboard",
+        }
+    )
+    return render_template(db, "dashboard.html", context)
+
+
 @app.get("/companies", response_class=HTMLResponse)
 def companies_page(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
 ):
-    companies = db.scalars(
-        select(Company)
-        .options(selectinload(Company.devices))
-        .join(CompanyUser)
-        .where(CompanyUser.user_id == user.id)
-        .order_by(Company.name)
-    ).all()
+    companies = accessible_companies_for_user(db, user)
+    company_ids = [company.id for company in companies]
+    devices = (
+        db.scalars(
+            select(Device).where(Device.company_id.in_(company_ids)).order_by(Device.hostname)
+        ).all()
+        if company_ids
+        else []
+    )
+    devices_by_company: dict[uuid.UUID, list[Device]] = {company.id: [] for company in companies}
+    for device in devices:
+        devices_by_company.setdefault(device.company_id, []).append(device)
+    for company in companies:
+        company.devices = devices_by_company.get(company.id, [])
     return render_template(
         db,
         "companies.html",
@@ -2051,9 +2038,9 @@ def device_page(
     user: Annotated[User, Depends(current_user)],
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id):
+    if not device or not has_company_access(db, user, device.company_id):
         raise HTTPException(status_code=404)
-    can_edit_notification_settings = has_company_role(
+    can_edit_notification_settings = has_company_access(
         db, user, device.company_id, "admin"
     )
     integration_settings = get_or_create_integration_settings(db)
@@ -2096,7 +2083,7 @@ def get_device(
     user: Annotated[User, Depends(current_user)],
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id):
+    if not device or not has_company_access(db, user, device.company_id):
         raise HTTPException(status_code=404)
     return {
         "id": str(device.id),
@@ -2155,7 +2142,7 @@ def update_device_backup_settings(
     backup_interval_unit: str = Form("hours"),
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id, "admin"):
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     device.backup_enabled = backup_enabled == "on"
     device.backup_retention_count = parse_bounded_int(
@@ -2204,7 +2191,7 @@ def update_device_email_notification_settings(
     email_notify_on_critical: str | None = Form(None),
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id, "admin"):
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     integration_settings = get_or_create_integration_settings(db)
     enabled = email_notifications_enabled == "on"
@@ -2247,7 +2234,7 @@ def request_device_backup_now(
     user: Annotated[User, Depends(current_user)],
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id, "admin"):
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     device.backup_last_requested_at = utc_now()
     write_audit(
@@ -2272,7 +2259,7 @@ def download_device_backup(
     user: Annotated[User, Depends(current_user)],
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id):
+    if not device or not has_company_access(db, user, device.company_id):
         raise HTTPException(status_code=404)
     backup = db.get(DeviceBackup, backup_id)
     if not backup or backup.device_id != device.id:
@@ -2293,7 +2280,7 @@ def revoke_device(
     user: Annotated[User, Depends(current_user)],
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id, "admin"):
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     if not device.revoked_at:
         remove_peer(device.wg_public_key)
@@ -2326,7 +2313,7 @@ def delete_revoked_device(
     redirect_to: str = Form("/companies"),
 ):
     device = db.get(Device, device_id)
-    if not device or not has_company_role(db, user, device.company_id, "admin"):
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     if not device.revoked_at:
         raise HTTPException(
@@ -2363,7 +2350,7 @@ async def proxy_device(
     if (
         not device
         or device.revoked_at
-        or not has_company_role(db, user, device.company_id)
+        or not has_company_access(db, user, device.company_id)
     ):
         raise HTTPException(status_code=404)
     write_audit(

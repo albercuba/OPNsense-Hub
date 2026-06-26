@@ -44,6 +44,11 @@
         <div class="app-layout">
             <aside class="side-menu" aria-label="Primary navigation">
                 <a
+                    class="side-menu-link {% if active_page == 'dashboard' %}active{% endif %}"
+                    href="/dashboard"
+                    ><i class="fa-solid fa-chart-line"></i> Dashboard</a
+                >
+                <a
                     class="side-menu-link {% if active_page == 'companies' %}active{% endif %}"
                     href="/companies"
                     ><i class="fa-solid fa-building"></i> Firewalls
