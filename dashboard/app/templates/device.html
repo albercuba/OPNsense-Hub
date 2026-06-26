@@ -1,8 +1,9 @@
 {% extends "base.html" %} {% block content %} {% if status %}
 <div class="card status-card">
-    <i class="fa-solid fa-circle-check"></i> {% if status ==
-    'backup-requested' %}Backup request queued.{% else %}Backup settings saved.{%
-    endif %}
+    <i class="fa-solid fa-circle-check"></i> {% if status == 'backup-requested'
+    %}Backup request queued.{% elif status ==
+    'email-notification-settings-saved' %}Email notification settings saved.{%
+    else %}Backup settings saved.{% endif %}
 </div>
 {% endif %}
 <section class="card">
@@ -147,6 +148,77 @@
                 <i class="fa-solid fa-floppy-disk"></i> Save backup settings
             </button>
         </div>
+    </form>
+</section>
+<section class="card">
+    <div class="admin-card-header">
+        <h2>Email notifications</h2>
+    </div>
+    {% if not email_settings_configured %}
+    <p class="warning">
+        Email settings are not configured. Configure SMTP or Microsoft Graph
+        email settings in Hub Settings before enabling firewall notifications.
+    </p>
+    {% endif %} {% if not can_edit_notification_settings %}
+    <p class="warning">
+        Company admin access is required to edit firewall notification
+        settings.
+    </p>
+    {% endif %}
+    <form
+        action="/devices/{{ device.id }}/email-notification-settings"
+        method="post"
+        class="settings-grid-form"
+    >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="email_notifications_enabled"
+                {% if device.email_notifications_enabled %}checked{% endif %}
+                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+            />
+            Enable email notifications</label
+        >
+        <label class="form-row full-row"
+            >Recipient email address
+            <input
+                type="email"
+                name="email_notification_recipient"
+                value="{{ device.email_notification_recipient or '' }}"
+                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+            />
+        </label>
+        <label class="checkbox-label"
+            ><input
+                type="checkbox"
+                name="email_notify_on_warning"
+                {% if device.email_notify_on_warning %}checked{% endif %}
+                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+            />
+            When status becomes warning</label
+        >
+        <label class="checkbox-label"
+            ><input
+                type="checkbox"
+                name="email_notify_on_critical"
+                {% if device.email_notify_on_critical %}checked{% endif %}
+                {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+            />
+            When status becomes critical</label
+        >
+        <div class="form-row">
+            <strong>Last notified</strong><br />{{
+            device.email_last_notified_at.strftime('%Y-%m-%d %H:%M') if
+            device.email_last_notified_at else 'Never' }}
+        </div>
+        {% if email_settings_configured and can_edit_notification_settings %}
+        <div class="form-row submit-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save email
+                notifications
+            </button>
+        </div>
+        {% endif %}
     </form>
 </section>
 <section class="card">

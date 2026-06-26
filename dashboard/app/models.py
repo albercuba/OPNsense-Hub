@@ -241,6 +241,24 @@ class Device(Base):
     backup_last_uploaded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    email_notifications_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    email_notification_recipient: Mapped[str | None] = mapped_column(
+        String(320), nullable=True
+    )
+    email_notify_on_warning: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    email_notify_on_critical: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    email_last_notified_status: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    email_last_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

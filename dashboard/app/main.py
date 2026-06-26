@@ -3,11 +3,14 @@ import contextlib
 import ipaddress
 import logging
 import re
+import smtplib
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 import httpx
 from fastapi import (
@@ -270,8 +273,9 @@ async def run_device_health_checks_once() -> None:
         ) as client:
             for device in devices:
                 healthy, message = await probe_device_webgui(client, device)
+                previous_status = device.status
                 new_status = device_health_status(device, healthy)
-                if device.status != new_status:
+                if previous_status != new_status:
                     device.status = new_status
                     db.add(
                         DeviceEvent(
@@ -282,6 +286,9 @@ async def run_device_health_checks_once() -> None:
                                 f"successes={device.health_success_checks}"
                             )[:1000],
                         )
+                    )
+                    maybe_send_health_notification(
+                        db, device, previous_status, new_status, now
                     )
                 if healthy:
                     device.last_seen_at = now
@@ -440,6 +447,36 @@ def ensure_schema_compat() -> None:
         conn.execute(
             text(
                 "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_last_uploaded_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notifications_enabled boolean NOT NULL DEFAULT false"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notification_recipient text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_warning boolean NOT NULL DEFAULT true"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_critical boolean NOT NULL DEFAULT true"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_last_notified_status text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_last_notified_at timestamptz NULL"
             )
         )
         conn.execute(
@@ -616,6 +653,104 @@ def clean_optional(value: str | None) -> str | None:
     return stripped or None
 
 
+def is_valid_email_address(value: str | None) -> bool:
+    if not value:
+        return False
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
+
+
+def smtp_email_configured(integration_settings: IntegrationSettings | None) -> bool:
+    if not integration_settings or not integration_settings.smtp_enabled:
+        return False
+    return bool(
+        integration_settings.smtp_host
+        and integration_settings.smtp_port
+        and integration_settings.smtp_from
+    )
+
+
+def graph_email_configured(integration_settings: IntegrationSettings | None) -> bool:
+    if not integration_settings or not integration_settings.graph_enabled:
+        return False
+    return bool(
+        integration_settings.graph_tenant_id
+        and integration_settings.graph_client_id
+        and integration_settings.graph_client_secret
+        and integration_settings.graph_sender
+    )
+
+
+def email_settings_configured(integration_settings: IntegrationSettings | None) -> bool:
+    return smtp_email_configured(integration_settings) or graph_email_configured(
+        integration_settings
+    )
+
+
+def send_smtp_email(
+    integration_settings: IntegrationSettings, to_email: str, subject: str, body: str
+) -> None:
+    message = EmailMessage()
+    message["From"] = integration_settings.smtp_from
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+    with smtplib.SMTP(
+        integration_settings.smtp_host, integration_settings.smtp_port, timeout=20
+    ) as smtp:
+        if integration_settings.smtp_username and integration_settings.smtp_password:
+            smtp.login(
+                integration_settings.smtp_username, integration_settings.smtp_password
+            )
+        smtp.send_message(message)
+
+
+def send_graph_email(
+    integration_settings: IntegrationSettings, to_email: str, subject: str, body: str
+) -> None:
+    token_url = (
+        "https://login.microsoftonline.com/"
+        f"{integration_settings.graph_tenant_id}/oauth2/v2.0/token"
+    )
+    with httpx.Client(timeout=20) as client:
+        token_response = client.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": integration_settings.graph_client_id,
+                "client_secret": integration_settings.graph_client_secret,
+                "scope": "https://graph.microsoft.com/.default",
+            },
+        )
+        token_response.raise_for_status()
+        access_token = token_response.json()["access_token"]
+        send_response = client.post(
+            "https://graph.microsoft.com/v1.0/users/"
+            f"{quote(str(integration_settings.graph_sender), safe='')}/sendMail",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "message": {
+                    "subject": subject,
+                    "body": {"contentType": "Text", "content": body},
+                    "toRecipients": [{"emailAddress": {"address": to_email}}],
+                }
+            },
+        )
+        send_response.raise_for_status()
+
+
+def send_notification_email(
+    db: Session, to_email: str, subject: str, body: str
+) -> None:
+    integration_settings = get_or_create_integration_settings(db)
+    if smtp_email_configured(integration_settings):
+        send_smtp_email(integration_settings, to_email, subject, body)
+        return
+    if graph_email_configured(integration_settings):
+        send_graph_email(integration_settings, to_email, subject, body)
+        return
+    raise RuntimeError("email settings are not configured")
+
+
 def parse_bounded_int(
     value: object,
     *,
@@ -689,6 +824,106 @@ def mark_device_backup_requested(device: Device, now: datetime | None = None) ->
 def normalize_backup_filename(device: Device, created_at: datetime) -> str:
     safe_hostname = re.sub(r"[^A-Za-z0-9._-]+", "-", device.hostname).strip("-") or "firewall"
     return f"{safe_hostname}-backup-{created_at.strftime('%Y%m%d%H%M%S')}.xml"
+
+
+def health_notification_status_label(status: str) -> str:
+    return "critical" if status == "offline" else status
+
+
+def should_notify_for_health_status(device: Device, new_status: str) -> bool:
+    if new_status == "warning":
+        return device.email_notify_on_warning
+    if new_status == "offline":
+        return device.email_notify_on_critical
+    return False
+
+
+def build_health_notification_email(
+    device: Device,
+    company: Company | None,
+    previous_status: str,
+    new_status: str,
+    current_time: datetime,
+) -> tuple[str, str]:
+    display_status = health_notification_status_label(new_status)
+    subject = f"[OPNsense Hub] Firewall status {display_status}: {device.hostname}"
+    body = "\n".join(
+        [
+            f"Firewall: {device.hostname}",
+            f"Company: {company.name if company else 'Unknown'}",
+            f"Status: {display_status}",
+            f"Previous status: {previous_status}",
+            f"Tunnel IP: {device.wg_tunnel_ip}",
+            "Last seen: "
+            + (
+                device.last_seen_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                if device.last_seen_at
+                else "Never"
+            ),
+            f"Time: {current_time.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            "",
+            "This alert was sent because email notifications are enabled for this firewall in OPNsense Hub.",
+        ]
+    )
+    return subject, body
+
+
+def maybe_send_health_notification(
+    db: Session,
+    device: Device,
+    previous_status: str,
+    new_status: str,
+    current_time: datetime,
+    email_sender=None,
+) -> bool:
+    if device.revoked_at or previous_status == new_status:
+        return False
+    if not device.email_notifications_enabled:
+        return False
+    if not should_notify_for_health_status(device, new_status):
+        return False
+    recipient = clean_optional(device.email_notification_recipient)
+    if not recipient:
+        return False
+    integration_settings = get_or_create_integration_settings(db)
+    if not email_settings_configured(integration_settings):
+        return False
+    company = db.get(Company, device.company_id)
+    subject, body = build_health_notification_email(
+        device, company, previous_status, new_status, current_time
+    )
+    sender = email_sender or send_notification_email
+    try:
+        sender(db, recipient, subject, body)
+    except Exception as exc:
+        db.add(
+            DeviceEvent(
+                device_id=device.id,
+                event_type="email_notification_failed",
+                message=(
+                    "Could not send health status email notification: "
+                    f"{exc.__class__.__name__}"
+                )[:1000],
+            )
+        )
+        logger.warning(
+            "Health status notification failed for device %s: %s",
+            device.id,
+            exc.__class__.__name__,
+        )
+        return False
+    device.email_last_notified_status = new_status
+    device.email_last_notified_at = current_time
+    db.add(
+        DeviceEvent(
+            device_id=device.id,
+            event_type="email_notification_sent",
+            message=(
+                f"Health status notification sent for {health_notification_status_label(new_status)}"
+            )[:1000],
+        )
+    )
+    return True
 
 
 def parse_license_expires_at(value: object) -> datetime | None:
@@ -1798,6 +2033,10 @@ def device_page(
     device = db.get(Device, device_id)
     if not device or not has_company_role(db, user, device.company_id):
         raise HTTPException(status_code=404)
+    can_edit_notification_settings = has_company_role(
+        db, user, device.company_id, "admin"
+    )
+    integration_settings = get_or_create_integration_settings(db)
     company = db.get(Company, device.company_id)
     backups = db.scalars(
         select(DeviceBackup)
@@ -1819,6 +2058,10 @@ def device_page(
             "company": company,
             "device": device,
             "backups": backups,
+            "can_edit_notification_settings": can_edit_notification_settings,
+            "email_settings_configured": email_settings_configured(
+                integration_settings
+            ),
             "events": events,
             "active_page": "companies",
             "status": request.query_params.get("status"),
@@ -1867,6 +2110,14 @@ def get_device(
         else None,
         "backup_last_uploaded_at": device.backup_last_uploaded_at.isoformat()
         if device.backup_last_uploaded_at
+        else None,
+        "email_notifications_enabled": device.email_notifications_enabled,
+        "email_notification_recipient": device.email_notification_recipient,
+        "email_notify_on_warning": device.email_notify_on_warning,
+        "email_notify_on_critical": device.email_notify_on_critical,
+        "email_last_notified_status": device.email_last_notified_status,
+        "email_last_notified_at": device.email_last_notified_at.isoformat()
+        if device.email_last_notified_at
         else None,
         "revoked_at": device.revoked_at.isoformat() if device.revoked_at else None,
     }
@@ -1918,6 +2169,53 @@ def update_device_backup_settings(
     db.commit()
     return RedirectResponse(
         f"/devices/{device.id}?status=backup-settings-saved", status_code=303
+    )
+
+
+@app.post("/devices/{device_id}/email-notification-settings")
+def update_device_email_notification_settings(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    email_notifications_enabled: str | None = Form(None),
+    email_notification_recipient: str = Form(""),
+    email_notify_on_warning: str | None = Form(None),
+    email_notify_on_critical: str | None = Form(None),
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_role(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    integration_settings = get_or_create_integration_settings(db)
+    enabled = email_notifications_enabled == "on"
+    recipient = clean_optional(email_notification_recipient)
+    if enabled and not email_settings_configured(integration_settings):
+        raise HTTPException(status_code=400, detail="email settings are not configured")
+    if enabled and not is_valid_email_address(recipient):
+        raise HTTPException(
+            status_code=400, detail="a valid recipient email address is required"
+        )
+    device.email_notifications_enabled = enabled
+    # Clear the stored recipient and notification state when notifications are disabled
+    # so a stale address is not reused by accident if the firewall is later re-enabled.
+    device.email_notification_recipient = recipient if enabled else None
+    device.email_notify_on_warning = email_notify_on_warning == "on"
+    device.email_notify_on_critical = email_notify_on_critical == "on"
+    if not enabled:
+        device.email_last_notified_status = None
+        device.email_last_notified_at = None
+    write_audit(
+        db,
+        request,
+        "device.email_notification_settings.update",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return RedirectResponse(
+        f"/devices/{device.id}?status=email-notification-settings-saved",
+        status_code=303,
     )
 
 

@@ -98,8 +98,29 @@ CREATE TABLE IF NOT EXISTS devices (
   firmware_checked_at timestamptz NULL,
   firmware_check_requested_at timestamptz NULL,
   firmware_check_request_reason text NULL,
+  backup_enabled boolean NOT NULL DEFAULT false,
+  backup_retention_count integer NOT NULL DEFAULT 3,
+  backup_interval_value integer NOT NULL DEFAULT 24,
+  backup_interval_unit text NOT NULL DEFAULT 'hours',
+  backup_interval_hours integer NOT NULL DEFAULT 24,
+  backup_last_requested_at timestamptz NULL,
+  backup_last_uploaded_at timestamptz NULL,
+  email_notifications_enabled boolean NOT NULL DEFAULT false,
+  email_notification_recipient text NULL,
+  email_notify_on_warning boolean NOT NULL DEFAULT true,
+  email_notify_on_critical boolean NOT NULL DEFAULT true,
+  email_last_notified_status text NULL,
+  email_last_notified_at timestamptz NULL,
   last_seen_at timestamptz NULL,
   revoked_at timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS device_backups (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  filename text NOT NULL,
+  content text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -125,5 +146,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_devices_company ON devices(company_id);
+CREATE INDEX IF NOT EXISTS idx_device_backups_device_id ON device_backups(device_id);
 CREATE INDEX IF NOT EXISTS idx_audit_company ON audit_logs(company_id);
 CREATE INDEX IF NOT EXISTS idx_enrollment_company ON enrollment_codes(company_id);
