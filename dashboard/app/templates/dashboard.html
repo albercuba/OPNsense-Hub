@@ -1,10 +1,14 @@
 {% extends "base.html" %} {% block content %}
-<section id="dashboard-filters-card" class="card dashboard-card dashboard-filters-card">
+<section
+    id="dashboard-filters-card"
+    class="card dashboard-card dashboard-filters-card"
+>
     <div class="admin-card-header dashboard-page-header">
         <div>
             <h1>Dashboard</h1>
             <p class="muted">
-                High-level operational overview for the firewalls you can access.</div></h1>
+                High-level operational overview for the firewalls you can
+                access.
             </p>
         </div>
         <div class="dashboard-header-actions">
@@ -12,13 +16,23 @@
                 <span class="muted">Last updated:</span>
                 <strong data-dashboard-last-updated>just now</strong>
             </div>
-            <button class="button secondary icon-only-button" type="button" data-dashboard-refresh>
+            <button
+                class="button secondary icon-only-button"
+                type="button"
+                data-dashboard-refresh
+            >
                 <i class="fa-solid fa-rotate-right"></i>
                 Refresh
             </button>
         </div>
     </div>
-    <form id="dashboard-filter-form" class="dashboard-filters-form" method="get" action="/dashboard" data-dashboard-filter-form>
+    <form
+        id="dashboard-filter-form"
+        class="dashboard-filters-form"
+        method="get"
+        action="/dashboard"
+        data-dashboard-filter-form
+    >
         <label class="form-row">
             <span>Company</span>
             <select name="company_id">
@@ -26,7 +40,13 @@
                 {% for company in filter_companies %}
                 <option
                     value="{{ company.id }}"
-                    {% if filters.company_id == company.id|string %}selected{% endif %}
+                    {%
+                    if
+                    filters.company_id=""
+                    ="company.id|string"
+                    %}selected{%
+                    endif
+                    %}
                 >
                     {{ company.name }}
                 </option>
@@ -36,12 +56,69 @@
         <label class="form-row">
             <span>Status</span>
             <select name="status">
-                <option value="" {% if not filters.status %}selected{% endif %}>All statuses</option>
-                <option value="online" {% if filters.status == 'online' %}selected{% endif %}>Online</option>
-                <option value="warning" {% if filters.status == 'warning' %}selected{% endif %}>Warning</option>
-                <option value="critical" {% if filters.status == 'critical' %}selected{% endif %}>Critical</option>
-                <option value="revoked" {% if filters.status == 'revoked' %}selected{% endif %}>Revoked</option>
-                <option value="other" {% if filters.status == 'other' %}selected{% endif %}>Other / Unknown</option>
+                <option value="" {% if not filters.status %}selected{% endif %}>
+                    All statuses
+                </option>
+                <option
+                    value="online"
+                    {%
+                    if
+                    filters.status=""
+                    ="online"
+                    %}selected{%
+                    endif
+                    %}
+                >
+                    Online
+                </option>
+                <option
+                    value="warning"
+                    {%
+                    if
+                    filters.status=""
+                    ="warning"
+                    %}selected{%
+                    endif
+                    %}
+                >
+                    Warning
+                </option>
+                <option
+                    value="critical"
+                    {%
+                    if
+                    filters.status=""
+                    ="critical"
+                    %}selected{%
+                    endif
+                    %}
+                >
+                    Critical
+                </option>
+                <option
+                    value="revoked"
+                    {%
+                    if
+                    filters.status=""
+                    ="revoked"
+                    %}selected{%
+                    endif
+                    %}
+                >
+                    Revoked
+                </option>
+                <option
+                    value="other"
+                    {%
+                    if
+                    filters.status=""
+                    ="other"
+                    %}selected{%
+                    endif
+                    %}
+                >
+                    Other / Unknown
+                </option>
             </select>
         </label>
         <label class="checkbox-label dashboard-filter-checkbox">
@@ -49,7 +126,12 @@
                 type="checkbox"
                 name="include_revoked"
                 value="true"
-                {% if filters.include_revoked %}checked{% endif %}
+                {%
+                if
+                filters.include_revoked
+                %}checked{%
+                endif
+                %}
             />
             Show revoked
         </label>
@@ -199,7 +281,10 @@
 </section>
 
 <section id="dashboard-overview-grid" class="dashboard-top-grid">
-    <article id="dashboard-status-chart-card" class="card dashboard-card dashboard-status-chart-card">
+    <article
+        id="dashboard-status-chart-card"
+        class="card dashboard-card dashboard-status-chart-card"
+    >
         <h2>Firewall status</h2>
         <div class="dashboard-chart-layout">
             <div
@@ -216,22 +301,32 @@
             <ul class="dashboard-chart-legend">
                 {% for item in status_chart_legend %}
                 <li>
-                    <span class="dashboard-legend-swatch" style="background: {{ item.color }};"></span>
+                    <span
+                        class="dashboard-legend-swatch"
+                        style="background: {{ item.color }};"
+                    ></span>
                     <span>{{ item.label }}</span>
-                    <span class="muted">{{ item.count }} ({{ item.percentage }}%)</span>
+                    <span class="muted"
+                        >{{ item.count }} ({{ item.percentage }}%)</span
+                    >
                 </li>
                 {% endfor %}
             </ul>
         </div>
     </article>
 
-    <article id="dashboard-health-overview-card" class="card dashboard-card dashboard-health-overview-card">
+    <article
+        id="dashboard-health-overview-card"
+        class="card dashboard-card dashboard-health-overview-card"
+    >
         <h2>Firewall health overview</h2>
         <div class="dashboard-health-accordion">
             <details class="dashboard-accordion-item" open>
                 <summary>
                     <span>Recently offline</span>
-                    <span class="muted">{{ health_overview.recently_offline|length }}</span>
+                    <span class="muted"
+                        >{{ health_overview.recently_offline|length }}</span
+                    >
                 </summary>
                 <ul class="dashboard-link-list">
                     {% for item in health_overview.recently_offline %}
@@ -250,13 +345,19 @@
             <details class="dashboard-accordion-item">
                 <summary>
                     <span>Most missed health checks</span>
-                    <span class="muted">{{ health_overview.most_missed|length }}</span>
+                    <span class="muted"
+                        >{{ health_overview.most_missed|length }}</span
+                    >
                 </summary>
                 <ul class="dashboard-link-list">
                     {% for device in health_overview.most_missed %}
                     <li>
-                        <a href="/devices/{{ device.id }}">{{ device.hostname }}</a>
-                        <span class="muted">{{ device.health_missed_checks }} missed</span>
+                        <a href="/devices/{{ device.id }}"
+                            >{{ device.hostname }}</a
+                        >
+                        <span class="muted"
+                            >{{ device.health_missed_checks }} missed</span
+                        >
                     </li>
                     {% else %}
                     <li class="dashboard-empty-inline">
@@ -269,7 +370,9 @@
             <details class="dashboard-accordion-item">
                 <summary>
                     <span>Recovered in the last 24 hours</span>
-                    <span class="muted">{{ health_overview.recovered_recently|length }}</span>
+                    <span class="muted"
+                        >{{ health_overview.recovered_recently|length }}</span
+                    >
                 </summary>
                 <ul class="dashboard-link-list">
                     {% for item in health_overview.recovered_recently %}
@@ -288,20 +391,29 @@
             <details class="dashboard-accordion-item">
                 <summary>
                     <span>Warning or critical</span>
-                    <span class="muted">{{ health_overview.warning_critical|length }}</span>
+                    <span class="muted"
+                        >{{ health_overview.warning_critical|length }}</span
+                    >
                 </summary>
                 <ul class="dashboard-link-list">
                     {% for device in health_overview.warning_critical %}
                     <li>
-                        <a href="/devices/{{ device.id }}">{{ device.hostname }}</a>
-                        <span class="status {{ 'offline' if device.status == 'offline' else device.status }}">
-                            {{ 'critical' if device.status == 'offline' else device.status }}
+                        <a href="/devices/{{ device.id }}"
+                            >{{ device.hostname }}</a
+                        >
+                        <span
+                            class="status {{ 'offline' if device.status == 'offline' else device.status }}"
+                        >
+                            {{ 'critical' if device.status == 'offline' else
+                            device.status }}
                         </span>
                     </li>
                     {% else %}
                     <li class="dashboard-empty-inline">
                         <i class="fa-regular fa-circle-check"></i>
-                        <span class="muted">No firewalls currently need health attention.</span>
+                        <span class="muted"
+                            >No firewalls currently need health attention.</span
+                        >
                     </li>
                     {% endfor %}
                 </ul>
@@ -310,7 +422,10 @@
     </article>
 </section>
 
-<section id="dashboard-attention-card" class="card dashboard-card dashboard-attention-card dashboard-section-spaced">
+<section
+    id="dashboard-attention-card"
+    class="card dashboard-card dashboard-attention-card dashboard-section-spaced"
+>
     <h2>Attention required</h2>
     <div class="responsive-table">
         <table data-enhanced-table>
@@ -328,13 +443,22 @@
                 {% for item in attention_items %}
                 <tr>
                     <td data-sort-value="{{ item.severity }}">
-                        <span class="status dashboard-severity {{ item.severity }}">{{ item.severity }}</span>
+                        <span
+                            class="status dashboard-severity {{ item.severity }}"
+                            >{{ item.severity }}</span
+                        >
                     </td>
                     <td>{{ item.category }}</td>
                     <td>{{ item.firewall }}</td>
                     <td>{{ item.company }}</td>
                     <td>{{ item.description }}</td>
-                    <td><a class="button button-outline button-small" href="{{ item.link }}">{{ item.action }}</a></td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="{{ item.link }}"
+                            >{{ item.action }}</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -343,7 +467,10 @@
                             <i class="fa-regular fa-circle-check"></i>
                             <div>
                                 <strong>No actionable issues</strong>
-                                <p class="muted">Nothing in the current view needs immediate attention.</p>
+                                <p class="muted">
+                                    Nothing in the current view needs immediate
+                                    attention.
+                                </p>
                             </div>
                         </div>
                     </td>
@@ -354,28 +481,38 @@
     </div>
 </section>
 
-<section id="dashboard-backup-card" class="card dashboard-card dashboard-backup-card dashboard-section-spaced">
+<section
+    id="dashboard-backup-card"
+    class="card dashboard-card dashboard-backup-card dashboard-section-spaced"
+>
     <div class="admin-card-header dashboard-section-header">
         <div>
             <h2>Backup status</h2>
             <p class="muted">
-                Enabled: {{ backup_summary.enabled }} · Disabled: {{ backup_summary.disabled }} ·
-                Overdue: {{ backup_summary.overdue }} · Never backed up: {{ backup_summary.never }}
+                Enabled: {{ backup_summary.enabled }} · Disabled: {{
+                backup_summary.disabled }} · Overdue: {{ backup_summary.overdue
+                }} · Never backed up: {{ backup_summary.never }}
             </p>
             <p class="muted">
-                Last successful backup:
-                {% if backup_summary.last_successful_backup %}
-                <a href="/devices/{{ backup_summary.last_successful_backup.id }}">
+                Last successful backup: {% if
+                backup_summary.last_successful_backup %}
+                <a
+                    href="/devices/{{ backup_summary.last_successful_backup.id }}"
+                >
                     {{ backup_summary.last_successful_backup.hostname }}
                 </a>
-                at {{ format_datetime(backup_summary.last_successful_backup.backup_last_uploaded_at) }}
-                {% else %}
-                None
-                {% endif %}
+                at {{
+                format_datetime(backup_summary.last_successful_backup.backup_last_uploaded_at)
+                }} {% else %} None {% endif %}
             </p>
         </div>
         <div class="dashboard-section-tools">
-            <button class="button secondary button-small" type="button" data-export-table="#backup-status-table" data-export-filename="backup-status.csv">
+            <button
+                class="button secondary button-small"
+                type="button"
+                data-export-table="#backup-status-table"
+                data-export-filename="backup-status.csv"
+            >
                 <i class="fa-solid fa-file-csv"></i> Export CSV
             </button>
         </div>
@@ -396,15 +533,37 @@
             <tbody>
                 {% for row in backup_rows %}
                 <tr data-backup-status="{{ row.backup_status.label }}">
-                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
-                    <td>{{ row.company.name if row.company else '-' }}</td>
-                    <td data-column="backup-status" data-sort-value="{{ row.backup_status.label }}">
-                        <span class="status {{ row.backup_status.class }}">{{ row.backup_status.label }}</span>
+                    <td>
+                        <a href="{{ row.action_link }}"
+                            >{{ row.device.hostname }}</a
+                        >
                     </td>
-                    <td data-sort-value="{{ row.device.backup_last_uploaded_at.isoformat() if row.device.backup_last_uploaded_at else '' }}">{{ format_datetime(row.device.backup_last_uploaded_at) if row.device.backup_last_uploaded_at else 'Never' }}</td>
-                    <td data-sort-value="{{ row.retention }}">{{ row.retention }}</td>
+                    <td>{{ row.company.name if row.company else '-' }}</td>
+                    <td
+                        data-column="backup-status"
+                        data-sort-value="{{ row.backup_status.label }}"
+                    >
+                        <span class="status {{ row.backup_status.class }}"
+                            >{{ row.backup_status.label }}</span
+                        >
+                    </td>
+                    <td
+                        data-sort-value="{{ row.device.backup_last_uploaded_at.isoformat() if row.device.backup_last_uploaded_at else '' }}"
+                    >
+                        {{ format_datetime(row.device.backup_last_uploaded_at)
+                        if row.device.backup_last_uploaded_at else 'Never' }}
+                    </td>
+                    <td data-sort-value="{{ row.retention }}">
+                        {{ row.retention }}
+                    </td>
                     <td>{{ row.interval }}</td>
-                    <td><a class="button button-outline button-small" href="{{ row.action_link }}">Review</a></td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="{{ row.action_link }}"
+                            >Review</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -413,7 +572,10 @@
                             <i class="fa-regular fa-hard-drive"></i>
                             <div>
                                 <strong>No backup issues on this view</strong>
-                                <p class="muted">All visible firewalls currently meet the backup rules for this table.</p>
+                                <p class="muted">
+                                    All visible firewalls currently meet the
+                                    backup rules for this table.
+                                </p>
                             </div>
                         </div>
                     </td>
@@ -424,18 +586,28 @@
     </div>
 </section>
 
-<section id="dashboard-firmware-card" class="card dashboard-card dashboard-firmware-card dashboard-section-spaced">
+<section
+    id="dashboard-firmware-card"
+    class="card dashboard-card dashboard-firmware-card dashboard-section-spaced"
+>
     <div class="admin-card-header dashboard-section-header">
         <div>
             <h2>Firmware status</h2>
             <p class="muted">
-                Up to date: {{ firmware_summary.up_to_date }} · Updates: {{ firmware_summary.updates }} ·
-                Upgrades: {{ firmware_summary.upgrades }} · Check failed: {{ firmware_summary.check_failed }} ·
-                Unknown: {{ firmware_summary.unknown }}
+                Up to date: {{ firmware_summary.up_to_date }} · Updates: {{
+                firmware_summary.updates }} · Upgrades: {{
+                firmware_summary.upgrades }} · Check failed: {{
+                firmware_summary.check_failed }} · Unknown: {{
+                firmware_summary.unknown }}
             </p>
         </div>
         <div class="dashboard-section-tools">
-            <button class="button secondary button-small" type="button" data-export-table="#firmware-status-table" data-export-filename="firmware-status.csv">
+            <button
+                class="button secondary button-small"
+                type="button"
+                data-export-table="#firmware-status-table"
+                data-export-filename="firmware-status.csv"
+            >
                 <i class="fa-solid fa-file-csv"></i> Export CSV
             </button>
         </div>
@@ -458,19 +630,53 @@
             <tbody>
                 {% for row in firmware_attention_rows %}
                 <tr data-firmware-status="{{ row.firmware.label }}">
-                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
+                    <td>
+                        <a href="{{ row.action_link }}"
+                            >{{ row.device.hostname }}</a
+                        >
+                    </td>
                     <td>{{ row.company.name if row.company else '-' }}</td>
-                    <td data-column="firmware-status" data-sort-value="{{ row.firmware.label }}">
-                        <span class="status {{ row.firmware.class }}">{{ row.firmware.label }}</span>
+                    <td
+                        data-column="firmware-status"
+                        data-sort-value="{{ row.firmware.label }}"
+                    >
+                        <span class="status {{ row.firmware.class }}"
+                            >{{ row.firmware.label }}</span
+                        >
                     </td>
-                    <td>{{ row.device.firmware_current_version or 'Unknown' }}</td>
-                    <td>{{ row.device.firmware_available_version or 'Unknown' }}</td>
-                    <td data-sort-value="{{ row.device.firmware_update_count }}">{{ row.device.firmware_update_count }}</td>
-                    <td data-sort-value="{{ 1 if row.device.firmware_reboot_required else 0 }}">
-                        <span class="status {{ 'text-warning' if row.device.firmware_reboot_required else 'text-success' }}">{{ 'Yes' if row.device.firmware_reboot_required else 'No' }}</span>
+                    <td>
+                        {{ row.device.firmware_current_version or 'Unknown' }}
                     </td>
-                    <td data-sort-value="{{ row.device.firmware_checked_at.isoformat() if row.device.firmware_checked_at else '' }}">{{ format_datetime(row.device.firmware_checked_at) if row.device.firmware_checked_at else 'Never' }}</td>
-                    <td><a class="button button-outline button-small" href="{{ row.action_link }}">Review</a></td>
+                    <td>
+                        {{ row.device.firmware_available_version or 'Unknown' }}
+                    </td>
+                    <td
+                        data-sort-value="{{ row.device.firmware_update_count }}"
+                    >
+                        {{ row.device.firmware_update_count }}
+                    </td>
+                    <td
+                        data-sort-value="{{ 1 if row.device.firmware_reboot_required else 0 }}"
+                    >
+                        <span
+                            class="status {{ 'text-warning' if row.device.firmware_reboot_required else 'text-success' }}"
+                            >{{ 'Yes' if row.device.firmware_reboot_required
+                            else 'No' }}</span
+                        >
+                    </td>
+                    <td
+                        data-sort-value="{{ row.device.firmware_checked_at.isoformat() if row.device.firmware_checked_at else '' }}"
+                    >
+                        {{ format_datetime(row.device.firmware_checked_at) if
+                        row.device.firmware_checked_at else 'Never' }}
+                    </td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="{{ row.action_link }}"
+                            >Review</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -479,7 +685,10 @@
                             <i class="fa-solid fa-shield-heart"></i>
                             <div>
                                 <strong>No firmware attention items</strong>
-                                <p class="muted">The current view does not contain firmware warnings, failures, or unknown checks.</p>
+                                <p class="muted">
+                                    The current view does not contain firmware
+                                    warnings, failures, or unknown checks.
+                                </p>
                             </div>
                         </div>
                     </td>
@@ -490,7 +699,10 @@
     </div>
 </section>
 
-<section id="dashboard-company-overview-card" class="card dashboard-card dashboard-company-overview-card dashboard-section-spaced">
+<section
+    id="dashboard-company-overview-card"
+    class="card dashboard-card dashboard-company-overview-card dashboard-section-spaced"
+>
     <h2>Company overview</h2>
     <div class="responsive-table">
         <table data-enhanced-table>
@@ -511,16 +723,40 @@
             <tbody>
                 {% for row in company_overview %}
                 <tr>
-                    <td><a href="/companies/{{ row.company.id }}">{{ row.company.name }}</a></td>
-                    <td data-sort-value="{{ row.firewalls }}">{{ row.firewalls }}</td>
+                    <td>
+                        <a href="/companies/{{ row.company.id }}"
+                            >{{ row.company.name }}</a
+                        >
+                    </td>
+                    <td data-sort-value="{{ row.firewalls }}">
+                        {{ row.firewalls }}
+                    </td>
                     <td data-sort-value="{{ row.online }}">{{ row.online }}</td>
-                    <td data-sort-value="{{ row.warning }}">{{ row.warning }}</td>
-                    <td data-sort-value="{{ row.critical }}">{{ row.critical }}</td>
-                    <td data-sort-value="{{ row.revoked }}">{{ row.revoked }}</td>
-                    <td data-sort-value="{{ row.backups_overdue }}">{{ row.backups_overdue }}</td>
-                    <td data-sort-value="{{ row.firmware_attention }}">{{ row.firmware_attention }}</td>
-                    <td data-sort-value="{{ row.licenses_expiring }}">{{ row.licenses_expiring }}</td>
-                    <td><a class="button button-outline button-small" href="/companies/{{ row.company.id }}">Open company</a></td>
+                    <td data-sort-value="{{ row.warning }}">
+                        {{ row.warning }}
+                    </td>
+                    <td data-sort-value="{{ row.critical }}">
+                        {{ row.critical }}
+                    </td>
+                    <td data-sort-value="{{ row.revoked }}">
+                        {{ row.revoked }}
+                    </td>
+                    <td data-sort-value="{{ row.backups_overdue }}">
+                        {{ row.backups_overdue }}
+                    </td>
+                    <td data-sort-value="{{ row.firmware_attention }}">
+                        {{ row.firmware_attention }}
+                    </td>
+                    <td data-sort-value="{{ row.licenses_expiring }}">
+                        {{ row.licenses_expiring }}
+                    </td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="/companies/{{ row.company.id }}"
+                            >Open company</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -529,7 +765,10 @@
                             <i class="fa-regular fa-building"></i>
                             <div>
                                 <strong>No companies in view</strong>
-                                <p class="muted">Adjust the current filters to display company-level health data.</p>
+                                <p class="muted">
+                                    Adjust the current filters to display
+                                    company-level health data.
+                                </p>
                             </div>
                         </div>
                     </td>
@@ -540,14 +779,19 @@
     </div>
 </section>
 
-<section id="dashboard-license-card" class="card dashboard-card dashboard-license-card dashboard-section-spaced">
+<section
+    id="dashboard-license-card"
+    class="card dashboard-card dashboard-license-card dashboard-section-spaced"
+>
     <div class="admin-card-header">
         <div>
             <h2>License overview</h2>
             <p class="muted">
-                Business: {{ license_summary.business }} · Community: {{ license_summary.community }} ·
-                Expired: {{ license_summary.expired }} · Within 30 days: {{ license_summary.within_30_days }} ·
-                Within 7 days: {{ license_summary.within_7_days }}
+                Business: {{ license_summary.business }} · Community: {{
+                license_summary.community }} · Expired: {{
+                license_summary.expired }} · Within 30 days: {{
+                license_summary.within_30_days }} · Within 7 days: {{
+                license_summary.within_7_days }}
             </p>
         </div>
     </div>
@@ -566,22 +810,42 @@
             <tbody>
                 {% for row in license_rows %}
                 <tr>
-                    <td><a href="{{ row.action_link }}">{{ row.device.hostname }}</a></td>
+                    <td>
+                        <a href="{{ row.action_link }}"
+                            >{{ row.device.hostname }}</a
+                        >
+                    </td>
                     <td>{{ row.company.name if row.company else '-' }}</td>
                     <td>
-                        <span class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left is not none and row.license_status.days_left <= 7 else 'text-info' }}">
+                        <span
+                            class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left is not none and row.license_status.days_left <= 7 else 'text-info' }}"
+                        >
                             {{ row.license_status.label }}
                         </span>
                     </td>
-                    <td data-sort-value="{{ row.device.license_expires_at.isoformat() if row.device.license_expires_at else '' }}">{{ format_datetime(row.device.license_expires_at) if row.device.license_expires_at else '-' }}</td>
-                    <td data-sort-value="{{ row.license_status.days_left if row.license_status.days_left is not none else 999999 }}">
-                        {% if row.license_status.days_left is not none %}
-                            <span class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left <= 7 else 'text-info' }}">{{ row.license_status.days_left }}</span>
-                        {% else %}
-                            -
-                        {% endif %}
+                    <td
+                        data-sort-value="{{ row.device.license_expires_at.isoformat() if row.device.license_expires_at else '' }}"
+                    >
+                        {{ format_datetime(row.device.license_expires_at) if
+                        row.device.license_expires_at else '-' }}
                     </td>
-                    <td><a class="button button-outline button-small" href="{{ row.action_link }}">Review</a></td>
+                    <td
+                        data-sort-value="{{ row.license_status.days_left if row.license_status.days_left is not none else 999999 }}"
+                    >
+                        {% if row.license_status.days_left is not none %}
+                        <span
+                            class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left <= 7 else 'text-info' }}"
+                            >{{ row.license_status.days_left }}</span
+                        >
+                        {% else %} - {% endif %}
+                    </td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="{{ row.action_link }}"
+                            >Review</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -589,8 +853,14 @@
                         <div class="table-empty-state">
                             <i class="fa-regular fa-id-badge"></i>
                             <div>
-                                <strong>No expiring licenses on the current view</strong>
-                                <p class="muted">Visible business licenses are not approaching expiration right now.</p>
+                                <strong
+                                    >No expiring licenses on the current
+                                    view</strong
+                                >
+                                <p class="muted">
+                                    Visible business licenses are not
+                                    approaching expiration right now.
+                                </p>
                             </div>
                         </div>
                     </td>
@@ -601,53 +871,98 @@
     </div>
 </section>
 
-<section id="dashboard-notification-health-card" class="card dashboard-card dashboard-notification-health-card dashboard-section-spaced">
+<section
+    id="dashboard-notification-health-card"
+    class="card dashboard-card dashboard-notification-health-card dashboard-section-spaced"
+>
     <h2>Notification health</h2>
     <div class="dashboard-notification-grid">
-        <article class="dashboard-metric-card" data-state="{{ 'success' if notification_health.email_settings_configured else 'warning' }}">
-            <div class="dashboard-metric-icon"><i class="fa-solid fa-envelope-circle-check"></i></div>
-            <span class="dashboard-metric-label muted">Hub email settings configured</span>
-            <strong class="dashboard-metric-value">{{ 'Yes' if notification_health.email_settings_configured else 'No' }}</strong>
+        <article
+            class="dashboard-metric-card"
+            data-state="{{ 'success' if notification_health.email_settings_configured else 'warning' }}"
+        >
+            <div class="dashboard-metric-icon">
+                <i class="fa-solid fa-envelope-circle-check"></i>
+            </div>
+            <span class="dashboard-metric-label muted"
+                >Hub email settings configured</span
+            >
+            <strong class="dashboard-metric-value"
+                >{{ 'Yes' if notification_health.email_settings_configured else
+                'No' }}</strong
+            >
         </article>
-        <article class="dashboard-metric-card" data-state="{{ 'info' if notification_health.supported else 'neutral' }}">
-            <div class="dashboard-metric-icon"><i class="fa-solid fa-bell"></i></div>
-            <span class="dashboard-metric-label muted">Firewalls with notifications enabled</span>
-            <strong class="dashboard-metric-value">{{ notification_health.enabled_count if notification_health.supported else 'N/A' }}</strong>
+        <article
+            class="dashboard-metric-card"
+            data-state="{{ 'info' if notification_health.supported else 'neutral' }}"
+        >
+            <div class="dashboard-metric-icon">
+                <i class="fa-solid fa-bell"></i>
+            </div>
+            <span class="dashboard-metric-label muted"
+                >Firewalls with notifications enabled</span
+            >
+            <strong class="dashboard-metric-value"
+                >{{ notification_health.enabled_count if
+                notification_health.supported else 'N/A' }}</strong
+            >
         </article>
-        <article class="dashboard-metric-card" data-state="{{ 'warning' if notification_health.missing_recipient_count > 0 else 'success' if notification_health.supported else 'neutral' }}">
-            <div class="dashboard-metric-icon"><i class="fa-solid fa-user-slash"></i></div>
-            <span class="dashboard-metric-label muted">Enabled but missing recipient</span>
-            <strong class="dashboard-metric-value">{{ notification_health.missing_recipient_count if notification_health.supported else 'N/A' }}</strong>
+        <article
+            class="dashboard-metric-card"
+            data-state="{{ 'warning' if notification_health.missing_recipient_count > 0 else 'success' if notification_health.supported else 'neutral' }}"
+        >
+            <div class="dashboard-metric-icon">
+                <i class="fa-solid fa-user-slash"></i>
+            </div>
+            <span class="dashboard-metric-label muted"
+                >Enabled but missing recipient</span
+            >
+            <strong class="dashboard-metric-value"
+                >{{ notification_health.missing_recipient_count if
+                notification_health.supported else 'N/A' }}</strong
+            >
         </article>
-        <article class="dashboard-metric-card" data-state="{{ 'critical' if notification_health.failure_count > 0 else 'success' }}">
-            <div class="dashboard-metric-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-            <span class="dashboard-metric-label muted">Notification send failures</span>
-            <strong class="dashboard-metric-value">{{ notification_health.failure_count }}</strong>
+        <article
+            class="dashboard-metric-card"
+            data-state="{{ 'critical' if notification_health.failure_count > 0 else 'success' }}"
+        >
+            <div class="dashboard-metric-icon">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <span class="dashboard-metric-label muted"
+                >Notification send failures</span
+            >
+            <strong class="dashboard-metric-value"
+                >{{ notification_health.failure_count }}</strong
+            >
         </article>
     </div>
     {% if not notification_health.supported %}
     <div class="dashboard-empty-banner">
         <i class="fa-regular fa-circle-info"></i>
-        <span class="muted">Per-firewall notification settings are not available yet.</span>
+        <span class="muted"
+            >Per-firewall notification settings are not available yet.</span
+        >
     </div>
     {% endif %}
     <p class="muted dashboard-section-note">
-        {% if notification_health.last_notification_sent %}
-        Last notification sent at
-        {{ format_datetime(notification_health.last_notification_sent.event.created_at) }}
-        {% if notification_health.last_notification_sent.device %}
-        for
-        <a href="/devices/{{ notification_health.last_notification_sent.device.id }}">
-            {{ notification_health.last_notification_sent.device.hostname }}
-        </a>.
-        {% endif %}
-        {% else %}
-        No notification emails have been sent yet.
-        {% endif %}
+        {% if notification_health.last_notification_sent %} Last notification
+        sent at {{
+        format_datetime(notification_health.last_notification_sent.event.created_at)
+        }} {% if notification_health.last_notification_sent.device %} for
+        <a
+            href="/devices/{{ notification_health.last_notification_sent.device.id }}"
+        >
+            {{ notification_health.last_notification_sent.device.hostname }} </a
+        >. {% endif %} {% else %} No notification emails have been sent yet. {%
+        endif %}
     </p>
 </section>
 
-<section id="dashboard-recent-events-card" class="card dashboard-card dashboard-recent-events-card dashboard-section-spaced">
+<section
+    id="dashboard-recent-events-card"
+    class="card dashboard-card dashboard-recent-events-card dashboard-section-spaced"
+>
     <div class="admin-card-header dashboard-section-header">
         <div>
             <h2>Recent events</h2>
@@ -672,7 +987,12 @@
                     <input type="datetime-local" data-events-end />
                 </label>
             </div>
-            <button class="button secondary button-small" type="button" data-export-table="#recent-events-table" data-export-filename="recent-events.csv">
+            <button
+                class="button secondary button-small"
+                type="button"
+                data-export-table="#recent-events-table"
+                data-export-filename="recent-events.csv"
+            >
                 <i class="fa-solid fa-file-csv"></i> Export CSV
             </button>
         </div>
@@ -691,13 +1011,27 @@
             </thead>
             <tbody>
                 {% for row in recent_events %}
-                <tr data-event-timestamp="{{ row.event.created_at.isoformat() if row.event.created_at else '' }}">
-                    <td data-sort-value="{{ row.event.created_at.isoformat() if row.event.created_at else '' }}">{{ format_datetime(row.event.created_at) }}</td>
-                    <td><a href="{{ row.link }}">{{ row.device.hostname }}</a></td>
+                <tr
+                    data-event-timestamp="{{ row.event.created_at.isoformat() if row.event.created_at else '' }}"
+                >
+                    <td
+                        data-sort-value="{{ row.event.created_at.isoformat() if row.event.created_at else '' }}"
+                    >
+                        {{ format_datetime(row.event.created_at) }}
+                    </td>
+                    <td>
+                        <a href="{{ row.link }}">{{ row.device.hostname }}</a>
+                    </td>
                     <td>{{ row.company.name if row.company else '-' }}</td>
                     <td data-column="event-type">{{ row.event.event_type }}</td>
                     <td>{{ row.event.message or '-' }}</td>
-                    <td><a class="button button-outline button-small" href="{{ row.link }}">Review</a></td>
+                    <td>
+                        <a
+                            class="button button-outline button-small"
+                            href="{{ row.link }}"
+                            >Review</a
+                        >
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
@@ -705,8 +1039,15 @@
                         <div class="table-empty-state">
                             <i class="fa-regular fa-clock"></i>
                             <div>
-                                <strong>No device events in the current view</strong>
-                                <p class="muted">No device events in the current view. Recent event activity will appear here when firewalls report new state changes.</p>
+                                <strong
+                                    >No device events in the current
+                                    view</strong
+                                >
+                                <p class="muted">
+                                    No device events in the current view. Recent
+                                    event activity will appear here when
+                                    firewalls report new state changes.
+                                </p>
                             </div>
                         </div>
                     </td>
