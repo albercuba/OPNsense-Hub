@@ -1,25 +1,26 @@
 document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-company-row]").forEach((row) => {
+  const setCompanyRowExpanded = (row, expanded) => {
     const firewallsRow = row.nextElementSibling;
-    const toggle = () => {
-      if (!firewallsRow || !firewallsRow.matches("[data-company-firewalls]")) {
-        return;
-      }
-      const expanded = row.getAttribute("aria-expanded") === "true";
-      row.setAttribute("aria-expanded", String(!expanded));
-      firewallsRow.hidden = expanded;
-    };
+    if (!firewallsRow || !firewallsRow.matches("[data-company-firewalls]")) {
+      return;
+    }
+    row.setAttribute("aria-expanded", String(expanded));
+    firewallsRow.hidden = !expanded;
+  };
 
+  document.querySelectorAll("[data-company-row]").forEach((row) => {
     row.addEventListener("click", (event) => {
       if (event.target.closest("a, button, form")) {
         return;
       }
-      toggle();
+      const expanded = row.getAttribute("aria-expanded") === "true";
+      setCompanyRowExpanded(row, !expanded);
     });
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        toggle();
+        const expanded = row.getAttribute("aria-expanded") === "true";
+        setCompanyRowExpanded(row, !expanded);
       }
     });
   });
@@ -110,6 +111,73 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(dialog);
     dialog.querySelector("[data-copy-enrollment-code]")?.focus();
   };
+
+  const companiesFilterForm = document.querySelector("[data-company-filters]");
+  const companyNameFilter = document.querySelector(
+    "[data-company-filter-name]",
+  );
+  const companyVersionFilter = document.querySelector(
+    "[data-company-filter-version]",
+  );
+  const companyIpFilter = document.querySelector("[data-company-filter-ip]");
+
+  const applyCompanyFilters = () => {
+    if (!companiesFilterForm) {
+      return;
+    }
+    const selectedCompany = (companyNameFilter?.value || "").trim();
+    const versionQuery = (companyVersionFilter?.value || "")
+      .trim()
+      .toLowerCase();
+    const ipQuery = (companyIpFilter?.value || "").trim().toLowerCase();
+
+    document.querySelectorAll("[data-company-row]").forEach((companyRow) => {
+      const companyName = (companyRow.dataset.companyName || "").trim();
+      const detailRow = companyRow.nextElementSibling;
+      const deviceRows = Array.from(
+        detailRow?.querySelectorAll("[data-device-row]") || [],
+      );
+      const companyMatches =
+        !selectedCompany || companyName === selectedCompany;
+
+      let visibleDevices = 0;
+      deviceRows.forEach((deviceRow) => {
+        const versionMatches =
+          !versionQuery ||
+          (deviceRow.dataset.opnsenseVersion || "").includes(versionQuery) ||
+          (deviceRow.dataset.pluginVersion || "").includes(versionQuery);
+        const ipMatches =
+          !ipQuery || (deviceRow.dataset.deviceIp || "").includes(ipQuery);
+        const visible = companyMatches && versionMatches && ipMatches;
+        deviceRow.dataset.deviceHidden = visible ? "false" : "true";
+        if (visible) {
+          visibleDevices += 1;
+        }
+      });
+
+      const hasDeviceFilters = Boolean(versionQuery || ipQuery);
+      const showCompany =
+        companyMatches && (!hasDeviceFilters || visibleDevices > 0);
+      companyRow.dataset.companyHidden = showCompany ? "false" : "true";
+      if (detailRow?.matches("[data-company-firewalls]")) {
+        detailRow.dataset.companyHidden = showCompany ? "false" : "true";
+      }
+
+      if (!showCompany) {
+        setCompanyRowExpanded(companyRow, false);
+      } else if (hasDeviceFilters || selectedCompany) {
+        setCompanyRowExpanded(companyRow, true);
+      }
+    });
+  };
+
+  companyNameFilter?.addEventListener("change", applyCompanyFilters);
+  companyVersionFilter?.addEventListener("input", applyCompanyFilters);
+  companyIpFilter?.addEventListener("input", applyCompanyFilters);
+  companiesFilterForm?.addEventListener("reset", () => {
+    window.setTimeout(applyCompanyFilters, 0);
+  });
+  applyCompanyFilters();
 
   document.querySelectorAll("[data-enrollment-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {

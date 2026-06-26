@@ -1,6 +1,54 @@
 {% extends "base.html" %} {% block content %}
 <section class="card">
-    <h1>Firewalls Management</h1>
+    <div class="admin-card-header">
+        <div>
+            <h1>Firewalls Management</h1>
+            <p class="muted">
+                Filter the company list and enrolled firewalls by company,
+                version, or tunnel IP.
+            </p>
+        </div>
+    </div>
+
+    <form class="companies-filter-form" data-company-filters>
+        <label class="form-row">
+            <span>Company</span>
+            <select data-company-filter-name>
+                <option value="">All companies</option>
+                {% for company in companies %}
+                <option value="{{ company.name|lower }}">
+                    {{ company.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="form-row">
+            <span>Version</span>
+            <input
+                type="text"
+                placeholder="Filter by OPNsense or plugin version"
+                data-company-filter-version
+            />
+        </label>
+        <label class="form-row">
+            <span>IP</span>
+            <input
+                type="text"
+                placeholder="Filter by tunnel IP"
+                data-company-filter-ip
+            />
+        </label>
+        <div class="dashboard-filter-actions companies-filter-actions">
+            <button
+                class="button secondary button-small"
+                type="reset"
+                data-company-filter-reset
+            >
+                <i class="fa-solid fa-rotate-left"></i> Clear filters
+            </button>
+        </div>
+    </form>
+
     <table class="firewalls-management-table">
         <thead>
             <tr>
@@ -13,6 +61,7 @@
             <tr
                 class="company-row"
                 data-company-row
+                data-company-name="{{ company.name|lower }}"
                 aria-expanded="false"
                 tabindex="0"
             >
@@ -57,7 +106,13 @@
                             </thead>
                             <tbody>
                                 {% for device in company.devices %}
-                                <tr>
+                                <tr
+                                    data-device-row
+                                    data-company-name="{{ company.name|lower }}"
+                                    data-opnsense-version="{{ (device.opnsense_version or 'unknown')|lower }}"
+                                    data-plugin-version="{{ (device.plugin_version or 'unknown')|lower }}"
+                                    data-device-ip="{{ (device.wg_tunnel_ip or '')|lower }}"
+                                >
                                     <td>{{ device.hostname }}</td>
                                     <td>
                                         {{ device.opnsense_version or 'Unknown'

@@ -207,6 +207,10 @@ a {
     max-height: 22rem;
     overflow-y: auto;
 }
+.dashboard-events-table-wrap {
+    max-height: 31rem;
+    overflow: auto;
+}
 h1,
 h2,
 h3 {
@@ -1408,6 +1412,26 @@ td {
     margin-bottom: 0;
 }
 
+.companies-filter-form {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr) minmax(
+            180px,
+            0.9fr
+        ) auto;
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 1rem;
+}
+
+.companies-filter-actions {
+    align-self: end;
+}
+
+[data-company-hidden="true"],
+[data-device-hidden="true"] {
+    display: none;
+}
+
 [data-row-hidden="true"] {
     display: none;
 }
@@ -1431,7 +1455,8 @@ td {
 
     .dashboard-summary-grid,
     .dashboard-top-grid,
-    .dashboard-chart-layout {
+    .dashboard-chart-layout,
+    .companies-filter-form {
         grid-template-columns: 1fr;
     }
 }
