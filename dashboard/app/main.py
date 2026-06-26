@@ -1937,10 +1937,10 @@ def heartbeat(
         if pending_backup_at
         else None,
         "backup_retention_count": device.backup_retention_count
-        if device.backup_enabled
+        if (device.backup_enabled or pending_backup)
         else None,
         "backup_interval_hours": device.backup_interval_hours
-        if device.backup_enabled
+        if (device.backup_enabled or pending_backup)
         else None,
     }
 

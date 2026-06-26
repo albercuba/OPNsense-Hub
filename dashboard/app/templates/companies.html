@@ -13,14 +13,17 @@
     <form class="companies-filter-form" data-company-filters>
         <label class="form-row">
             <span>Company</span>
-            <select data-company-filter-name>
-                <option value="">All companies</option>
+            <input
+                type="text"
+                list="company-filter-options"
+                placeholder="All companies"
+                data-company-filter-name
+            />
+            <datalist id="company-filter-options">
                 {% for company in companies %}
-                <option value="{{ company.name|lower }}">
-                    {{ company.name }}
-                </option>
+                <option value="{{ company.name }}"></option>
                 {% endfor %}
-            </select>
+            </datalist>
         </label>
         <label class="form-row">
             <span>Version</span>

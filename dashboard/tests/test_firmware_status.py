@@ -233,7 +233,14 @@ def test_heartbeat_response_includes_pending_backup_request():
 
 
 def test_request_backup_now_marks_pending_request(monkeypatch):
-    device = make_device("fw-backup-now", backup_enabled=False)
+    device = make_device(
+        "fw-backup-now",
+        backup_enabled=False,
+        backup_retention_count=3,
+        backup_interval_value=24,
+        backup_interval_unit="hours",
+        backup_interval_hours=24,
+    )
     db = FakeDb(device=device)
     monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: True)
 
@@ -248,6 +255,35 @@ def test_request_backup_now_marks_pending_request(monkeypatch):
     assert backup_request_pending(device) is True
     assert device.backup_last_requested_at is not None
     assert db.committed is True
+
+
+def test_heartbeat_response_includes_manual_backup_metadata_when_disabled():
+    token = "device-token"
+    requested_at = datetime.now(timezone.utc).replace(
+        year=2026, month=6, day=26, hour=12, minute=0, second=0, microsecond=0
+    )
+    device = make_device(
+        "fw-backup-manual",
+        token=token,
+        backup_enabled=False,
+        backup_retention_count=5,
+        backup_interval_value=24,
+        backup_interval_unit="hours",
+        backup_interval_hours=24,
+        backup_last_requested_at=requested_at,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {"status": "online", "hostname": "fw-backup-manual"},
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["backup_requested"] is True
+    assert response["backup_retention_count"] == 5
+    assert response["backup_interval_hours"] == 24
 
 
 def test_heartbeat_applies_firmware_result_and_clears_pending_request():

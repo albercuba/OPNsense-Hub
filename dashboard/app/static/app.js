@@ -125,7 +125,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!companiesFilterForm) {
       return;
     }
-    const selectedCompany = (companyNameFilter?.value || "").trim();
+    const selectedCompany = (companyNameFilter?.value || "")
+      .trim()
+      .toLowerCase();
     const versionQuery = (companyVersionFilter?.value || "")
       .trim()
       .toLowerCase();
@@ -171,6 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  companyNameFilter?.addEventListener("input", applyCompanyFilters);
   companyNameFilter?.addEventListener("change", applyCompanyFilters);
   companyVersionFilter?.addEventListener("input", applyCompanyFilters);
   companyIpFilter?.addEventListener("input", applyCompanyFilters);
