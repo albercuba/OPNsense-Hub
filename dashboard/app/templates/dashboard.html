@@ -40,13 +40,7 @@
                 {% for company in filter_companies %}
                 <option
                     value="{{ company.id }}"
-                    {%
-                    if
-                    filters.company_id=""
-                    ="company.id|string"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.company_id == company.id|string %}selected{% endif %}
                 >
                     {{ company.name }}
                 </option>
@@ -61,61 +55,31 @@
                 </option>
                 <option
                     value="online"
-                    {%
-                    if
-                    filters.status=""
-                    ="online"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.status == 'online' %}selected{% endif %}
                 >
                     Online
                 </option>
                 <option
                     value="warning"
-                    {%
-                    if
-                    filters.status=""
-                    ="warning"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.status == 'warning' %}selected{% endif %}
                 >
                     Warning
                 </option>
                 <option
                     value="critical"
-                    {%
-                    if
-                    filters.status=""
-                    ="critical"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.status == 'critical' %}selected{% endif %}
                 >
                     Critical
                 </option>
                 <option
                     value="revoked"
-                    {%
-                    if
-                    filters.status=""
-                    ="revoked"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.status == 'revoked' %}selected{% endif %}
                 >
                     Revoked
                 </option>
                 <option
                     value="other"
-                    {%
-                    if
-                    filters.status=""
-                    ="other"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if filters.status == 'other' %}selected{% endif %}
                 >
                     Other / Unknown
                 </option>
@@ -126,12 +90,7 @@
                 type="checkbox"
                 name="include_revoked"
                 value="true"
-                {%
-                if
-                filters.include_revoked
-                %}checked{%
-                endif
-                %}
+                {% if filters.include_revoked %}checked{% endif %}
             />
             Show revoked
         </label>
