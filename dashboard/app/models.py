@@ -226,6 +226,12 @@ class Device(Base):
     backup_retention_count: Mapped[int] = mapped_column(
         Integer, default=3, nullable=False
     )
+    backup_interval_value: Mapped[int] = mapped_column(
+        Integer, default=24, nullable=False
+    )
+    backup_interval_unit: Mapped[str] = mapped_column(
+        String(20), default="hours", nullable=False
+    )
     backup_interval_hours: Mapped[int] = mapped_column(
         Integer, default=24, nullable=False
     )

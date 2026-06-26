@@ -99,14 +99,6 @@
                                             aria-label="Firewall settings"
                                             ><i class="fa-solid fa-gear"></i
                                         ></a>
-                                        <a
-                                            class="icon-button"
-                                            href="/devices/{{ device.id }}"
-                                            title="Details"
-                                            ><i
-                                                class="fa-solid fa-circle-info"
-                                            ></i
-                                        ></a>
                                         {% if device.revoked_at %}
                                         <form
                                             action="/api/v1/devices/{{ device.id }}/delete"

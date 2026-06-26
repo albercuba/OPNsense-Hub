@@ -1,12 +1,18 @@
 {% extends "base.html" %} {% block content %} {% if status %}
 <div class="card status-card">
-    <i class="fa-solid fa-circle-check"></i> Backup settings saved.
+    <i class="fa-solid fa-circle-check"></i> {% if status ==
+    'backup-requested' %}Backup request queued.{% else %}Backup settings saved.{%
+    endif %}
 </div>
 {% endif %}
 <section class="card">
     <h1>{{ device.hostname }}</h1>
     <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
     <div class="grid">
+        <div>
+            <strong>Company</strong><br />{{ company.name if company else 'Unknown'
+            }}
+        </div>
         <div>
             <strong>OPNsense</strong><br />{{ device.opnsense_version or
             'Unknown' }}
@@ -60,12 +66,16 @@
 </section>
 <section class="card">
     <div class="admin-card-header">
-        <div>
-            <h2>Configuration backups</h2>
-            <p class="muted">
-                Configure automatic firewall backups and download stored copies.
-            </p>
-        </div>
+        <h2>Configuration backups</h2>
+        <form
+            action="/devices/{{ device.id }}/backup-now"
+            method="post"
+            class="inline-action-form"
+        >
+            <button class="button secondary" type="submit">
+                <i class="fa-solid fa-rotate"></i> Backup now
+            </button>
+        </form>
     </div>
     <form
         action="/devices/{{ device.id }}/backup-settings"
@@ -91,15 +101,38 @@
                 required
         /></label>
         <label class="form-row"
-            >Backup interval (hours)
+            >Backup interval
             <input
                 type="number"
-                name="backup_interval_hours"
+                name="backup_interval_value"
                 min="1"
-                max="720"
-                value="{{ device.backup_interval_hours }}"
+                max="999"
+                value="{{ device.backup_interval_value }}"
                 required
         /></label>
+        <label class="form-row"
+            >Interval unit
+            <select name="backup_interval_unit">
+                <option
+                    value="hours"
+                    {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
+                >
+                    Hours
+                </option>
+                <option
+                    value="days"
+                    {% if device.backup_interval_unit == 'days' %}selected{% endif %}
+                >
+                    Days
+                </option>
+                <option
+                    value="months"
+                    {% if device.backup_interval_unit == 'months' %}selected{% endif %}
+                >
+                    Months
+                </option>
+            </select>
+        </label>
         <div class="form-row">
             <strong>Last uploaded</strong><br />{{
             device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if

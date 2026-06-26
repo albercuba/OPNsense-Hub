@@ -83,6 +83,8 @@ FIRMWARE_MESSAGE_MAX_LENGTH = 500
 DEVICE_BACKUP_RETENTION_MAX = 10
 DEVICE_BACKUP_INTERVAL_HOURS_MAX = 24 * 30
 DEVICE_BACKUP_CONTENT_MAX_LENGTH = 2_000_000
+DEVICE_BACKUP_INTERVAL_UNITS = {"hours", "days", "months"}
+DEVICE_BACKUP_INTERVAL_VALUE_MAX = 999
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -417,6 +419,16 @@ def ensure_schema_compat() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_interval_value integer NOT NULL DEFAULT 24"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_interval_unit text NOT NULL DEFAULT 'hours'"
+            )
+        )
+        conn.execute(
+            text(
                 "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_interval_hours integer NOT NULL DEFAULT 24"
             )
         )
@@ -428,6 +440,16 @@ def ensure_schema_compat() -> None:
         conn.execute(
             text(
                 "ALTER TABLE devices ADD COLUMN IF NOT EXISTS backup_last_uploaded_at timestamptz NULL"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE devices
+                SET backup_interval_value = backup_interval_hours,
+                    backup_interval_unit = 'hours'
+                WHERE backup_interval_hours IS NOT NULL
+                """
             )
         )
         conn.execute(
@@ -613,31 +635,50 @@ def parse_bounded_int(
     return parsed
 
 
+def parse_backup_interval_unit(value: object) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in DEVICE_BACKUP_INTERVAL_UNITS:
+        raise HTTPException(
+            status_code=400,
+            detail="backup interval unit must be hours, days, or months",
+        )
+    return normalized
+
+
+def backup_interval_delta(device: Device) -> timedelta:
+    unit = (device.backup_interval_unit or "hours").lower()
+    value = max(1, int(device.backup_interval_value or 1))
+    if unit == "days":
+        return timedelta(days=value)
+    if unit == "months":
+        return timedelta(days=value * 30)
+    return timedelta(hours=value)
+
+
+def backup_request_pending(device: Device) -> bool:
+    return bool(
+        device.backup_last_requested_at
+        and (
+            device.backup_last_uploaded_at is None
+            or device.backup_last_uploaded_at < device.backup_last_requested_at
+        )
+    )
+
+
 def backup_due(device: Device, now: datetime | None = None) -> bool:
     if not device.backup_enabled:
         return False
     current_time = now or utc_now()
-    if device.backup_last_requested_at and (
-        device.backup_last_uploaded_at is None
-        or device.backup_last_uploaded_at < device.backup_last_requested_at
-    ):
+    if backup_request_pending(device):
         return True
     if device.backup_last_uploaded_at is None:
         return True
-    return (
-        device.backup_last_uploaded_at + timedelta(hours=device.backup_interval_hours)
-        <= current_time
-    )
+    return device.backup_last_uploaded_at + backup_interval_delta(device) <= current_time
 
 
 def mark_device_backup_requested(device: Device, now: datetime | None = None) -> bool:
-    if not device.backup_enabled:
-        return False
     current_time = now or utc_now()
-    if device.backup_last_requested_at and (
-        device.backup_last_uploaded_at is None
-        or device.backup_last_uploaded_at < device.backup_last_requested_at
-    ):
+    if backup_request_pending(device):
         return True
     if not backup_due(device, now=current_time):
         return False
@@ -1670,7 +1711,7 @@ def upload_device_backup(
     authorization: Annotated[str | None, Header()] = None,
 ):
     device = device_from_token(db, device_id, authorization)
-    if not device.backup_enabled:
+    if not device.backup_enabled and not backup_request_pending(device):
         raise HTTPException(status_code=400, detail="backups are disabled for this firewall")
     content = str(payload.get("content", ""))
     if not content.strip():
@@ -1757,6 +1798,7 @@ def device_page(
     device = db.get(Device, device_id)
     if not device or not has_company_role(db, user, device.company_id):
         raise HTTPException(status_code=404)
+    company = db.get(Company, device.company_id)
     backups = db.scalars(
         select(DeviceBackup)
         .where(DeviceBackup.device_id == device.id)
@@ -1774,6 +1816,7 @@ def device_page(
         {
             "request": request,
             "user": user,
+            "company": company,
             "device": device,
             "backups": backups,
             "events": events,
@@ -1816,6 +1859,8 @@ def get_device(
         else None,
         "backup_enabled": device.backup_enabled,
         "backup_retention_count": device.backup_retention_count,
+        "backup_interval_value": device.backup_interval_value,
+        "backup_interval_unit": device.backup_interval_unit,
         "backup_interval_hours": device.backup_interval_hours,
         "backup_last_requested_at": device.backup_last_requested_at.isoformat()
         if device.backup_last_requested_at
@@ -1835,7 +1880,8 @@ def update_device_backup_settings(
     user: Annotated[User, Depends(current_user)],
     backup_enabled: str | None = Form(None),
     backup_retention_count: str = Form("3"),
-    backup_interval_hours: str = Form("24"),
+    backup_interval_value: str = Form("24"),
+    backup_interval_unit: str = Form("hours"),
 ):
     device = db.get(Device, device_id)
     if not device or not has_company_role(db, user, device.company_id, "admin"):
@@ -1847,11 +1893,15 @@ def update_device_backup_settings(
         minimum=1,
         maximum=DEVICE_BACKUP_RETENTION_MAX,
     )
-    device.backup_interval_hours = parse_bounded_int(
-        backup_interval_hours,
-        field_name="backup interval hours",
+    device.backup_interval_value = parse_bounded_int(
+        backup_interval_value,
+        field_name="backup interval value",
         minimum=1,
-        maximum=DEVICE_BACKUP_INTERVAL_HOURS_MAX,
+        maximum=DEVICE_BACKUP_INTERVAL_VALUE_MAX,
+    )
+    device.backup_interval_unit = parse_backup_interval_unit(backup_interval_unit)
+    device.backup_interval_hours = max(
+        1, int(backup_interval_delta(device).total_seconds() // 3600)
     )
     if device.backup_enabled:
         mark_device_backup_requested(device)
@@ -1868,6 +1918,31 @@ def update_device_backup_settings(
     db.commit()
     return RedirectResponse(
         f"/devices/{device.id}?status=backup-settings-saved", status_code=303
+    )
+
+
+@app.post("/devices/{device_id}/backup-now")
+def request_device_backup_now(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_role(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    device.backup_last_requested_at = utc_now()
+    write_audit(
+        db,
+        request,
+        "device.backup.request_now",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return RedirectResponse(
+        f"/devices/{device.id}?status=backup-requested", status_code=303
     )
 
 

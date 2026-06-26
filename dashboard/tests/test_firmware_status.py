@@ -5,8 +5,11 @@ from uuid import uuid4
 
 from app.main import (
     backup_due,
+    backup_interval_delta,
+    backup_request_pending,
     firmware_status_ui,
     heartbeat,
+    request_device_backup_now,
     mark_devices_for_firmware_check,
     normalize_device_firmware_payload,
     run_firmware_schedule_once,
@@ -93,6 +96,8 @@ def make_device(hostname, token="device-token", **overrides):
         firmware_reboot_required=False,
         backup_enabled=False,
         backup_retention_count=3,
+        backup_interval_value=24,
+        backup_interval_unit="hours",
         backup_interval_hours=24,
         created_at=now,
     )
@@ -182,6 +187,24 @@ def test_backup_due_when_enabled_and_never_uploaded():
     assert backup_due(device) is True
 
 
+def test_backup_interval_delta_supports_days_and_months():
+    days_device = make_device(
+        "fw-backup-days",
+        backup_enabled=True,
+        backup_interval_value=2,
+        backup_interval_unit="days",
+    )
+    months_device = make_device(
+        "fw-backup-months",
+        backup_enabled=True,
+        backup_interval_value=3,
+        backup_interval_unit="months",
+    )
+
+    assert backup_interval_delta(days_device).total_seconds() == 2 * 24 * 3600
+    assert backup_interval_delta(months_device).total_seconds() == 90 * 24 * 3600
+
+
 def test_heartbeat_response_includes_pending_backup_request():
     token = "device-token"
     device = make_device(
@@ -189,6 +212,8 @@ def test_heartbeat_response_includes_pending_backup_request():
         token=token,
         backup_enabled=True,
         backup_retention_count=4,
+        backup_interval_value=12,
+        backup_interval_unit="hours",
         backup_interval_hours=12,
     )
     db = FakeDb(device=device)
@@ -204,6 +229,24 @@ def test_heartbeat_response_includes_pending_backup_request():
     assert response["backup_requested_at"] is not None
     assert response["backup_retention_count"] == 4
     assert response["backup_interval_hours"] == 12
+    assert db.committed is True
+
+
+def test_request_backup_now_marks_pending_request(monkeypatch):
+    device = make_device("fw-backup-now", backup_enabled=False)
+    db = FakeDb(device=device)
+    monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: True)
+
+    response = request_device_backup_now(
+        SimpleNamespace(client=None, headers={}),
+        device.id,
+        db,
+        SimpleNamespace(id=uuid4(), role="administrator"),
+    )
+
+    assert response.status_code == 303
+    assert backup_request_pending(device) is True
+    assert device.backup_last_requested_at is not None
     assert db.committed is True
 
 
