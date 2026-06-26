@@ -180,6 +180,23 @@ a {
 .dual-settings-grid > .card {
     height: 100%;
 }
+.device-backup-card,
+.device-email-notifications-card {
+    display: flex;
+    flex-direction: column;
+}
+.backup-settings-form,
+.email-notifications-form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+}
+.backup-card-actions {
+    margin-top: auto;
+}
+.backup-save-row {
+    margin-top: 0;
+}
 h1,
 h2,
 h3 {

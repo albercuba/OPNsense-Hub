@@ -1,12 +1,12 @@
 {% extends "base.html" %} {% block content %} {% if status %}
-<div class="card status-card">
+<div id="device-status-card" class="card status-card device-status-card">
     <i class="fa-solid fa-circle-check"></i> {% if status == 'backup-requested'
     %}Backup request queued.{% elif status ==
     'email-notification-settings-saved' %}Email notification settings saved.{%
     else %}Backup settings saved.{% endif %}
 </div>
 {% endif %}
-<section class="card">
+<section id="device-summary-card" class="card device-summary-card">
     <h1>{{ device.hostname }}</h1>
     <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
     <div class="grid">
@@ -65,24 +65,18 @@
     </p>
     {% endif %}
 </section>
-<section class="dual-settings-grid">
-    <section class="card">
+<section
+    id="device-settings-grid"
+    class="dual-settings-grid device-settings-grid"
+>
+    <section id="device-backup-card" class="card device-backup-card">
         <div class="admin-card-header">
             <h2>Configuration backups</h2>
-            <form
-                action="/devices/{{ device.id }}/backup-now"
-                method="post"
-                class="inline-action-form"
-            >
-                <button class="button secondary" type="submit">
-                    <i class="fa-solid fa-box-archive"></i> Backup now
-                </button>
-            </form>
         </div>
         <form
             action="/devices/{{ device.id }}/backup-settings"
             method="post"
-            class="settings-grid-form"
+            class="settings-grid-form backup-settings-form"
         >
             <label class="checkbox-label full-row"
                 ><input
@@ -148,14 +142,27 @@
                 device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if
                 device.backup_last_uploaded_at else 'Never' }}
             </div>
-            <div class="form-row submit-row">
+            <div class="backup-card-actions full-row">
+                <button
+                    class="button secondary"
+                    type="submit"
+                    formaction="/devices/{{ device.id }}/backup-now"
+                    formmethod="post"
+                >
+                    <i class="fa-solid fa-box-archive"></i> Backup now
+                </button>
+            </div>
+            <div class="form-row submit-row backup-save-row">
                 <button class="button" type="submit">
                     <i class="fa-solid fa-floppy-disk"></i> Save backup settings
                 </button>
             </div>
         </form>
     </section>
-    <section class="card">
+    <section
+        id="device-email-notifications-card"
+        class="card device-email-notifications-card"
+    >
         <div class="admin-card-header">
             <h2>Email notifications</h2>
         </div>
@@ -173,7 +180,7 @@
         <form
             action="/devices/{{ device.id }}/email-notification-settings"
             method="post"
-            class="settings-grid-form"
+            class="settings-grid-form email-notifications-form"
         >
             <label class="checkbox-label full-row"
                 ><input
@@ -227,7 +234,7 @@
         </form>
     </section>
 </section>
-<section class="card">
+<section id="device-backup-history-card" class="card device-backup-history-card">
     <h2>Stored backups</h2>
     <table>
         <thead>
@@ -258,7 +265,7 @@
         </tbody>
     </table>
 </section>
-<section class="card">
+<section id="device-events-card" class="card device-events-card">
     <h2>Device events</h2>
     <table>
         <thead>
