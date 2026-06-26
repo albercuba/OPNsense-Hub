@@ -230,6 +230,10 @@ def test_heartbeat_response_includes_pending_backup_request():
     assert response["backup_retention_count"] == 4
     assert response["backup_interval_hours"] == 12
     assert db.committed is True
+    assert not any(
+        isinstance(event, DeviceEvent) and event.event_type == "heartbeat"
+        for event in db.added
+    )
 
 
 def test_request_backup_now_marks_pending_request(monkeypatch):

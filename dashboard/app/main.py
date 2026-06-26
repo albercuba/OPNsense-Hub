@@ -1910,15 +1910,16 @@ def heartbeat(
     apply_device_license_payload(device, payload)
     firmware_applied = apply_device_firmware_payload(device, payload)
     device.last_seen_at = utc_now()
-    event_message = device.status
-    if firmware_applied:
-        event_message = (
-            f"{device.status}; firmware={device.firmware_status}; "
-            f"updates={device.firmware_update_count}"
-        )[:1000]
-    db.add(
-        DeviceEvent(device_id=device.id, event_type="heartbeat", message=event_message)
-    )
+    if firmware_applied or device.status != "online":
+        event_message = device.status
+        if firmware_applied:
+            event_message = (
+                f"{device.status}; firmware={device.firmware_status}; "
+                f"updates={device.firmware_update_count}"
+            )[:1000]
+        db.add(
+            DeviceEvent(device_id=device.id, event_type="heartbeat", message=event_message)
+        )
     pending_firmware_check = device.firmware_check_requested_at is not None
     pending_firmware_check_at = device.firmware_check_requested_at
     pending_firmware_check_reason = device.firmware_check_request_reason
