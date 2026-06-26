@@ -38,10 +38,7 @@
             <select name="company_id">
                 <option value="">All companies</option>
                 {% for company in filter_companies %}
-                <option
-                    value="{{ company.id }}"
-                    {% if filters.company_id == company.id|string %}selected{% endif %}
-                >
+                <option value="{{ company.id }}" {% if filters.company_id == company.id|string %}selected{% endif %}>
                     {{ company.name }}
                 </option>
                 {% endfor %}
@@ -53,34 +50,19 @@
                 <option value="" {% if not filters.status %}selected{% endif %}>
                     All statuses
                 </option>
-                <option
-                    value="online"
-                    {% if filters.status == 'online' %}selected{% endif %}
-                >
+                <option value="online" {% if filters.status == 'online' %}selected{% endif %}>
                     Online
                 </option>
-                <option
-                    value="warning"
-                    {% if filters.status == 'warning' %}selected{% endif %}
-                >
+                <option value="warning" {% if filters.status == 'warning' %}selected{% endif %}>
                     Warning
                 </option>
-                <option
-                    value="critical"
-                    {% if filters.status == 'critical' %}selected{% endif %}
-                >
+                <option value="critical" {% if filters.status == 'critical' %}selected{% endif %}>
                     Critical
                 </option>
-                <option
-                    value="revoked"
-                    {% if filters.status == 'revoked' %}selected{% endif %}
-                >
+                <option value="revoked" {% if filters.status == 'revoked' %}selected{% endif %}>
                     Revoked
                 </option>
-                <option
-                    value="other"
-                    {% if filters.status == 'other' %}selected{% endif %}
-                >
+                <option value="other" {% if filters.status == 'other' %}selected{% endif %}>
                     Other / Unknown
                 </option>
             </select>
@@ -930,8 +912,9 @@
             <label class="form-row dashboard-inline-filter">
                 <span>Time range</span>
                 <select data-events-range-select>
+                    <option value="all" selected>All recent events</option>
                     <option value="1h">Last hour</option>
-                    <option value="24h" selected>Last 24h</option>
+                    <option value="24h">Last 24h</option>
                     <option value="7d">Last 7 days</option>
                     <option value="custom">Custom</option>
                 </select>
