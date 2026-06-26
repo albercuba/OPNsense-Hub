@@ -190,6 +190,13 @@ scp -r net-mgmt/os-opnsensehub/src/opnsense/* root@firewall:/usr/local/opnsense/
 ssh root@firewall 'chmod +x /usr/local/opnsense/scripts/OPNsense/OPNsenseHub/*.py && service configd restart'
 ```
 
+After copying updated plugin files, reconnect the plugin once so it re-installs the per-minute heartbeat cron entry used for firmware requests, manual backup requests, and status updates:
+
+```sh
+ssh root@firewall 'configctl opnsensehub connect'
+ssh root@firewall 'crontab -l | grep "OPNsense Hub heartbeat"'
+```
+
 Then open:
 
 ```text
