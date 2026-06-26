@@ -77,10 +77,8 @@
                                         >
                                     </td>
                                     <td>
-                                        {{
-                                        device.last_seen_at.strftime('%Y-%m-%d
-                                        %H:%M') if device.last_seen_at else
-                                        'Never' }}
+                                        {{ format_datetime(device.last_seen_at)
+                                        if device.last_seen_at else 'Never' }}
                                     </td>
                                     <td class="actions">
                                         {% set fw = firmware_status_ui(device)

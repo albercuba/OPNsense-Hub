@@ -32,7 +32,7 @@
         <div><strong>Tunnel IP</strong><br />{{ device.wg_tunnel_ip }}</div>
         <div>
             <strong>Last seen</strong><br />{{
-            device.last_seen_at.strftime('%Y-%m-%d %H:%M') if
+            format_datetime(device.last_seen_at) if
             device.last_seen_at else 'Never' }}
         </div>
     </div>
@@ -139,7 +139,7 @@
             </div>
             <div class="form-row">
                 <strong>Last uploaded</strong><br />{{
-                device.backup_last_uploaded_at.strftime('%Y-%m-%d %H:%M') if
+                format_datetime(device.backup_last_uploaded_at) if
                 device.backup_last_uploaded_at else 'Never' }}
             </div>
             <div class="backup-card-actions full-row">
@@ -220,7 +220,7 @@
             >
             <div class="form-row">
                 <strong>Last notified</strong><br />{{
-                device.email_last_notified_at.strftime('%Y-%m-%d %H:%M') if
+                format_datetime(device.email_last_notified_at) if
                 device.email_last_notified_at else 'Never' }}
             </div>
             {% if email_settings_configured and can_edit_notification_settings %}
@@ -247,7 +247,7 @@
         <tbody>
             {% for backup in backups %}
             <tr>
-                <td>{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ format_datetime(backup.created_at) }}</td>
                 <td>{{ backup.filename }}</td>
                 <td class="actions">
                     <a
@@ -279,7 +279,7 @@
             <tbody>
                 {% for event in events %}
                 <tr>
-                    <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ format_datetime(event.created_at) }}</td>
                     <td>{{ event.event_type }}</td>
                     <td>{{ event.message or '' }}</td>
                 </tr>

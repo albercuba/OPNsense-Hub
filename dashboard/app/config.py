@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     app_name: str = "OPNsense Hub"
     app_env: str = "development"
+    app_timezone: str = "UTC"
     public_url: str = "http://localhost:8083"
     database_url: str = (
         "postgresql+psycopg://opnsensehub:opnsensehub@db:5432/opnsensehub"
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     firewall_health_check_interval_seconds: int = 60
     firewall_health_check_timeout_seconds: int = 15
     firewall_health_warning_misses: int = 3
-    firewall_health_critical_misses: int = 3
+    firewall_health_critical_misses: int = 4
     firewall_health_warning_recovery_successes: int = 1
     firewall_health_critical_recovery_successes: int = 2
 

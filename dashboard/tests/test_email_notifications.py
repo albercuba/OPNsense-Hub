@@ -255,7 +255,7 @@ def test_non_admin_cannot_save_email_notification_settings(monkeypatch):
 def test_online_to_warning_transition_sends_one_email(monkeypatch):
     sent = []
     device = make_device(
-        health_missed_checks=1,
+        health_missed_checks=2,
         email_notifications_enabled=True,
         email_notification_recipient="alerts@example.com",
     )
@@ -327,7 +327,7 @@ def test_warning_to_critical_transition_sends_email(monkeypatch):
     sent = []
     device = make_device(
         status="warning",
-        health_missed_checks=2,
+        health_missed_checks=3,
         email_notifications_enabled=True,
         email_notification_recipient="alerts@example.com",
     )
@@ -412,7 +412,7 @@ def test_revoked_device_does_not_send_email():
 
 def test_email_send_failure_creates_device_event_and_does_not_crash(monkeypatch):
     device = make_device(
-        health_missed_checks=1,
+        health_missed_checks=2,
         email_notifications_enabled=True,
         email_notification_recipient="alerts@example.com",
     )

@@ -42,7 +42,7 @@
                     >
                 </td>
                 <td>
-                    {{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if
+                    {{ format_datetime(device.last_seen_at) if
                     device.last_seen_at else 'Never' }}
                 </td>
                 <td class="actions">
@@ -130,10 +130,10 @@
         <tbody>
             {% for code in codes %}
             <tr>
-                <td>{{ code.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td>{{ code.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ format_datetime(code.created_at) }}</td>
+                <td>{{ format_datetime(code.expires_at) }}</td>
                 <td>
-                    {{ code.used_at.strftime('%Y-%m-%d %H:%M') if code.used_at
+                    {{ format_datetime(code.used_at) if code.used_at
                     else 'No' }}
                 </td>
             </tr>

@@ -367,7 +367,7 @@ def test_normalize_device_firmware_payload_normalizes_invalid_status_to_error():
 
 def test_firmware_status_ui_returns_expected_tooltip_and_class():
     checked_at = datetime(2026, 6, 25, 23, 3, tzinfo=timezone.utc)
-    expected_checked_at = checked_at.astimezone().strftime("%Y-%m-%d %H:%M")
+    expected_checked_at = checked_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
     update_device = SimpleNamespace(
         firmware_status="update",
         firmware_available_version="25.7.11",

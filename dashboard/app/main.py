@@ -11,6 +11,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import (
@@ -88,6 +89,31 @@ DEVICE_BACKUP_INTERVAL_HOURS_MAX = 24 * 30
 DEVICE_BACKUP_CONTENT_MAX_LENGTH = 2_000_000
 DEVICE_BACKUP_INTERVAL_UNITS = {"hours", "days", "months"}
 DEVICE_BACKUP_INTERVAL_VALUE_MAX = 999
+
+
+def app_timezone_info() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.app_timezone)
+    except ZoneInfoNotFoundError:
+        logger.warning("Unknown app timezone %s; falling back to UTC", settings.app_timezone)
+        return ZoneInfo("UTC")
+
+
+def to_app_timezone(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(app_timezone_info())
+
+
+def app_now() -> datetime:
+    return utc_now().astimezone(app_timezone_info())
+
+
+def format_datetime(value: datetime | None, include_tz: bool = False) -> str:
+    if value is None:
+        return ""
+    fmt = "%Y-%m-%d %H:%M %Z" if include_tz else "%Y-%m-%d %H:%M"
+    return to_app_timezone(value).strftime(fmt)
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -306,7 +332,7 @@ async def device_health_check_loop() -> None:
 
 
 async def run_firmware_schedule_once(now: datetime | None = None) -> int:
-    current_time = now or datetime.now().astimezone()
+    current_time = now or app_now()
     if current_time.hour != 23:
         return 0
     with SessionLocal() as db:
@@ -855,12 +881,8 @@ def build_health_notification_email(
             f"Previous status: {previous_status}",
             f"Tunnel IP: {device.wg_tunnel_ip}",
             "Last seen: "
-            + (
-                device.last_seen_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                if device.last_seen_at
-                else "Never"
-            ),
-            f"Time: {current_time.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            + (format_datetime(device.last_seen_at, include_tz=True) if device.last_seen_at else "Never"),
+            f"Time: {format_datetime(current_time, include_tz=True)}",
             "",
             "This alert was sent because email notifications are enabled for this firewall in OPNsense Hub.",
         ]
@@ -1090,9 +1112,7 @@ def apply_device_firmware_payload(
 def firmware_status_local_date(value: datetime | None) -> date | None:
     if value is None:
         return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone().date()
+    return to_app_timezone(value).date()
 
 
 def device_has_firmware_check_for_day(device: Device, scheduled_day) -> bool:
@@ -1110,7 +1130,7 @@ def device_has_pending_firmware_request_for_day(device: Device, scheduled_day) -
 def mark_devices_for_firmware_check(
     db: Session, reason: str = "scheduled", now: datetime | None = None
 ) -> int:
-    scheduled_time = now or datetime.now().astimezone()
+    scheduled_time = now or app_now()
     requested_at = scheduled_time.astimezone(timezone.utc)
     scheduled_day = scheduled_time.date()
     devices = db.scalars(
@@ -1136,9 +1156,7 @@ def firmware_status_ui(device: Device) -> dict[str, str]:
         status = "unknown"
     checked_at_text = None
     if device.firmware_checked_at:
-        checked_at_text = device.firmware_checked_at.astimezone().strftime(
-            "%Y-%m-%d %H:%M"
-        )
+        checked_at_text = format_datetime(device.firmware_checked_at)
 
     mapping = {
         "unknown": {
@@ -1201,6 +1219,8 @@ def render_template(
     payload.setdefault("device_license_label", device_license_label)
     payload.setdefault("device_license_expiration", device_license_expiration)
     payload.setdefault("firmware_status_ui", firmware_status_ui)
+    payload.setdefault("format_datetime", format_datetime)
+    payload.setdefault("app_timezone_name", app_timezone_info().key)
     return templates.TemplateResponse(
         template_name,
         payload,
@@ -1784,7 +1804,7 @@ def create_enrollment_code(
                 "code": code,
                 "company": company.name,
                 "expires_at": expires_at.isoformat(),
-                "expires_at_display": expires_at.strftime("%Y-%m-%d %H:%M UTC"),
+                "expires_at_display": format_datetime(expires_at, include_tz=True),
             }
         )
     return render_template(
