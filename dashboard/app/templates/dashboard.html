@@ -35,37 +35,39 @@
     >
         <label class="form-row">
             <span>Company</span>
-            <select name="company_id" class="dashboard-select">
-                <option value="">All companies</option>
+            <input type="hidden" name="company_id" value="{{ filters.company_id }}" data-dashboard-company-id />
+            <input
+                class="dashboard-text-filter"
+                type="text"
+                list="dashboard-company-options"
+                placeholder="All companies"
+                value="{% for company in filter_companies %}{% if filters.company_id == company.id|string %}{{ company.name }}{% endif %}{% endfor %}"
+                data-dashboard-company-input
+            />
+            <datalist id="dashboard-company-options">
                 {% for company in filter_companies %}
-                <option value="{{ company.id }}" {% if filters.company_id == company.id|string %}selected{% endif %}>
-                    {{ company.name }}
-                </option>
+                <option value="{{ company.name }}" data-company-id="{{ company.id }}"></option>
                 {% endfor %}
-            </select>
+            </datalist>
         </label>
         <label class="form-row">
             <span>Status</span>
-            <select name="status" class="dashboard-select">
-                <option value="" {% if not filters.status %}selected{% endif %}>
-                    All statuses
-                </option>
-                <option value="online" {% if filters.status == 'online' %}selected{% endif %}>
-                    Online
-                </option>
-                <option value="warning" {% if filters.status == 'warning' %}selected{% endif %}>
-                    Warning
-                </option>
-                <option value="critical" {% if filters.status == 'critical' %}selected{% endif %}>
-                    Critical
-                </option>
-                <option value="revoked" {% if filters.status == 'revoked' %}selected{% endif %}>
-                    Revoked
-                </option>
-                <option value="other" {% if filters.status == 'other' %}selected{% endif %}>
-                    Other / Unknown
-                </option>
-            </select>
+            <input type="hidden" name="status" value="{{ filters.status }}" data-dashboard-status-value />
+            <input
+                class="dashboard-text-filter"
+                type="text"
+                list="dashboard-status-options"
+                placeholder="All statuses"
+                value="{% if filters.status == 'online' %}Online{% elif filters.status == 'warning' %}Warning{% elif filters.status == 'critical' %}Critical{% elif filters.status == 'revoked' %}Revoked{% elif filters.status == 'other' %}Other / Unknown{% endif %}"
+                data-dashboard-status-input
+            />
+            <datalist id="dashboard-status-options">
+                <option value="Online" data-status-value="online"></option>
+                <option value="Warning" data-status-value="warning"></option>
+                <option value="Critical" data-status-value="critical"></option>
+                <option value="Revoked" data-status-value="revoked"></option>
+                <option value="Other / Unknown" data-status-value="other"></option>
+            </datalist>
         </label>
         <label class="checkbox-label dashboard-filter-checkbox">
             <input
@@ -912,13 +914,21 @@
         <div class="dashboard-section-tools dashboard-events-tools">
             <label class="form-row dashboard-inline-filter">
                 <span>Time range</span>
-                <select data-events-range-select class="dashboard-select">
-                    <option value="all" selected>All recent events</option>
-                    <option value="1h">Last hour</option>
-                    <option value="24h">Last 24h</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="custom">Custom</option>
-                </select>
+                <input
+                    class="dashboard-text-filter"
+                    type="text"
+                    list="dashboard-time-range-options"
+                    placeholder="All recent events"
+                    value="All recent events"
+                    data-events-range-select
+                />
+                <datalist id="dashboard-time-range-options">
+                    <option value="All recent events" data-range-value="all"></option>
+                    <option value="Last hour" data-range-value="1h"></option>
+                    <option value="Last 24h" data-range-value="24h"></option>
+                    <option value="Last 7 days" data-range-value="7d"></option>
+                    <option value="Custom" data-range-value="custom"></option>
+                </datalist>
             </label>
             <div class="dashboard-custom-range" data-events-custom-range hidden>
                 <label class="form-row">

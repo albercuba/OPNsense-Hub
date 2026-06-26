@@ -332,14 +332,75 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const filterForm = document.querySelector("[data-dashboard-filter-form]");
+  const dashboardCompanyInput = document.querySelector(
+    "[data-dashboard-company-input]",
+  );
+  const dashboardCompanyId = document.querySelector(
+    "[data-dashboard-company-id]",
+  );
+  const dashboardStatusInput = document.querySelector(
+    "[data-dashboard-status-input]",
+  );
+  const dashboardStatusValue = document.querySelector(
+    "[data-dashboard-status-value]",
+  );
+
+  const resolveDatalistValue = (listId, textValue, dataAttribute) => {
+    const normalized = (textValue || "").trim().toLowerCase();
+    if (!normalized) {
+      return "";
+    }
+    const options = Array.from(document.querySelectorAll(`#${listId} option`));
+    const match = options.find(
+      (option) => option.value.trim().toLowerCase() === normalized,
+    );
+    return match?.dataset?.[dataAttribute] || "";
+  };
+
+  const syncDashboardFilterInputs = () => {
+    if (dashboardCompanyId) {
+      dashboardCompanyId.value = resolveDatalistValue(
+        "dashboard-company-options",
+        dashboardCompanyInput?.value,
+        "companyId",
+      );
+    }
+    if (dashboardStatusValue) {
+      dashboardStatusValue.value = resolveDatalistValue(
+        "dashboard-status-options",
+        dashboardStatusInput?.value,
+        "statusValue",
+      );
+    }
+  };
+
+  dashboardCompanyInput?.addEventListener("input", syncDashboardFilterInputs);
+  dashboardStatusInput?.addEventListener("input", syncDashboardFilterInputs);
+  filterForm?.addEventListener("submit", syncDashboardFilterInputs);
+  syncDashboardFilterInputs();
+
   document.querySelectorAll("[data-dashboard-card-kind]").forEach((card) => {
     card.addEventListener("click", () => {
       const kind = card.dataset.dashboardCardKind;
       const scrollTarget = card.dataset.dashboardScroll;
       if (kind === "status" && filterForm) {
-        const select = filterForm.querySelector("select[name='status']");
-        if (select) {
-          select.value = card.dataset.dashboardStatus || "";
+        if (dashboardStatusValue) {
+          const targetStatus = card.dataset.dashboardStatus || "";
+          dashboardStatusValue.value = targetStatus;
+          if (dashboardStatusInput) {
+            dashboardStatusInput.value =
+              targetStatus === "online"
+                ? "Online"
+                : targetStatus === "warning"
+                  ? "Warning"
+                  : targetStatus === "critical"
+                    ? "Critical"
+                    : targetStatus === "revoked"
+                      ? "Revoked"
+                      : targetStatus === "other"
+                        ? "Other / Unknown"
+                        : "";
+          }
           filterForm.submit();
           return;
         }
@@ -426,7 +487,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!recentEventsTable || !rangeSelect) {
       return;
     }
-    const selectedRange = rangeSelect.value;
+    const selectedRange =
+      resolveDatalistValue(
+        "dashboard-time-range-options",
+        rangeSelect.value,
+        "rangeValue",
+      ) || "all";
     const now = Date.now();
     let minTimestamp = null;
     let maxTimestamp = null;

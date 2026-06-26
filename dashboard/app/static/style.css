@@ -1487,6 +1487,7 @@ select option {
     font: inherit;
 }
 .dashboard-select,
+.dashboard-text-filter,
 .dashboard-filters-form select,
 .dashboard-inline-filter select {
     min-height: 42px;
@@ -1512,6 +1513,7 @@ select option {
         inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .dashboard-select:hover,
+.dashboard-text-filter:hover,
 .dashboard-filters-form select:hover,
 .dashboard-inline-filter select:hover {
     border-color: #93b8f1;
@@ -1521,6 +1523,7 @@ select option {
         linear-gradient(to bottom, #ffffff, #f1f7ff);
 }
 .dashboard-select:focus,
+.dashboard-text-filter:focus,
 .dashboard-filters-form select:focus,
 .dashboard-inline-filter select:focus {
     border-color: #6ea5ef;
