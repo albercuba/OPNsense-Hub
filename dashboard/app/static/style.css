@@ -272,7 +272,7 @@ select {
 }
 input:focus,
 select:focus {
-    outline: 2px solid rgba(255, 138, 31, 0.25);
+    outline: 2px solid rgba(47, 125, 225, 0.22);
     border-color: var(--accent);
 }
 .button {
@@ -1414,10 +1414,9 @@ td {
 
 .companies-filter-form {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr) minmax(
-            180px,
-            0.9fr
-        ) auto;
+    grid-template-columns:
+        minmax(220px, 1fr) minmax(240px, 1fr) minmax(180px, 0.9fr)
+        auto;
     gap: 1rem;
     align-items: end;
     margin-bottom: 1rem;
@@ -1486,6 +1485,22 @@ select option {
     color: var(--text);
     background: var(--panel);
     font: inherit;
+}
+.dashboard-filters-form select,
+.dashboard-inline-filter select {
+    min-height: 42px;
+    background-color: #fff;
+    border-color: #cfe0fb;
+    box-shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
+}
+.dashboard-filters-form select:hover,
+.dashboard-inline-filter select:hover {
+    border-color: #93b8f1;
+    background-color: #fdfefe;
+}
+.dashboard-filters-form select:focus,
+.dashboard-inline-filter select:focus {
+    box-shadow: 0 0 0 3px rgba(47, 125, 225, 0.12);
 }
 .protected-user {
     display: inline-flex;
