@@ -3,10 +3,8 @@
 
 import json
 import subprocess
-from pathlib import Path
 
-STATE_FILE = Path("/var/db/opnsensehub/state.json")
-WG_IFACE = "wgopnhub"
+from connect import STATE_FILE, WG_IFACE, remove_heartbeat_cron
 
 
 def main():
@@ -19,6 +17,7 @@ def main():
     subprocess.run(
         ["ifconfig", WG_IFACE, "destroy"], capture_output=True, text=True, timeout=10
     )
+    remove_heartbeat_cron()
     state["status"] = "disconnected"
     if STATE_FILE.parent.exists():
         STATE_FILE.write_text(json.dumps(state, indent=2))

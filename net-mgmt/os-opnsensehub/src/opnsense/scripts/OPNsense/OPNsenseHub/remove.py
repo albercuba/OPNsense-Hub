@@ -11,6 +11,7 @@ from connect import (
     WG_IFACE,
     cleanup_opnsense_integration,
     hub_route_for,
+    remove_heartbeat_cron,
 )
 
 
@@ -49,6 +50,7 @@ def main():
     subprocess.run(
         ["ifconfig", WG_IFACE, "destroy"], capture_output=True, text=True, timeout=10
     )
+    remove_heartbeat_cron()
 
     cleanup = cleanup_opnsense_integration()
     removed_files = {

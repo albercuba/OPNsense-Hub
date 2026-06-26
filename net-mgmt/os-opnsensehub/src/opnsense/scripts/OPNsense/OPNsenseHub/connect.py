@@ -26,6 +26,11 @@ ASSIGNED_IF_DESCR = "OPNHUB"
 RULE_DESCR = "Allow OPNsense Hub WebGUI proxy"
 FLOATING_RULE_DESCR = "Allow OPNsense Hub WebGUI proxy (floating)"
 PLUGIN_VERSION = "0.1.0"
+HEARTBEAT_SCRIPT = "/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/heartbeat.py"
+HEARTBEAT_CRON_MARKER = "# OPNsense Hub heartbeat"
+HEARTBEAT_CRON_LINE = (
+    f"* * * * * {HEARTBEAT_SCRIPT} >/dev/null 2>&1 {HEARTBEAT_CRON_MARKER}"
+)
 
 
 def out(payload):
@@ -232,6 +237,61 @@ def save_state(state):
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2))
     os.chmod(STATE_FILE, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def current_crontab_lines():
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except FileNotFoundError:
+        fail("required command not found: crontab")
+    except subprocess.TimeoutExpired:
+        fail("command timed out: crontab")
+    if result.returncode != 0:
+        return []
+    return [line.rstrip() for line in result.stdout.splitlines()]
+
+
+def write_crontab_lines(lines):
+    payload = "\n".join(lines).strip()
+    if payload:
+        payload += "\n"
+    try:
+        result = subprocess.run(
+            ["crontab", "-"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except FileNotFoundError:
+        fail("required command not found: crontab")
+    except subprocess.TimeoutExpired:
+        fail("command timed out: crontab")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        fail(f"could not update crontab{': ' + detail if detail else ''}")
+
+
+def ensure_heartbeat_cron():
+    lines = [
+        line for line in current_crontab_lines() if HEARTBEAT_CRON_MARKER not in line
+    ]
+    lines.append(HEARTBEAT_CRON_LINE)
+    write_crontab_lines(lines)
+
+
+def remove_heartbeat_cron():
+    lines = [
+        line for line in current_crontab_lines() if HEARTBEAT_CRON_MARKER not in line
+    ]
+    write_crontab_lines(lines)
 
 
 def is_loopback_host(host):
@@ -713,6 +773,7 @@ def main():
         state["status"] = "connected"
         state["last_error"] = ""
         save_state(state)
+        ensure_heartbeat_cron()
         out(
             {
                 "status": "connected",
@@ -758,6 +819,7 @@ def main():
     ensure_hub_route(wireguard)
     state["opnsense"] = opnsense
     save_state(state)
+    ensure_heartbeat_cron()
     out(
         {
             "status": "connected",

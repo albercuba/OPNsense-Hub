@@ -142,6 +142,7 @@ Firmware checks are request/report only:
 - The Hub scheduler marks active, non-revoked firewalls for a firmware check once per day at `23:00` Hub/container local time.
 - The Hub does not run firmware probes and does not install updates.
 - The OPNsense plugin performs the local check on the firewall with native firmware commands and reports normalized status back on heartbeat.
+- The plugin installs a per-minute local heartbeat cron entry on connect so firmware requests, manual backup requests, and status updates are processed automatically.
 - If a firewall already completed the scheduled check for that local day, the Hub does not request it again automatically.
 
 Firmware status colors in the firewalls table:
