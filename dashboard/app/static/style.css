@@ -197,6 +197,10 @@ a {
 .backup-save-row {
     margin-top: 0;
 }
+.device-events-table-wrap {
+    max-height: 22rem;
+    overflow-y: auto;
+}
 h1,
 h2,
 h3 {

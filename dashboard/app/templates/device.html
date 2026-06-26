@@ -267,27 +267,29 @@
 </section>
 <section id="device-events-card" class="card device-events-card">
     <h2>Device events</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Message</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for event in events %}
-            <tr>
-                <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td>{{ event.event_type }}</td>
-                <td>{{ event.message or '' }}</td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="3" class="muted">No events yet.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="device-events-table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ event.event_type }}</td>
+                    <td>{{ event.message or '' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="muted">No events yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}

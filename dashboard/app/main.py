@@ -2047,7 +2047,7 @@ def device_page(
         select(DeviceEvent)
         .where(DeviceEvent.device_id == device.id)
         .order_by(DeviceEvent.created_at.desc())
-        .limit(25)
+        .limit(10)
     ).all()
     return render_template(
         db,

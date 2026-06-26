@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     branding_upload_dir: str = "/var/lib/opnsense-hub/branding"
     branding_logo_max_bytes: int = 1_000_000
     firewall_health_check_interval_seconds: int = 60
-    firewall_health_check_timeout_seconds: int = 10
-    firewall_health_warning_misses: int = 2
+    firewall_health_check_timeout_seconds: int = 15
+    firewall_health_warning_misses: int = 3
     firewall_health_critical_misses: int = 3
     firewall_health_warning_recovery_successes: int = 1
     firewall_health_critical_recovery_successes: int = 2
