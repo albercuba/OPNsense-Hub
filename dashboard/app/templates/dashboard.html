@@ -35,7 +35,7 @@
     >
         <label class="form-row">
             <span>Company</span>
-            <select name="company_id">
+            <select name="company_id" class="dashboard-select">
                 <option value="">All companies</option>
                 {% for company in filter_companies %}
                 <option value="{{ company.id }}" {% if filters.company_id == company.id|string %}selected{% endif %}>
@@ -46,7 +46,7 @@
         </label>
         <label class="form-row">
             <span>Status</span>
-            <select name="status">
+            <select name="status" class="dashboard-select">
                 <option value="" {% if not filters.status %}selected{% endif %}>
                     All statuses
                 </option>
@@ -912,7 +912,7 @@
         <div class="dashboard-section-tools dashboard-events-tools">
             <label class="form-row dashboard-inline-filter">
                 <span>Time range</span>
-                <select data-events-range-select>
+                <select data-events-range-select class="dashboard-select">
                     <option value="all" selected>All recent events</option>
                     <option value="1h">Last hour</option>
                     <option value="24h">Last 24h</option>

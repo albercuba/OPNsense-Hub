@@ -1486,21 +1486,47 @@ select option {
     background: var(--panel);
     font: inherit;
 }
+.dashboard-select,
 .dashboard-filters-form select,
 .dashboard-inline-filter select {
     min-height: 42px;
+    padding: 0.78rem 2.75rem 0.78rem 0.95rem;
+    border: 1px solid #c9daf8;
+    border-radius: 10px;
     background-color: #fff;
-    border-color: #cfe0fb;
-    box-shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
+    background-image:
+        linear-gradient(45deg, transparent 50%, #5f7ea7 50%),
+        linear-gradient(135deg, #5f7ea7 50%, transparent 50%),
+        linear-gradient(to bottom, #ffffff, #f7fbff);
+    background-position:
+        calc(100% - 18px) calc(50% - 1px),
+        calc(100% - 12px) calc(50% - 1px),
+        0 0;
+    background-size:
+        6px 6px,
+        6px 6px,
+        100% 100%;
+    background-repeat: no-repeat;
+    box-shadow:
+        0 1px 2px rgba(20, 32, 51, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+.dashboard-select:hover,
 .dashboard-filters-form select:hover,
 .dashboard-inline-filter select:hover {
     border-color: #93b8f1;
-    background-color: #fdfefe;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #2f7de1 50%),
+        linear-gradient(135deg, #2f7de1 50%, transparent 50%),
+        linear-gradient(to bottom, #ffffff, #f1f7ff);
 }
+.dashboard-select:focus,
 .dashboard-filters-form select:focus,
 .dashboard-inline-filter select:focus {
-    box-shadow: 0 0 0 3px rgba(47, 125, 225, 0.12);
+    border-color: #6ea5ef;
+    box-shadow:
+        0 0 0 3px rgba(47, 125, 225, 0.12),
+        0 1px 2px rgba(20, 32, 51, 0.04);
 }
 .protected-user {
     display: inline-flex;
