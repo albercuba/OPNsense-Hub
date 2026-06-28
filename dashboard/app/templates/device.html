@@ -11,8 +11,8 @@
     <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
     <div class="grid">
         <div>
-            <strong>Company</strong><br />{{ company.name if company else 'Unknown'
-            }}
+            <strong>Company</strong><br />{{ company.name if company else
+            'Unknown' }}
         </div>
         <div>
             <strong>OPNsense</strong><br />{{ device.opnsense_version or
@@ -32,8 +32,8 @@
         <div><strong>Tunnel IP</strong><br />{{ device.wg_tunnel_ip }}</div>
         <div>
             <strong>Last seen</strong><br />{{
-            format_datetime(device.last_seen_at) if
-            device.last_seen_at else 'Never' }}
+            format_datetime(device.last_seen_at) if device.last_seen_at else
+            'Never' }}
         </div>
     </div>
     {% if device.revoked_at %}
@@ -82,7 +82,12 @@
                 ><input
                     type="checkbox"
                     name="backup_enabled"
-                    {% if device.backup_enabled %}checked{% endif %}
+                    {%
+                    if
+                    device.backup_enabled
+                    %}checked{%
+                    endif
+                    %}
                 />
                 Enable configuration backups</label
             >
@@ -117,19 +122,37 @@
                         >
                             <option
                                 value="hours"
-                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="hours"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Hours
                             </option>
                             <option
                                 value="days"
-                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="days"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Days
                             </option>
                             <option
                                 value="months"
-                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="months"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Months
                             </option>
@@ -159,8 +182,11 @@
             </div>
         </form>
     </section>
-    <section id="device-backup-history-card" class="card device-backup-history-card">
-        <h2>Stored backups</h</h2>2>
+    <section
+        id="device-backup-history-card"
+        class="card device-backup-history-card"
+    >
+        <h2>Stored backups</h2>
         <table>
             <thead>
                 <tr>
@@ -200,7 +226,8 @@
         {% if not email_settings_configured %}
         <p class="warning">
             Email settings are not configured. Configure SMTP or Microsoft Graph
-            email settings in Hub Settings before enabling firewall notifications.
+            email settings in Hub Settings before enabling firewall
+            notifications.
         </p>
         {% endif %} {% if not can_edit_notification_settings %}
         <p class="warning">
@@ -217,8 +244,22 @@
                 ><input
                     type="checkbox"
                     name="email_notifications_enabled"
-                    {% if device.email_notifications_enabled %}checked{% endif %}
-                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                    {%
+                    if
+                    device.email_notifications_enabled
+                    %}checked{%
+                    endif
+                    %}
+                    {%
+                    if
+                    not
+                    email_settings_configured
+                    or
+                    not
+                    can_edit_notification_settings
+                    %}disabled{%
+                    endif
+                    %}
                 />
                 Enable email notifications</label
             >
@@ -228,15 +269,38 @@
                     type="email"
                     name="email_notification_recipient"
                     value="{{ device.email_notification_recipient or '' }}"
-                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                    {%
+                    if
+                    not
+                    email_settings_configured
+                    or
+                    not
+                    can_edit_notification_settings
+                    %}disabled{%
+                    endif
+                    %}
                 />
             </label>
             <label class="checkbox-label"
                 ><input
                     type="checkbox"
                     name="email_notify_on_warning"
-                    {% if device.email_notify_on_warning %}checked{% endif %}
-                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                    {%
+                    if
+                    device.email_notify_on_warning
+                    %}checked{%
+                    endif
+                    %}
+                    {%
+                    if
+                    not
+                    email_settings_configured
+                    or
+                    not
+                    can_edit_notification_settings
+                    %}disabled{%
+                    endif
+                    %}
                 />
                 When status becomes warning</label
             >
@@ -244,8 +308,22 @@
                 ><input
                     type="checkbox"
                     name="email_notify_on_critical"
-                    {% if device.email_notify_on_critical %}checked{% endif %}
-                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                    {%
+                    if
+                    device.email_notify_on_critical
+                    %}checked{%
+                    endif
+                    %}
+                    {%
+                    if
+                    not
+                    email_settings_configured
+                    or
+                    not
+                    can_edit_notification_settings
+                    %}disabled{%
+                    endif
+                    %}
                 />
                 When status becomes critical</label
             >
@@ -254,7 +332,8 @@
                 format_datetime(device.email_last_notified_at) if
                 device.email_last_notified_at else 'Never' }}
             </div>
-            {% if email_settings_configured and can_edit_notification_settings %}
+            {% if email_settings_configured and can_edit_notification_settings
+            %}
             <div class="form-row submit-row">
                 <button class="button" type="submit">
                     <i class="fa-solid fa-floppy-disk"></i> Save email
