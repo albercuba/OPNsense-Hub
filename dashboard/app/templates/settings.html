@@ -222,13 +222,25 @@
                         >
                             <option
                                 value="user"
-                                {% if managed_user.role == 'user' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="user"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 User
                             </option>
                             <option
                                 value="administrator"
-                                {% if managed_user.role == 'administrator' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="administrator"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Administrator
                             </option>
@@ -586,11 +598,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Backup configuration</h2>
-        <p class="muted">
-            Download a portable Hub backup archive containing the stored Hub
-            database content, uploaded branding assets, and the Hub WireGuard
-            server private key when present.
-        </p>
     </div>
     <form
         action="/settings/backup/export"
@@ -606,10 +613,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Restore configuration</h2>
-        <p class="muted">
-            Upload a previously exported backup archive to replace the current
-            Hub configuration. This signs out all users after the restore.
-        </p>
     </div>
     <form
         action="/settings/backup/restore"
