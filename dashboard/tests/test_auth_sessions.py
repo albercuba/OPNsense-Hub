@@ -3,12 +3,13 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from app.main import current_user, login, logout, session_from_request, settings
-from app.models import SessionToken, User
+from app.main import app, current_user, get_db, login, logout, session_from_request, settings
+from app.models import IntegrationSettings, SessionToken, User
 from app.security import hash_secret, hash_session_token, utc_now
 from fastapi import HTTPException, Response
 from sqlalchemy.orm import Session
 from starlette.requests import Request
+from starlette.testclient import TestClient
 
 
 class FakeDb:
@@ -121,3 +122,26 @@ def test_logout_revokes_session_and_clears_cookie():
     assert session.revoked_at is not None
     assert db.committed is True
     assert settings.session_cookie_name in response.headers.get("set-cookie", "")
+
+
+def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):
+    db = FakeDb()
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr("app.main.bootstrap", lambda: None)
+    monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
+    monkeypatch.setattr("app.main.device_health_check_loop", noop)
+    monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        response = client.get("/dashboard", follow_redirects=False)
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"

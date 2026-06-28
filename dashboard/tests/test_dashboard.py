@@ -325,10 +325,11 @@ def test_dashboard_requires_login(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
-        response = client.get("/dashboard")
+        response = client.get("/dashboard", follow_redirects=False)
     app.dependency_overrides.clear()
 
-    assert response.status_code == 401
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
 
 
 def test_dashboard_only_includes_accessible_companies_and_devices(monkeypatch, fixed_now):

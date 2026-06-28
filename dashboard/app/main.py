@@ -645,6 +645,16 @@ async def on_shutdown() -> None:
             await task
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401 and not request.url.path.startswith("/api/"):
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie(settings.session_cookie_name)
+        return response
+    detail = exc.detail if exc.detail is not None else "Unauthorized"
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
+
+
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
     session = session_from_request(request, db)
     user = db.get(User, session.user_id)
