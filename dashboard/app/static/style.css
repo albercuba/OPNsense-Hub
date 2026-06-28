@@ -1560,7 +1560,7 @@ select option {
 }
 .company-row:hover,
 .company-row:focus {
-    background: rgba(255, 138, 31, 0.06);
+    background: #f0f6ff);
 }
 .row-toggle-icon {
     width: 1rem;
