@@ -444,39 +444,6 @@ document.addEventListener("DOMContentLoaded", () => {
       window.location.reload();
     });
 
-  document.querySelectorAll("[data-export-table]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const table = document.querySelector(button.dataset.exportTable || "");
-      if (!table) {
-        return;
-      }
-      const headers = Array.from(table.querySelectorAll("thead th")).map(
-        (header) => header.textContent.trim(),
-      );
-      const rows = Array.from(table.tBodies[0]?.rows || [])
-        .filter(
-          (row) =>
-            row.dataset.rowHidden !== "true" &&
-            !row.querySelector(".table-empty-state"),
-        )
-        .map((row) =>
-          Array.from(row.cells).map(
-            (cell) => `"${cell.textContent.replace(/"/g, '""').trim()}"`,
-          ),
-        );
-      const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = button.dataset.exportFilename || "export.csv";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    });
-  });
-
   const recentEventsTable = document.querySelector("#recent-events-table");
   const rangeSelect = document.querySelector("[data-events-range-select]");
   const customRange = document.querySelector("[data-events-custom-range]");

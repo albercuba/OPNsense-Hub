@@ -6,10 +6,6 @@
     <div class="admin-card-header dashboard-page-header">
         <div>
             <h1>Dashboard</h1>
-            <p class="muted">
-                High-level operational overview for the firewalls you can
-                access.
-            </p>
         </div>
         <div class="dashboard-header-actions">
             <div class="dashboard-last-updated" aria-live="polite">
@@ -450,16 +446,7 @@
                 }} {% else %} None {% endif %}
             </p>
         </div>
-        <div class="dashboard-section-tools">
-            <button
-                class="button secondary button-small"
-                type="button"
-                data-export-table="#backup-status-table"
-                data-export-filename="backup-status.csv"
-            >
-                <i class="fa-solid fa-file-csv"></i> Export CSV
-            </button>
-        </div>
+        <div class="dashboard-section-tools"></div>
     </div>
     <div class="responsive-table">
         <table id="backup-status-table" data-enhanced-table>
@@ -545,16 +532,7 @@
                 firmware_summary.unknown }}
             </p>
         </div>
-        <div class="dashboard-section-tools">
-            <button
-                class="button secondary button-small"
-                type="button"
-                data-export-table="#firmware-status-table"
-                data-export-filename="firmware-status.csv"
-            >
-                <i class="fa-solid fa-file-csv"></i> Export CSV
-            </button>
-        </div>
+        <div class="dashboard-section-tools"></div>
     </div>
     <div class="responsive-table">
         <table id="firmware-status-table" data-enhanced-table>
@@ -940,14 +918,7 @@
                     <input type="datetime-local" data-events-end />
                 </label>
             </div>
-            <button
-                class="button secondary button-small"
-                type="button"
-                data-export-table="#recent-events-table"
-                data-export-filename="recent-events.csv"
-            >
-                <i class="fa-solid fa-file-csv"></i> Export CSV
-            </button>
+
         </div>
     </div>
     <div class="responsive-table dashboard-events-table-wrap">
