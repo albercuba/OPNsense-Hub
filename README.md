@@ -86,7 +86,7 @@ Branding uploads are stored in the `opnsense_hub_branding` Docker volume and ser
 ## Exact dashboard commands
 
 ```sh
-cd /home/alberto/Projects/OPNsense-Hub
+cd /Projects/OPNsense-Hub
 cp .env.example .env
 docker compose config
 docker compose up --build
