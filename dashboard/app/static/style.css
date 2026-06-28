@@ -1217,16 +1217,12 @@ table {
 }
 
 thead th {
-    position: relative;
-    background: #f8fbff;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.dashboard-card thead th {
     position: sticky;
     top: 0;
     z-index: 2;
+    background: #f8fbff;
+    font-size: 12px;
+    font-weight: 700;
     box-shadow: inset 0 -1px 0 var(--line);
 }
 
