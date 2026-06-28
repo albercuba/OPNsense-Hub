@@ -120,40 +120,13 @@
                             class="backup-interval-field"
                             name="backup_interval_unit"
                         >
-                            <option
-                                value="hours"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="hours"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                            <option value="hours" {% if device.backup_interval_unit == 'hours' %}selected{% endif %}>
                                 Hours
                             </option>
-                            <option
-                                value="days"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="days"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                            <option value="days" {% if device.backup_interval_unit == 'days' %}selected{% endif %}>
                                 Days
                             </option>
-                            <option
-                                value="months"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="months"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                            <option value="months" {% if device.backup_interval_unit == 'months' %}selected{% endif %}>
                                 Months
                             </option>
                         </select>
