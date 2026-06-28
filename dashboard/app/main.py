@@ -1,10 +1,13 @@
 import asyncio
 import contextlib
+import io
 import ipaddress
+import json
 import logging
 import re
 import smtplib
 import uuid
+import zipfile
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from http.cookies import SimpleCookie
@@ -28,7 +31,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import delete, select, text
+from sqlalchemy import Boolean, DateTime, Integer, delete, select, text
 from sqlalchemy.orm import Session
 
 from .audit import write_audit
@@ -45,6 +48,7 @@ from .backups import (
 from .branding import (
     BrandingError,
     clear_uploaded_logo,
+    detect_image_extension,
     save_uploaded_logo,
     uploaded_logo_path,
     validate_branding_upload,
@@ -60,6 +64,7 @@ from .integration import (
     smtp_email_configured,
 )
 from .models import (
+    AuditLog,
     Company,
     CompanyUser,
     Device,
@@ -707,6 +712,189 @@ def clean_optional(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+BACKUP_FORMAT_VERSION = 1
+BACKUP_TABLE_MODELS = (
+    ("users", User),
+    ("integration_settings", IntegrationSettings),
+    ("companies", Company),
+    ("company_users", CompanyUser),
+    ("enrollment_codes", EnrollmentCode),
+    ("devices", Device),
+    ("device_backups", DeviceBackup),
+    ("device_events", DeviceEvent),
+    ("audit_logs", AuditLog),
+)
+BACKUP_RESTORE_DELETE_ORDER = (
+    SessionToken,
+    AuditLog,
+    DeviceEvent,
+    DeviceBackup,
+    Device,
+    EnrollmentCode,
+    CompanyUser,
+    Company,
+    IntegrationSettings,
+    User,
+)
+
+
+def backup_json_value(value: object) -> object:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def serialize_model_row(row: object) -> dict[str, object]:
+    table = getattr(row, "__table__")
+    return {
+        column.name: backup_json_value(getattr(row, column.name)) for column in table.columns
+    }
+
+
+def parse_backup_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def deserialize_model_row(model: type, payload: dict[str, object]):
+    values = {}
+    for column in model.__table__.columns:
+        raw_value = payload.get(column.name)
+        if raw_value is None:
+            values[column.name] = None
+            continue
+        if isinstance(column.type, DateTime):
+            values[column.name] = parse_backup_datetime(str(raw_value))
+        elif isinstance(column.type, Integer):
+            values[column.name] = int(str(raw_value))
+        elif isinstance(column.type, Boolean):
+            values[column.name] = bool(raw_value)
+        elif getattr(column.type, "as_uuid", False):
+            values[column.name] = uuid.UUID(str(raw_value))
+        else:
+            values[column.name] = raw_value
+    return model(**values)
+
+
+def build_backup_manifest(data: dict[str, list[dict[str, object]]]) -> dict[str, object]:
+    logo_path = uploaded_logo_path(settings.branding_upload_dir)
+    wg_key_path = Path(settings.wg_server_private_key_path)
+    return {
+        "format_version": BACKUP_FORMAT_VERSION,
+        "created_at": utc_now().isoformat(),
+        "app_name": settings.app_name,
+        "tables": {name: len(rows) for name, rows in data.items()},
+        "includes": {
+            "branding_logo": logo_path.name if logo_path else None,
+            "wireguard_private_key": wg_key_path.name if wg_key_path.exists() else None,
+        },
+    }
+
+
+def export_backup_bundle(db: Session) -> tuple[bytes, str]:
+    exported = {
+        table_name: [serialize_model_row(row) for row in db.scalars(select(model)).all()]
+        for table_name, model in BACKUP_TABLE_MODELS
+    }
+    manifest = build_backup_manifest(exported)
+    filename = f"opnsense-hub-backup-{utc_now().strftime('%Y%m%d-%H%M%S')}.zip"
+    bundle = io.BytesIO()
+    with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+        archive.writestr("data.json", json.dumps(exported, indent=2, sort_keys=True))
+        logo_path = uploaded_logo_path(settings.branding_upload_dir)
+        if logo_path:
+            archive.writestr(f"branding/{logo_path.name}", logo_path.read_bytes())
+        wg_key_path = Path(settings.wg_server_private_key_path)
+        if wg_key_path.exists():
+            archive.writestr("wireguard/server.key", wg_key_path.read_text())
+    return bundle.getvalue(), filename
+
+
+def parse_backup_bundle(content: bytes) -> tuple[dict[str, object], dict[str, list[dict[str, object]]], tuple[str, bytes] | None, str | None]:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="backup file must be a valid zip archive") from exc
+    with archive:
+        try:
+            manifest = json.loads(archive.read("manifest.json"))
+            data = json.loads(archive.read("data.json"))
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail="backup archive is missing required files") from exc
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="backup archive contains invalid JSON") from exc
+        if not isinstance(manifest, dict) or not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="backup archive has an invalid structure")
+        if manifest.get("format_version") != BACKUP_FORMAT_VERSION:
+            raise HTTPException(status_code=400, detail="backup archive format version is not supported")
+        for table_name, _model in BACKUP_TABLE_MODELS:
+            rows = data.get(table_name, [])
+            if not isinstance(rows, list):
+                raise HTTPException(status_code=400, detail=f"backup table '{table_name}' is invalid")
+        logo_entry = next(
+            (
+                name
+                for name in archive.namelist()
+                if name.startswith("branding/logo.") and not name.endswith("/")
+            ),
+            None,
+        )
+        logo_file = (logo_entry.rsplit("/", 1)[-1], archive.read(logo_entry)) if logo_entry else None
+        wireguard_key = None
+        if "wireguard/server.key" in archive.namelist():
+            wireguard_key = archive.read("wireguard/server.key").decode("utf-8")
+    return manifest, data, logo_file, wireguard_key
+
+
+def restore_backup_bundle(
+    db: Session,
+    data: dict[str, list[dict[str, object]]],
+    logo_file: tuple[str, bytes] | None,
+    wireguard_private_key: str | None,
+) -> None:
+    existing_device_keys = [
+        device.wg_public_key
+        for device in db.scalars(select(Device).where(Device.revoked_at.is_(None))).all()
+    ]
+    for public_key in existing_device_keys:
+        with contextlib.suppress(WireGuardError):
+            remove_peer(public_key)
+
+    for model in BACKUP_RESTORE_DELETE_ORDER:
+        db.execute(delete(model))
+
+    for table_name, model in BACKUP_TABLE_MODELS:
+        for row in data.get(table_name, []):
+            if not isinstance(row, dict):
+                raise HTTPException(
+                    status_code=400, detail=f"backup table '{table_name}' contains an invalid row"
+                )
+            db.add(deserialize_model_row(model, row))
+
+    db.flush()
+
+    if logo_file:
+        logo_name, logo_content = logo_file
+        extension = detect_image_extension(logo_content)
+        if logo_name != f"logo{extension}":
+            raise HTTPException(status_code=400, detail="backup archive branding logo filename is invalid")
+        save_uploaded_logo(settings.branding_upload_dir, extension, logo_content)
+    else:
+        clear_uploaded_logo(settings.branding_upload_dir)
+
+    if wireguard_private_key is not None:
+        key_path = Path(settings.wg_server_private_key_path)
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        key_path.write_text(wireguard_private_key.strip() + "\n")
+
+    bootstrap_wireguard(db)
 
 
 def is_valid_email_address(value: str | None) -> bool:
@@ -1362,6 +1550,7 @@ def settings_page(
         "microsoft-365",
         "local-ad",
         "branding",
+        "backup",
     }
     if section not in allowed_sections:
         raise HTTPException(status_code=404)
@@ -1618,6 +1807,43 @@ async def update_branding_settings(
     write_audit(db, request, "settings.branding.update", user=user)
     db.commit()
     return RedirectResponse("/settings/branding?status=branding-saved", status_code=303)
+
+
+@app.post("/settings/backup/export")
+def export_settings_backup(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    bundle, filename = export_backup_bundle(db)
+    write_audit(db, request, "settings.backup.export", user=user)
+    db.commit()
+    return Response(
+        content=bundle,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/settings/backup/restore")
+async def restore_settings_backup(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    backup_file: UploadFile = File(...),
+):
+    require_admin(user)
+    content = await backup_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="backup file is required")
+    _manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(content)
+    restore_backup_bundle(db, data, logo_file, wireguard_private_key)
+    db.execute(delete(SessionToken))
+    db.commit()
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(settings.session_cookie_name)
+    return response
 
 
 @app.get("/api/v1/companies")

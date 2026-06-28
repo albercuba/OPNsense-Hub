@@ -54,6 +54,7 @@ docker-compose.yml
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
 - Branding logo upload with persistent storage and login/app-shell rendering.
+- Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.
 - Daily firmware update-status checks requested by Hub and executed locally by the OPNsense plugin at 23:00 Hub time.
 - Colored firmware status icons in the firewalls table for unknown, up to date, updates available, upgrade available, and check failed states.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
@@ -171,6 +172,27 @@ In development the same conditions remain usable but are logged as warnings.
 ## Branding uploads
 
 The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRANDING_LOGO_MAX_BYTES` and stores them under `BRANDING_UPLOAD_DIR`. Uploaded branding takes precedence over `branding_logo_url`, appears on the login page and dashboard shell, and can be removed with the Branding settings form.
+
+## Hub backup and restore
+
+Under `Settings > Backup`, administrators can:
+
+- click `Backup configuration` to download a `.zip` archive
+- click `Restore configuration` to upload a previously exported archive
+
+The backup archive is application-level and portable across supported database backends. It includes:
+
+- Hub database content needed to restore users, companies, memberships, enrollment codes, devices, stored firewall backups, device events, audit logs, and integration settings
+- uploaded branding logo, if present
+- the Hub WireGuard server private key, if present at `WG_SERVER_PRIVATE_KEY_PATH`
+
+Restore behavior:
+
+- replaces the current persisted Hub configuration with the uploaded archive
+- clears all active dashboard sessions and redirects back to the login page
+- restores the uploaded branding asset and Hub WireGuard private key from the archive when included
+
+Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
 
 ## OPNsense plugin build/install commands
 

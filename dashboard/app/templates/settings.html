@@ -8,8 +8,8 @@
             active_settings == 'email-settings' %}Email Settings{% elif
             active_settings == 'microsoft-365' %}Microsoft 365 Integration{%
             elif active_settings == 'local-ad' %}Microsoft Local AD
-            Integration{% elif active_settings == 'branding' %}Branding{% endif
-            %}
+            Integration{% elif active_settings == 'branding' %}Branding{% elif
+            active_settings == 'backup' %}Backup{% endif %}
         </h1>
     </div>
 </section>
@@ -571,6 +571,76 @@
     (function () {
         const input = document.getElementById("branding_logo_file");
         const fileName = document.querySelector("[data-file-upload-name]");
+        if (!input || !fileName) {
+            return;
+        }
+        input.addEventListener("change", function () {
+            fileName.textContent =
+                input.files && input.files.length
+                    ? input.files[0].name
+                    : "No file selected";
+        });
+    })();
+</script>
+{% endif %} {% if active_settings == 'backup' %}
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <h2>Backup configuration</h2></h2>
+        <p class="muted">
+            Download a portable Hub backup archive containing the stored Hub
+            database content, uploaded branding assets, and the Hub WireGuard
+            server private key when present.
+        </p>
+    </div>
+    <form action="/settings/backup/export" method="post" class="settings-form narrow-form">
+        <button class="button" type="submit">
+            <i class="fa-solid fa-box-archive"></i> Backup configuration
+        </button>
+    </form>
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <h2>Restore configuration</h2>
+        <p class="muted">
+            Upload a previously exported backup archive to replace the current
+            Hub configuration. This signs out all users after the restore.
+        </p>
+    </div>
+    <form
+        action="/settings/backup/restore"
+        method="post"
+        enctype="multipart/form-data"
+        class="settings-form narrow-form"
+    >
+        <div class="form-row">
+            <span>Backup archive</span>
+            <div class="file-upload-control">
+                <input
+                    class="file-upload-input"
+                    id="backup_file"
+                    type="file"
+                    name="backup_file"
+                    accept=".zip,application/zip"
+                    required
+                />
+                <label class="button secondary" for="backup_file">
+                    <i class="fa-solid fa-upload"></i> Choose backup file
+                </label>
+                <span class="file-upload-name" data-backup-file-name
+                    >No file selected</span
+                >
+            </div>
+        </div>
+        <button class="button danger" type="submit">
+            <i class="fa-solid fa-rotate-left"></i> Restore configuration
+        </button>
+    </form>
+</section>
+<script>
+    (function () {
+        const input = document.getElementById("backup_file");
+        const fileName = document.querySelector("[data-backup-file-name]");
         if (!input || !fileName) {
             return;
         }
