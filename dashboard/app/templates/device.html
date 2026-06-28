@@ -159,6 +159,37 @@
             </div>
         </form>
     </section>
+    <section id="device-backup-history-card" class="card device-backup-history-card">
+        <h2>Stored backups</h</h2>2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Created</th>
+                    <th>Filename</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backup in backups %}
+                <tr>
+                    <td>{{ format_datetime(backup.created_at) }}</td>
+                    <td>{{ backup.filename }}</td>
+                    <td class="actions">
+                        <a
+                            class="button secondary"
+                            href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
+                            ><i class="fa-solid fa-download"></i> Download</a
+                        >
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="muted">No backups stored yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
     <section
         id="device-email-notifications-card"
         class="card device-email-notifications-card"
@@ -233,37 +264,6 @@
             {% endif %}
         </form>
     </section>
-</section>
-<section id="device-backup-history-card" class="card device-backup-history-card">
-    <h2>Stored backups</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Created</th>
-                <th>Filename</th>
-                <th class="actions">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for backup in backups %}
-            <tr>
-                <td>{{ format_datetime(backup.created_at) }}</td>
-                <td>{{ backup.filename }}</td>
-                <td class="actions">
-                    <a
-                        class="button secondary"
-                        href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
-                        ><i class="fa-solid fa-download"></i> Download</a
-                    >
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="3" class="muted">No backups stored yet.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
 </section>
 <section id="device-events-card" class="card device-events-card">
     <h2>Device events</h2>
