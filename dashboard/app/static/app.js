@@ -182,6 +182,24 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   applyCompanyFilters();
 
+  document
+    .querySelectorAll("[data-exclusive-email-toggle]")
+    .forEach((input) => {
+      input.addEventListener("change", () => {
+        if (!input.checked) {
+          return;
+        }
+        const peerName = input.dataset.exclusiveEmailToggle;
+        if (!peerName) {
+          return;
+        }
+        const peer = document.querySelector(`input[name='${peerName}']`);
+        if (peer) {
+          peer.checked = false;
+        }
+      });
+    });
+
   document.querySelectorAll("[data-enrollment-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();

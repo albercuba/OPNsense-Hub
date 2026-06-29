@@ -31,7 +31,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Boolean, DateTime, Integer, delete, select, text
+from sqlalchemy import Boolean, DateTime, Integer, delete, inspect, select, text
 from sqlalchemy.orm import Session
 
 from .audit import write_audit
@@ -404,6 +404,49 @@ def ensure_schema_compat() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_admin_group_name text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_admin_group_id text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_user_group_name text NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_user_group_id text NULL"
+            )
+        )
+        integration_columns = {
+            column["name"] for column in inspect(conn).get_columns("integration_settings")
+        }
+        if "microsoft_admin_group" in integration_columns:
+            conn.execute(
+                text(
+                    """
+                    UPDATE integration_settings
+                    SET microsoft_admin_group_name = COALESCE(microsoft_admin_group_name, microsoft_admin_group)
+                    WHERE microsoft_admin_group IS NOT NULL
+                    """
+                )
+            )
+        if "microsoft_user_group" in integration_columns:
+            conn.execute(
+                text(
+                    """
+                    UPDATE integration_settings
+                    SET microsoft_user_group_name = COALESCE(microsoft_user_group_name, microsoft_user_group)
+                    WHERE microsoft_user_group IS NOT NULL
+                    """
+                )
+            )
+        conn.execute(
+            text(
                 "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_status text NOT NULL DEFAULT 'unknown'"
             )
         )
@@ -575,8 +618,10 @@ def ensure_schema_compat() -> None:
                   microsoft_client_id text NULL,
                   microsoft_audience text NULL,
                   microsoft_authority text NULL,
-                  microsoft_admin_group text NULL,
-                  microsoft_user_group text NULL,
+                  microsoft_admin_group_name text NULL,
+                  microsoft_admin_group_id text NULL,
+                  microsoft_user_group_name text NULL,
+                  microsoft_user_group_id text NULL,
                   ad_enabled boolean NOT NULL DEFAULT false,
                   ad_host text NULL,
                   ad_base_dn text NULL,
@@ -1734,8 +1779,10 @@ def update_microsoft_settings(
     microsoft_client_id: str = Form(""),
     microsoft_audience: str = Form(""),
     microsoft_authority: str = Form(""),
-    microsoft_admin_group: str = Form(""),
-    microsoft_user_group: str = Form(""),
+    microsoft_admin_group_name: str = Form(""),
+    microsoft_admin_group_id: str = Form(""),
+    microsoft_user_group_name: str = Form(""),
+    microsoft_user_group_id: str = Form(""),
 ):
     require_admin(user)
     integration_settings = get_or_create_integration_settings(db)
@@ -1744,8 +1791,18 @@ def update_microsoft_settings(
     integration_settings.microsoft_client_id = clean_optional(microsoft_client_id)
     integration_settings.microsoft_audience = clean_optional(microsoft_audience)
     integration_settings.microsoft_authority = clean_optional(microsoft_authority)
-    integration_settings.microsoft_admin_group = clean_optional(microsoft_admin_group)
-    integration_settings.microsoft_user_group = clean_optional(microsoft_user_group)
+    integration_settings.microsoft_admin_group_name = clean_optional(
+        microsoft_admin_group_name
+    )
+    integration_settings.microsoft_admin_group_id = clean_optional(
+        microsoft_admin_group_id
+    )
+    integration_settings.microsoft_user_group_name = clean_optional(
+        microsoft_user_group_name
+    )
+    integration_settings.microsoft_user_group_id = clean_optional(
+        microsoft_user_group_id
+    )
     integration_settings.updated_at = utc_now()
     write_audit(db, request, "settings.microsoft.update", user=user)
     db.commit()

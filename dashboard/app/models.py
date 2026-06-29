@@ -86,10 +86,18 @@ class IntegrationSettings(Base):
     microsoft_client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     microsoft_audience: Mapped[str | None] = mapped_column(String(255), nullable=True)
     microsoft_authority: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    microsoft_admin_group: Mapped[str | None] = mapped_column(
+    microsoft_admin_group_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
-    microsoft_user_group: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_admin_group_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    microsoft_user_group_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    microsoft_user_group_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     ad_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ad_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ad_base_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)

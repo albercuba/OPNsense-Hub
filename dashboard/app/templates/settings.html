@@ -315,10 +315,12 @@
         </p>
     </div>
     <form action="/settings/email" method="post" class="settings-grid-form">
+        <h3 class="full-row">SMTP</h3>
         <label class="checkbox-label full-row"
             ><input
                 type="checkbox"
                 name="smtp_enabled"
+                data-exclusive-email-toggle="graph_enabled"
                 {%
                 if
                 settings.smtp_enabled
@@ -362,10 +364,12 @@
                 value="{{ settings.smtp_from or '' }}"
         /></label>
 
-        <label class="checkbox-label full-row divider-top"
+        <h3 class="full-row divider-top">Microsoft Graph sendMail</h3>
+        <label class="checkbox-label full-row"
             ><input
                 type="checkbox"
                 name="graph_enabled"
+                data-exclusive-email-toggle="smtp_enabled"
                 {%
                 if
                 settings.graph_enabled
@@ -394,7 +398,11 @@
                 name="graph_client_secret"
                 placeholder="Leave blank to keep current"
                 autocomplete="new-password"
-        /></label>
+            />
+            <span class="muted"
+                >{% if settings.graph_client_secret %}Client secret saved{% else %}Client secret not set{% endif %}</span
+            >
+        </label>
         <label class="form-row"
             >Sender mailbox
             <input
@@ -450,18 +458,36 @@
                 name="microsoft_authority"
                 value="{{ settings.microsoft_authority or '' }}"
                 placeholder="https://login.microsoftonline.com/{tenant}"
+                accept=""        /></label>
+        <div class="full-row divider-top">
+            <h3></h3>Entra group role mappings</h3>
+            <p class="muted">
+                Map Microsoft Entra groups to Hub roles by name and/or group ID.
+            </p>
+        </div>
+        <label class="form-row"
+            >Admin group name
+            <input
+                name="microsoft_admin_group_name"
+                value="{{ settings.microsoft_admin_group_name or '' }}"
         /></label>
         <label class="form-row"
-            >Entra admin group name/id
+            >Admin group ID
             <input
-                name="microsoft_admin_group"
-                value="{{ settings.microsoft_admin_group or '' }}"
+                name="microsoft_admin_group_id"
+                value="{{ settings.microsoft_admin_group_id or '' }}"
         /></label>
         <label class="form-row"
-            >Entra user group name/id
+            >User group name
             <input
-                name="microsoft_user_group"
-                value="{{ settings.microsoft_user_group or '' }}"
+                name="microsoft_user_group_name"
+                value="{{ settings.microsoft_user_group_name or '' }}"
+        /></label>
+        <label class="form-row"
+            >User group ID
+            <input
+                name="microsoft_user_group_id"
+                value="{{ settings.microsoft_user_group_id or '' }}"
         /></label>
         <div class="form-row submit-row">
             <button class="button" type="submit">
