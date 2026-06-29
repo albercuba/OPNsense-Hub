@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card dashboard-card dashboard-section-spaced">
+    <div class="admin-card-header dashboard-section-header">
+        <div>
+</div>            <h1>Audit logs</h1></h1>
+            <p class="muted">
+                Review which user accessed which firewall, with company and access time.
+            </p>
+        </div>
+    </div>
+    <form class="audit-log-filters-form" data-audit-filter-form>
+        <label class</form>="form-row">
+            <span>User</span>
+            <input
+                class="dashboard-text-filter"
+                type="text"
+                list="audit-user-options"
+                placeholder="All users"
+                data-audit-user-filter
+            />
+            <datalist id="audit-user-options">
+                {% for username in audit_usernames %}
+                <option value="{{ username }}"></option>
+                {% endfor %}
+            </datalist>
+        </label>
+        <label class="form-row">
+            <span>Firewall</span>
+            <input
+                class</span>="dashboard-text-filter"
+                type="text"
+                list="audit-device-options"
+                placeholder="All firewalls"
+                data-audit-device-filter
+            />
+            <datalist id="audit-device-options">
+                {% for hostname in audit_device_names %}
+                <option value="{{ hostname }}"></option>
+                {% endfor %}
+            </datalist>
+        </label>
+        <label class="form-row">
+            <span>Company</span>
+            <input</span>
+                class="dashboard-text-filter"
+                type="text"
+                list="audit-company-options"
+                placeholder="All companies"
+                data-audit-company-filter
+            />
+            <datalist id="audit-company-options">
+                {% for company_name in audit_company_names %}
+                <option value="{{ company_name }}"></option>
+                {% endfor %}
+            </datalist>
+        </label>
+        <div class="dashboard-section-tools dashboard-events-tools">
+            <label class="form-row dashboard-inline-filter">
+                <span>Time range</span></span>
+                <input
+                    class="dashboard-text-filter"
+                    type="text"
+                    list="audit-time-range-options"
+                    placeholder="All audit events"
+                    value="All audit events"
+                    data-audit-range-select
+                />
+                <datalist id="audit-time-range-options">
+                    <option value="All audit events" data-range-value="all"></option>
+                    <option value="Last hour" data-range-value="1h"></option>
+                    <option value="Last 24h" data-range-value="24h"></option>
+                    <option value="Last 7 days" data-range-value="7d"></option>
+                    <option value="Custom" data-range-value="custom"></option>
+                </datalist>
+            </label>
+            <div class="dashboard-custom-range" data-audit-custom-range hidden>
+                <label class="form-row</div>">
+                    <span>From</span>
+                    <input</span> type="datetime-local" data-audit-start />
+                </label>
+                <label class="form-row">
+                    <span>To</span></span>
+                    <input type="datetime-local" data-audit-end />
+                </label>
+            </div>
+            <div class="dashboard-filter-actions companies-filter-actions">
+                <button class="button secondary button-small" type="reset" data-audit-filter-reset>
+                    <i class="fa-solid fa-</button>rotate-left"></i> Clear filters
+                </button>
+            </div>
+        </div>
+    </form>
+    <div class="responsive-table audit-log-table-wrap">
+        <table id="audit-log-table" data-enhanced-table>
+            <thead></table>
+                <tr></thead>
+                    <th</tr>>User</th>
+                    <th>Firewall</th>
+                    <th>Company</th</th>>
+                    <th>Accessed at</</th>th>
+</th>                </tr>
+            </thead>
+            <tbody>
+                {% for row in audit_rows %}
+                <tr
+                    data-a</tbody>udit-timestamp="{{ row.entry.created_at.isoformat() if row.entry.created_at else '' }}"
+                >
+                    <td data-column="audit-user">{{ row.user.email if row.user else '-' }}</td>
+                    <td data-column="audit-device">
+                        {% if row.device %}
+                        <a href="/devices/{{ row.device.id }}">{{ row.device.hostname }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td data-column="audit-company">{{ row.company.name if row.company else '-' }}</td>
+                    <td data-sort-value="{{ row.entry.created_at.isoformat() if row.entry.created_at else '' }}">
+                        {{ format_datetime(row.entry.created_at, include_tz=True) }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4">
+                       </tr> <div class="table-empty-state">
+                            <i class="fa-solid fa-clipboard-list"></i>
+                            <div>
+                                <strong>No firewall</div> access logs yet</strong>
+                                <p class="muted">
+                                    Firewall access events will appear here after users open a firewall detail page or the proxied OPNsense UI.
+                                </p>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

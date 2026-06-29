@@ -2148,6 +2148,98 @@ def companies_page(
     )
 
 
+@app.get("/audit-logs", response_class=HTMLResponse)
+def audit_logs_page(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    access_actions = {"device.view", "device.proxy.open"}
+    audit_entries = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.action.in_(access_actions))
+        .order_by(AuditLog.created_at.desc())
+        .limit(500)
+    ).all()
+    user_ids = {entry.user_id for entry in audit_entries if entry.user_id is not None}
+    company_ids = {
+        entry.company_id for entry in audit_entries if entry.company_id is not None
+    }
+    device_ids = {
+        entry.device_id for entry in audit_entries if entry.device_id is not None
+    }
+    users_by_id = {
+        row.id: row
+        for row in (
+            db.scalars(select(User).where(User.id.in_(user_ids))).all() if user_ids else []
+        )
+    }
+    companies_by_id = {
+        row.id: row
+        for row in (
+            db.scalars(select(Company).where(Company.id.in_(company_ids))).all()
+            if company_ids
+            else []
+        )
+    }
+    devices_by_id = {
+        row.id: row
+        for row in (
+            db.scalars(select(Device).where(Device.id.in_(device_ids))).all()
+            if device_ids
+            else []
+        )
+    }
+    audit_rows = [
+        {
+            "entry": entry,
+            "user": users_by_id.get(entry.user_id),
+            "company": companies_by_id.get(entry.company_id),
+            "device": devices_by_id.get(entry.device_id),
+        }
+        for entry in audit_entries
+        if entry.device_id is not None
+    ]
+    usernames = sorted(
+        {
+            row["user"].email
+            for row in audit_rows
+            if row["user"] is not None and row["user"].email
+        },
+        key=str.lower,
+    )
+    company_names = sorted(
+        {
+            row["company"].name
+            for row in audit_rows
+            if row["company"] is not None and row["company"].name
+        },
+        key=str.lower,
+    )
+    device_names = sorted(
+        {
+            row["device"].hostname
+            for row in audit_rows
+            if row["device"] is not None and row["device"].hostname
+        },
+        key=str.lower,
+    )
+    return render_template(
+        db,
+        "audit_logs.html",
+        {
+            "request": request,
+            "user": user,
+            "audit_rows": audit_rows,
+            "audit_usernames": usernames,
+            "audit_company_names": company_names,
+            "audit_device_names": device_names,
+            "active_page": "audit-logs",
+        },
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_redirect(user: Annotated[User, Depends(current_user)]):
     require_admin(user)
@@ -2911,6 +3003,15 @@ def device_page(
     device = db.get(Device, device_id)
     if not device or not has_company_access(db, user, device.company_id):
         raise HTTPException(status_code=404)
+    write_audit(
+        db,
+        request,
+        "device.view",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
     can_edit_notification_settings = has_company_access(
         db, user, device.company_id, "admin"
     )
@@ -3253,15 +3354,16 @@ async def proxy_device(
         or not has_company_access(db, user, device.company_id)
     ):
         raise HTTPException(status_code=404)
-    write_audit(
-        db,
-        request,
-        "device.proxy.open",
-        user=user,
-        company_id=device.company_id,
-        device_id=device.id,
-    )
-    db.commit()
+    if request.method == "GET" and path == "":
+        write_audit(
+            db,
+            request,
+            "device.proxy.open",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
     try:
         url = device_webgui_url(device) + path
         if request.url.query:

@@ -520,4 +520,116 @@ document.addEventListener("DOMContentLoaded", () => {
   customStart?.addEventListener("change", applyRecentEventsRange);
   customEnd?.addEventListener("change", applyRecentEventsRange);
   applyRecentEventsRange();
+
+  const auditLogTable = document.querySelector("#audit-log-table");
+  const auditUserFilter = document.querySelector("[data-audit-user-filter]");
+  const auditDeviceFilter = document.querySelector(
+    "[data-audit-device-filter]",
+  );
+  const auditCompanyFilter = document.querySelector(
+    "[data-audit-company-filter]",
+  );
+  const auditRangeSelect = document.querySelector("[data-audit-range-select]");
+  const auditCustomRange = document.querySelector("[data-audit-custom-range]");
+  const auditStart = document.querySelector("[data-audit-start]");
+  const auditEnd = document.querySelector("[data-audit-end]");
+  const auditFilterReset = document.querySelector("[data-audit-filter-reset]");
+
+  const applyAuditLogFilters = () => {
+    if (!auditLogTable) {
+      return;
+    }
+    const userValue = (auditUserFilter?.value || "").trim().toLowerCase();
+    const deviceValue = (auditDeviceFilter?.value || "").trim().toLowerCase();
+    const companyValue = (auditCompanyFilter?.value || "").trim().toLowerCase();
+    const selectedRange =
+      resolveDatalistValue(
+        "audit-time-range-options",
+        auditRangeSelect?.value,
+        "rangeValue",
+      ) || "all";
+    const now = Date.now();
+    let minTimestamp = null;
+    let maxTimestamp = null;
+
+    if (selectedRange === "1h") {
+      minTimestamp = now - 60 * 60 * 1000;
+    } else if (selectedRange === "24h") {
+      minTimestamp = now - 24 * 60 * 60 * 1000;
+    } else if (selectedRange === "7d") {
+      minTimestamp = now - 7 * 24 * 60 * 60 * 1000;
+    } else if (selectedRange === "custom") {
+      minTimestamp = auditStart?.value ? Date.parse(auditStart.value) : null;
+      maxTimestamp = auditEnd?.value ? Date.parse(auditEnd.value) : null;
+    }
+
+    if (auditCustomRange) {
+      auditCustomRange.hidden = selectedRange !== "custom";
+    }
+
+    setTableRowVisibility(auditLogTable, (row) => {
+      const userText =
+        row
+          .querySelector('[data-column="audit-user"]')
+          ?.textContent?.trim()
+          .toLowerCase() || "";
+      const deviceText =
+        row
+          .querySelector('[data-column="audit-device"]')
+          ?.textContent?.trim()
+          .toLowerCase() || "";
+      const companyText =
+        row
+          .querySelector('[data-column="audit-company"]')
+          ?.textContent?.trim()
+          .toLowerCase() || "";
+      if (userValue && !userText.includes(userValue)) {
+        return false;
+      }
+      if (deviceValue && !deviceText.includes(deviceValue)) {
+        return false;
+      }
+      if (companyValue && !companyText.includes(companyValue)) {
+        return false;
+      }
+      const rawTimestamp = row.dataset.auditTimestamp;
+      if (!rawTimestamp) {
+        return true;
+      }
+      const eventTimestamp = Date.parse(rawTimestamp);
+      if (Number.isNaN(eventTimestamp)) {
+        return true;
+      }
+      if (minTimestamp !== null && eventTimestamp < minTimestamp) {
+        return false;
+      }
+      if (maxTimestamp !== null && eventTimestamp > maxTimestamp) {
+        return false;
+      }
+      return true;
+    });
+  };
+
+  [auditUserFilter, auditDeviceFilter, auditCompanyFilter].forEach((input) => {
+    input?.addEventListener("input", applyAuditLogFilters);
+    input?.addEventListener("change", applyAuditLogFilters);
+  });
+  auditRangeSelect?.addEventListener("change", applyAuditLogFilters);
+  auditStart?.addEventListener("change", applyAuditLogFilters);
+  auditEnd?.addEventListener("change", applyAuditLogFilters);
+  auditFilterReset?.addEventListener("click", () => {
+    window.setTimeout(() => {
+      if (auditRangeSelect) {
+        auditRangeSelect.value = "All audit events";
+      }
+      if (auditStart) {
+        auditStart.value = "";
+      }
+      if (auditEnd) {
+        auditEnd.value = "";
+      }
+      applyAuditLogFilters();
+    }, 0);
+  });
+  applyAuditLogFilters();
 });

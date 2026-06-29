@@ -716,6 +716,13 @@ th {
     gap: 1rem;
     align-items: end;
 }
+.audit-log-filters-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(180px, 1fr)) minmax(320px, 1.3fr);
+    gap: 1rem;
+    align-items: end;
+    margin: 1rem 0;
+}
 .dashboard-filter-checkbox {
     padding-bottom: 0.8rem;
 }
@@ -885,6 +892,7 @@ th {
         grid-template-columns: 1fr;
     }
     .dashboard-filters-form,
+    .audit-log-filters-form,
     .dashboard-top-grid,
     .dashboard-chart-layout {
         grid-template-columns: 1fr;
@@ -1378,6 +1386,10 @@ table {
 
 .dashboard-card .responsive-table {
     max-height: 25rem;
+    overflow: auto;
+}
+.audit-log-table-wrap {
+    max-height: 34rem;
     overflow: auto;
 }
 

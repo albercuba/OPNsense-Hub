@@ -263,6 +263,60 @@ def test_backup_export_requires_admin(monkeypatch, tmp_path):
     assert response.json()["detail"] == "administrator access required"
 
 
+def test_audit_logs_page_lists_firewall_access_entries(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "audit_logs_page") as session:
+        admin = seed_backup_source(session)
+        device = session.scalars(select(Device)).first()
+        company = session.scalars(select(Company)).first()
+        assert device is not None
+        assert company is not None
+        session.add(
+            AuditLog(
+                id=uuid4(),
+                user_id=admin.id,
+                company_id=company.id,
+                device_id=device.id,
+                action="device.view",
+                ip_address="127.0.0.1",
+                user_agent="pytest",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get("/audit-logs")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Audit logs" in response.text
+    assert admin.email in response.text
+    assert device.hostname in response.text
+    assert company.name in response.text
+
+
+
+def test_device_page_writes_firewall_access_audit_log(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_view_audit") as session:
+        admin = seed_backup_source(session)
+        device = session.scalars(select(Device)).first()
+        assert device is not None
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/devices/{device.id}")
+        app.dependency_overrides.clear()
+        access_logs = session.scalars(
+            select(AuditLog).where(AuditLog.action == "device.view")
+        ).all()
+
+    assert response.status_code == 200
+    assert len(access_logs) == 1
+    assert access_logs[0].device_id == device.id
+    assert access_logs[0].company_id == device.company_id
+    assert access_logs[0].user_id == admin.id
+
+
+
 def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "delete_backup") as session:
         admin = seed_backup_source(session)

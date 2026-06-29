@@ -55,6 +55,11 @@
                     Management</a
                 >
                 {% if user and user.role == 'administrator' %}
+                    <a
+                        class="side-menu-link {% if active_page == 'audit-logs' %}active{% endif %}"
+                        href="/audit-logs"
+                        ><i class="fa-solid fa-clipboard-list"></i> Audit logs</a
+                    >
                     {% if active_page == 'settings' %}
                     <details class="side-menu-group" open>
                     {% else %}
