@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 
 from sqlalchemy import Engine, inspect, select, text
@@ -15,15 +16,20 @@ BASELINE_REVISION = "0001_current_schema_baseline"
 
 
 def _alembic_modules():
-    from alembic import command
-    from alembic.config import Config
+    try:
+        command = import_module("alembic.command")
+        config_module = import_module("alembic.config")
+    except ModuleNotFoundError:
+        return None, None
 
-    return command, Config
+    return command, config_module.Config
 
 
 def _alembic_config():
     dashboard_dir = Path(__file__).resolve().parents[2]
     _command, Config = _alembic_modules()
+    if Config is None:
+        raise RuntimeError("Alembic is not installed")
     config = Config(str(dashboard_dir / "alembic.ini"))
     config.set_main_option("script_location", str(dashboard_dir / "migrations"))
     config.set_main_option("sqlalchemy.url", settings.database_url)
@@ -160,6 +166,11 @@ def run_startup_migrations(target_engine: Engine = engine) -> None:
         Base.metadata.create_all(bind=target_engine)
         return
     command, _Config = _alembic_modules()
+    if command is None:
+        Base.metadata.create_all(bind=target_engine)
+        if settings.allow_legacy_schema_bootstrap:
+            ensure_schema_compat_legacy(target_engine)
+        return
     config = _alembic_config()
     has_tables = database_has_tables(target_engine)
     has_version = alembic_version_present(target_engine)

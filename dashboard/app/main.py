@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .backups import backup_due, backup_interval_delta, backup_request_pending
-from .config import get_settings
 from .database import get_db
 from .deps import current_user
 from .hardening import apply_startup_hardening
@@ -115,3 +114,27 @@ update_device_email_notification_settings = (
     devices_router.update_device_email_notification_settings
 )
 upload_device_backup = devices_router.upload_device_backup
+
+# Additional compatibility re-exports used by tests and existing imports.
+current_brand_logo_url = current_brand_logo_url
+format_datetime = format_datetime
+templates = templates
+backup_due = backup_due
+backup_interval_delta = backup_interval_delta
+backup_request_pending = backup_request_pending
+device_license_expiration = device_license_expiration
+device_license_label = device_license_label
+firmware_status_local_date = firmware_status_local_date
+firmware_status_ui = firmware_status_ui
+mark_devices_for_firmware_check = mark_devices_for_firmware_check
+normalize_device_firmware_payload = normalize_device_firmware_payload
+normalize_device_license_payload = normalize_device_license_payload
+parse_license_expires_at = parse_license_expires_at
+run_device_health_checks_once = run_device_health_checks_once
+run_firmware_schedule_once = run_firmware_schedule_once
+maybe_send_health_notification = maybe_send_health_notification
+has_company_role = has_company_role
+get_db = get_db
+current_user = current_user
+session_from_request = session_from_request
+export_backup_bundle = export_backup_bundle

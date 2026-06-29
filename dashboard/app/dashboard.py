@@ -25,10 +25,12 @@ STATUS_COLORS = {
 def accessible_companies_for_user(db: Session, user: User) -> list[Company]:
     statement = select(Company).order_by(Company.name)
     if user.role == "administrator":
-        return db.scalars(statement).all()
-    return db.scalars(
-        statement.join(CompanyUser).where(CompanyUser.user_id == user.id)
-    ).all()
+        return list(db.scalars(statement).all())
+    return list(
+        db.scalars(
+            statement.join(CompanyUser).where(CompanyUser.user_id == user.id)
+        ).all()
+    )
 
 
 def accessible_devices_for_user(db: Session, user: User) -> list[Device]:
@@ -39,12 +41,14 @@ def accessible_devices_for_user(db: Session, user: User) -> list[Device]:
         .order_by(Company.name, Device.hostname)
     )
     if user.role == "administrator":
-        return db.scalars(statement).all()
-    return db.scalars(
-        statement.join(CompanyUser, CompanyUser.company_id == Device.company_id).where(
-            CompanyUser.user_id == user.id
-        )
-    ).all()
+        return list(db.scalars(statement).all())
+    return list(
+        db.scalars(
+            statement.join(
+                CompanyUser, CompanyUser.company_id == Device.company_id
+            ).where(CompanyUser.user_id == user.id)
+        ).all()
+    )
 
 
 def normalized_status(device: Device) -> str:
@@ -87,7 +91,11 @@ def dashboard_firmware_status(device: Device) -> dict[str, str | bool]:
     if status == "update":
         return {"label": "Updates available", "class": "text-info", "attention": True}
     if status == "upgrade":
-        return {"label": "Upgrade available", "class": "text-warning", "attention": True}
+        return {
+            "label": "Upgrade available",
+            "class": "text-warning",
+            "attention": True,
+        }
     if status == "error":
         return {"label": "Check failed", "class": "text-danger", "attention": True}
     return {
@@ -99,9 +107,19 @@ def dashboard_firmware_status(device: Device) -> dict[str, str | bool]:
 
 def dashboard_license_status(device: Device, now: datetime) -> dict[str, object]:
     if (device.license_type or "").lower() != "business":
-        return {"label": "Community", "days_left": None, "expired": False, "expiring_soon": False}
+        return {
+            "label": "Community",
+            "days_left": None,
+            "expired": False,
+            "expiring_soon": False,
+        }
     if not device.license_expires_at:
-        return {"label": "Business", "days_left": None, "expired": False, "expiring_soon": False}
+        return {
+            "label": "Business",
+            "days_left": None,
+            "expired": False,
+            "expiring_soon": False,
+        }
     expiration = device.license_expires_at.astimezone(timezone.utc).date()
     days_left = (expiration - now.astimezone(timezone.utc).date()).days
     return {
@@ -207,7 +225,7 @@ def build_dashboard_context(
     email_ready = email_settings_configured(integration_settings)
 
     companies = accessible_companies_for_user(db, user)
-    company_map = {str(company.id): company for company in companies}
+
     devices = accessible_devices_for_user(db, user)
 
     selected_company_id = (filters.get("company_id") or "").strip()
@@ -229,7 +247,9 @@ def build_dashboard_context(
 
     visible_company_ids = {device.company_id for device in filtered_devices}
     filtered_companies = [
-        company for company in companies if company.id in visible_company_ids or str(company.id) == selected_company_id
+        company
+        for company in companies
+        if company.id in visible_company_ids or str(company.id) == selected_company_id
     ]
 
     status_counts = {"online": 0, "warning": 0, "critical": 0, "revoked": 0, "other": 0}
@@ -249,7 +269,7 @@ def build_dashboard_context(
     backups_disabled_count = 0
     backups_overdue_count = 0
     backups_never_count = 0
-    last_successful_backup = None
+    last_successful_backup: Device | None = None
     for device in active_devices:
         backup_status = dashboard_backup_status(device, now)
         if device.backup_enabled:
@@ -260,12 +280,19 @@ def build_dashboard_context(
             backups_overdue_count += 1
         if backup_status["label"] == "Never backed up":
             backups_never_count += 1
-        if device.backup_last_uploaded_at and (
+        last_uploaded_at = device.backup_last_uploaded_at
+        if last_uploaded_at and (
             last_successful_backup is None
-            or device.backup_last_uploaded_at > last_successful_backup.backup_last_uploaded_at
+            or last_successful_backup.backup_last_uploaded_at is None
+            or last_uploaded_at > last_successful_backup.backup_last_uploaded_at
         ):
             last_successful_backup = device
-        if backup_status["label"] in {"Overdue", "Never backed up", "Pending", "Disabled"}:
+        if backup_status["label"] in {
+            "Overdue",
+            "Never backed up",
+            "Pending",
+            "Disabled",
+        }:
             backup_rows.append(
                 {
                     "device": device,
@@ -331,9 +358,11 @@ def build_dashboard_context(
             license_summary["expired"] += 1
         if license_status["expiring_soon"]:
             license_summary["within_30_days"] += 1
-        if license_status["days_left"] <= 7:
+        days_left = license_status["days_left"]
+        assert isinstance(days_left, int)
+        if days_left <= 7:
             license_summary["within_7_days"] += 1
-        if license_status["days_left"] <= 30:
+        if days_left <= 30:
             license_rows.append(
                 {
                     "device": device,
@@ -395,9 +424,7 @@ def build_dashboard_context(
         )
 
     health_events = [
-        item
-        for item in recent_events
-        if item["event"].event_type == "health_check"
+        item for item in recent_events if item["event"].event_type == "health_check"
     ]
     recently_offline = []
     recovered_recently = []
@@ -537,31 +564,62 @@ def build_dashboard_context(
 
     company_overview = []
     for company in filtered_companies:
-        company_devices = [device for device in filtered_devices if device.company_id == company.id]
+        company_devices = [
+            device for device in filtered_devices if device.company_id == company.id
+        ]
         if not company_devices and not selected_company_id:
             continue
-        active_company_devices = [device for device in company_devices if active_device(device)]
+        active_company_devices = [
+            device for device in company_devices if active_device(device)
+        ]
         company_overview.append(
             {
                 "company": company,
                 "firewalls": len(company_devices),
-                "online": sum(1 for device in company_devices if normalized_status(device) == "online"),
-                "warning": sum(1 for device in company_devices if normalized_status(device) == "warning"),
-                "critical": sum(1 for device in company_devices if normalized_status(device) == "critical"),
-                "revoked": sum(1 for device in company_devices if normalized_status(device) == "revoked"),
+                "online": sum(
+                    1
+                    for device in company_devices
+                    if normalized_status(device) == "online"
+                ),
+                "warning": sum(
+                    1
+                    for device in company_devices
+                    if normalized_status(device) == "warning"
+                ),
+                "critical": sum(
+                    1
+                    for device in company_devices
+                    if normalized_status(device) == "critical"
+                ),
+                "revoked": sum(
+                    1
+                    for device in company_devices
+                    if normalized_status(device) == "revoked"
+                ),
                 "backups_overdue": sum(
                     1
                     for device in active_company_devices
                     if dashboard_backup_status(device, now)["label"] == "Overdue"
                 ),
                 "firmware_attention": sum(
-                    1 for device in active_company_devices if dashboard_firmware_status(device)["attention"]
+                    1
+                    for device in active_company_devices
+                    if dashboard_firmware_status(device)["attention"]
                 ),
                 "licenses_expiring": sum(
                     1
                     for device in active_company_devices
-                    if dashboard_license_status(device, now)["days_left"] is not None
-                    and dashboard_license_status(device, now)["days_left"] <= 30
+                    if (
+                        isinstance(
+                            (
+                                license_days_left := dashboard_license_status(
+                                    device, now
+                                )["days_left"]
+                            ),
+                            int,
+                        )
+                        and license_days_left <= 30
+                    )
                 ),
             }
         )

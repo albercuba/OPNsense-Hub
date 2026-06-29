@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -76,8 +77,9 @@ def render_template(
 
     payload = dict(context)
     request = payload.get("request")
-    if request is not None:
-        payload.setdefault("csrf_token", get_or_create_csrf_token(request))
+    if not isinstance(request, Request):
+        raise RuntimeError("render_template requires a FastAPI request in context")
+    payload.setdefault("csrf_token", get_or_create_csrf_token(request))
     payload.setdefault("brand_logo_url", current_brand_logo_url(db))
     payload.setdefault("device_license_label", device_license_label)
     payload.setdefault("device_license_expiration", device_license_expiration)
