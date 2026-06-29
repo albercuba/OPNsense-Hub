@@ -743,7 +743,6 @@ def require_admin(user: User) -> None:
 
 
 def get_or_create_integration_settings(db: Session) -> IntegrationSettings:
-    ensure_schema_compat()
     integration_settings = db.get(IntegrationSettings, 1)
     if not integration_settings:
         integration_settings = IntegrationSettings(id=1)
