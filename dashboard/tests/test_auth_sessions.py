@@ -211,13 +211,17 @@ def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
-        response = client.get("/auth/microsoft/start", follow_redirects=False)
+        response = client.get(
+            "/auth/microsoft/start?login_hint=user@example.com",
+            follow_redirects=False,
+        )
     app.dependency_overrides.clear()
 
     assert response.status_code == 303
     assert response.headers["location"].startswith(
         "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?"
     )
+    assert "login_hint=user%40example.com" in response.headers["location"]
     cookie_header = response.headers.get("set-cookie", "")
     assert "opnhub_ms_state=" in cookie_header
     assert "opnhub_ms_verifier=" in cookie_header

@@ -66,6 +66,32 @@
                     Microsoft 365
                 </a>
             </div>
+            <script>
+                (function () {
+                    const button = document.getElementById(
+                        "microsoft-login-button",
+                    );
+                    const emailInput = document.querySelector(
+                        'input[name="email"]',
+                    );
+                    if (!button || !emailInput) {
+                        return;
+                    }
+                    button.addEventListener("click", function (event) {
+                        const loginHint = (emailInput.value || "").trim();
+                        if (!loginHint) {
+                            return;
+                        }
+                        event.preventDefault();
+                        const url = new URL(
+                            button.href,
+                            window.location.origin,
+                        );
+                        url.searchParams.set("login_hint", loginHint);
+                        window.location.href = url.toString();
+                    });
+                })();
+            </script>
             {% endif %}
         </section>
     </body>

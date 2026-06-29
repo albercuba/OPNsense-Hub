@@ -1014,25 +1014,30 @@ def microsoft_pkce_challenge(verifier: str) -> str:
 
 
 def microsoft_login_authorize_url(
-    integration_settings: IntegrationSettings, request: Request, state: str, verifier: str
+    integration_settings: IntegrationSettings,
+    request: Request,
+    state: str,
+    verifier: str,
+    login_hint: str | None = None,
 ) -> str:
     authority_url = microsoft_authority_url(integration_settings)
     scope = microsoft_access_scope(integration_settings)
     if not authority_url or not scope:
         raise RuntimeError("Microsoft sign-in is not configured")
-    query = urlencode(
-        {
-            "client_id": integration_settings.microsoft_client_id or "",
-            "response_type": "code",
-            "redirect_uri": microsoft_redirect_uri(request),
-            "response_mode": "query",
-            "scope": f"openid profile email {scope}",
-            "state": state,
-            "code_challenge": microsoft_pkce_challenge(verifier),
-            "code_challenge_method": "S256",
-            "prompt": "select_account",
-        }
-    )
+    query_params = {
+        "client_id": integration_settings.microsoft_client_id or "",
+        "response_type": "code",
+        "redirect_uri": microsoft_redirect_uri(request),
+        "response_mode": "query",
+        "scope": f"openid profile email {scope}",
+        "state": state,
+        "code_challenge": microsoft_pkce_challenge(verifier),
+        "code_challenge_method": "S256",
+    }
+    normalized_login_hint = clean_optional(login_hint)
+    if normalized_login_hint:
+        query_params["login_hint"] = normalized_login_hint
+    query = urlencode(query_params)
     return authority_url.rstrip("/") + "/oauth2/v2.0/authorize?" + query
 
 
@@ -1863,6 +1868,7 @@ def login(
 def microsoft_login_start(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    login_hint: str | None = None,
 ):
     integration_settings = db.get(IntegrationSettings, 1)
     if not microsoft_login_configured(integration_settings):
@@ -1871,7 +1877,13 @@ def microsoft_login_start(
     state = random_token(32)
     verifier = microsoft_pkce_verifier()
     response = RedirectResponse(
-        microsoft_login_authorize_url(integration_settings, request, state, verifier),
+        microsoft_login_authorize_url(
+            integration_settings,
+            request,
+            state,
+            verifier,
+            login_hint=login_hint,
+        ),
         status_code=303,
     )
     response.set_cookie(
