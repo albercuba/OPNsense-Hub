@@ -1393,14 +1393,10 @@ table {
     overflow: auto;
 }
 .audit-log-filter-actions {
-    display: grid;
-    gap: 0.45rem;
-    margin-bottom: 1rem;
+    display: flex;
+    align-items: end;
+    margin-bottom: 0;
     align-self: end;
-}
-.audit-log-filter-actions span {
-    color: var(--muted);
-    font-size: 12px;
 }
 .audit-log-filter-actions .button {
     white-space: nowrap;
