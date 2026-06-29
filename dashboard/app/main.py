@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -964,14 +964,17 @@ def is_valid_email_address(value: str | None) -> bool:
 def send_smtp_email(
     integration_settings: IntegrationSettings, to_email: str, subject: str, body: str
 ) -> None:
+    smtp_host = integration_settings.smtp_host
+    smtp_port = integration_settings.smtp_port
+    smtp_from = integration_settings.smtp_from
+    if not smtp_host or smtp_port is None or not smtp_from:
+        raise RuntimeError("SMTP settings are incomplete")
     message = EmailMessage()
-    message["From"] = integration_settings.smtp_from
+    message["From"] = smtp_from
     message["To"] = to_email
     message["Subject"] = subject
     message.set_content(body)
-    with smtplib.SMTP(
-        integration_settings.smtp_host, integration_settings.smtp_port, timeout=20
-    ) as smtp:
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
         if integration_settings.smtp_username and integration_settings.smtp_password:
             smtp.login(
                 integration_settings.smtp_username, integration_settings.smtp_password
@@ -1305,13 +1308,15 @@ def apply_device_firmware_payload(
         return False
     device.firmware_status = str(firmware["status"])
     device.firmware_update_available = bool(firmware["update_available"])
-    device.firmware_update_type = firmware["update_type"]
-    device.firmware_current_version = firmware["current_version"]
-    device.firmware_available_version = firmware["available_version"]
-    device.firmware_update_count = int(firmware["update_count"])
+    device.firmware_update_type = cast(str | None, firmware["update_type"])
+    device.firmware_current_version = cast(str | None, firmware["current_version"])
+    device.firmware_available_version = cast(
+        str | None, firmware["available_version"]
+    )
+    device.firmware_update_count = int(cast(int, firmware["update_count"]))
     device.firmware_reboot_required = bool(firmware["reboot_required"])
-    device.firmware_status_message = firmware["message"]
-    device.firmware_checked_at = firmware["checked_at"]
+    device.firmware_status_message = cast(str | None, firmware["message"])
+    device.firmware_checked_at = cast(datetime, firmware["checked_at"])
     device.firmware_check_requested_at = None
     device.firmware_check_request_reason = None
     return True
