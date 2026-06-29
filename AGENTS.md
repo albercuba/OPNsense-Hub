@@ -18,6 +18,14 @@ When I ask for a change, implement it directly in the codebase.
 
 - In the established VPN tunnel, each firewall must only have access to the dashboard/control-plane service and must not be able to access any other device or service in the dashboard network.
 
+## UI semantics
+
+- For backup and restore actions, communicate intent clearly through color and emphasis.
+- Use green or teal tones for Backup actions to signal safe, proactive preservation.
+- Use amber or orange tones for Restore actions to signal intentional recovery.
+- Avoid red for Restore unless the action is actually destructive.
+- Keep these semantics consistent with the existing OPNsense Hub visual style rather than introducing a different design language.
+
 ## Validation
 
 Before finishing:

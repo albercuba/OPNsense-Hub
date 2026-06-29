@@ -308,6 +308,22 @@ select:focus {
 .button.danger {
     background: var(--danger);
 }
+.button.backup-action {
+    background: #1b6b5a;
+    color: #fff;
+}
+.button.backup-action:hover,
+.button.backup-action:focus-visible {
+    background: #175a4c;
+}
+.button.restore-action {
+    background: #c47a00;
+    color: #fff;
+}
+.button.restore-action:hover,
+.button.restore-action:focus-visible {
+    background: #a96600;
+}
 .icon-button {
     border: 0;
     background: transparent;
