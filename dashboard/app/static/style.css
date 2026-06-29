@@ -1322,6 +1322,58 @@ summary,
     gap: 0.75rem;
 }
 
+.dashboard-collapsible-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.dashboard-collapsible-card summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.95rem 1.1rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.dashboard-collapsible-card summary::-webkit-details-marker {
+    display: none;
+}
+
+.dashboard-collapsible-card summary::after {
+    content: "▸";
+    color: var(--muted);
+    font-size: 14px;
+    transition: transform 0.16s ease;
+}
+
+.dashboard-collapsible-card[open] summary::after {
+    transform: rotate(90deg);
+}
+
+.dashboard-collapsible-card summary:hover {
+    background: #f4f8fe;
+}
+
+.dashboard-collapsible-card[open] summary {
+    border-bottom: 1px solid var(--line);
+}
+
+.dashboard-collapsible-body {
+    padding: 1rem 1.1rem 1.1rem;
+}
+
+.dashboard-collapsible-body .admin-card-header {
+    margin-bottom: 0.75rem;
+}
+
+.dashboard-collapsible-body > :last-child {
+    margin-bottom: 0;
+}
+
 .dashboard-accordion-item {
     border: 1px solid var(--line);
     border-radius: var(--radius);

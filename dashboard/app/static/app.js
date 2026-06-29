@@ -316,7 +316,17 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const target = document.querySelector(selector);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!target) {
+      return;
+    }
+    if (target.matches("details")) {
+      target.open = true;
+    } else {
+      target
+        .querySelector("[data-dashboard-collapsible]")
+        ?.setAttribute("open", "open");
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const setTableRowVisibility = (table, predicate) => {
