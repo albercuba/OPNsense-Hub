@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import contextlib
+import hashlib
 import io
 import ipaddress
 import json
@@ -13,7 +15,7 @@ from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Annotated, Any, cast
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -990,6 +992,72 @@ def microsoft_access_scope(integration_settings: IntegrationSettings | None) -> 
     return f"api://{audience}/access_as_user"
 
 
+def microsoft_redirect_uri(request: Request) -> str:
+    return str(request.url_for("microsoft_callback"))
+
+
+def microsoft_pkce_verifier() -> str:
+    return random_token(64)
+
+
+def microsoft_pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def microsoft_login_authorize_url(
+    integration_settings: IntegrationSettings, request: Request, state: str, verifier: str
+) -> str:
+    authority_url = microsoft_authority_url(integration_settings)
+    scope = microsoft_access_scope(integration_settings)
+    if not authority_url or not scope:
+        raise RuntimeError("Microsoft sign-in is not configured")
+    query = urlencode(
+        {
+            "client_id": integration_settings.microsoft_client_id or "",
+            "response_type": "code",
+            "redirect_uri": microsoft_redirect_uri(request),
+            "response_mode": "query",
+            "scope": f"openid profile email {scope}",
+            "state": state,
+            "code_challenge": microsoft_pkce_challenge(verifier),
+            "code_challenge_method": "S256",
+            "prompt": "select_account",
+        }
+    )
+    return authority_url.rstrip("/") + "/oauth2/v2.0/authorize?" + query
+
+
+def exchange_microsoft_authorization_code(
+    integration_settings: IntegrationSettings,
+    request: Request,
+    code: str,
+    verifier: str,
+) -> dict[str, Any]:
+    authority_url = microsoft_authority_url(integration_settings)
+    scope = microsoft_access_scope(integration_settings)
+    if not authority_url or not scope:
+        raise RuntimeError("Microsoft sign-in is not configured")
+    token_url = authority_url.rstrip("/") + "/oauth2/v2.0/token"
+    with httpx.Client(timeout=20) as client:
+        response = client.post(
+            token_url,
+            data={
+                "grant_type": "authorization_code",
+                "client_id": integration_settings.microsoft_client_id,
+                "code": code,
+                "redirect_uri": microsoft_redirect_uri(request),
+                "code_verifier": verifier,
+                "scope": f"openid profile email {scope}",
+            },
+        )
+        response.raise_for_status()
+        payload = cast(dict[str, Any], response.json())
+    if not payload.get("access_token"):
+        raise RuntimeError("Microsoft sign-in did not return an access token")
+    return payload
+
+
 def split_display_name(name: str | None) -> tuple[str | None, str | None]:
     normalized = clean_optional(name)
     if not normalized:
@@ -1686,6 +1754,41 @@ def render_template(
     )
 
 
+def render_login_template(
+    db: Session,
+    request: Request,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    integration_settings = db.get(IntegrationSettings, 1)
+    return render_template(
+        db,
+        "login.html",
+        {
+            "request": request,
+            "error": error,
+            "microsoft_login_enabled": microsoft_login_configured(integration_settings),
+            "local_ad_login_enabled": local_ad_login_configured(integration_settings),
+            "microsoft_client_id": integration_settings.microsoft_client_id if integration_settings else None,
+            "microsoft_authority_url": microsoft_authority_url(integration_settings),
+            "microsoft_access_scope": microsoft_access_scope(integration_settings),
+        },
+        status_code=status_code,
+    )
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        settings.session_cookie_name,
+        token,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+    )
+
+
 def create_user_session(db: Session, user: User) -> str:
     token = random_token(48)
     now = utc_now()
@@ -1723,20 +1826,7 @@ def index(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, db: Annotated[Session, Depends(get_db)]):
-    integration_settings = db.get(IntegrationSettings, 1)
-    return render_template(
-        db,
-        "login.html",
-        {
-            "request": request,
-            "error": None,
-            "microsoft_login_enabled": microsoft_login_configured(integration_settings),
-            "local_ad_login_enabled": local_ad_login_configured(integration_settings),
-            "microsoft_client_id": integration_settings.microsoft_client_id if integration_settings else None,
-            "microsoft_authority_url": microsoft_authority_url(integration_settings),
-            "microsoft_access_scope": microsoft_access_scope(integration_settings),
-        },
-    )
+    return render_login_template(db, request)
 
 
 @app.post("/api/v1/auth/login")
@@ -1749,33 +1839,145 @@ def login(
 ):
     user = db.scalar(select(User).where(User.email == email.lower().strip()))
     if not user or not verify_secret(password, user.password_hash):
-        integration_settings = db.get(IntegrationSettings, 1)
-        return render_template(
-            db,
-            "login.html",
-            {
-                "request": request,
-                "error": "Invalid email or password",
-                "microsoft_login_enabled": microsoft_login_configured(integration_settings),
-                "local_ad_login_enabled": local_ad_login_configured(integration_settings),
-                "microsoft_client_id": integration_settings.microsoft_client_id if integration_settings else None,
-                "microsoft_authority_url": microsoft_authority_url(integration_settings),
-                "microsoft_access_scope": microsoft_access_scope(integration_settings),
-            },
-            status_code=401,
+        return render_login_template(
+            db, request, error="Invalid email or password", status_code=401
         )
     token = create_user_session(db, user)
     response = RedirectResponse("/dashboard", status_code=303)
+    set_session_cookie(response, token)
+    write_audit(db, request, "auth.login", user=user)
+    db.commit()
+    return response
+
+
+@app.get("/auth/microsoft/start")
+def microsoft_login_start(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not microsoft_login_configured(integration_settings):
+        raise HTTPException(status_code=501, detail="Microsoft sign-in is not configured")
+    assert integration_settings is not None
+    state = random_token(32)
+    verifier = microsoft_pkce_verifier()
+    response = RedirectResponse(
+        microsoft_login_authorize_url(integration_settings, request, state, verifier),
+        status_code=303,
+    )
     response.set_cookie(
-        settings.session_cookie_name,
-        token,
+        "opnhub_ms_state",
+        state,
         httponly=True,
         secure=settings.session_secure,
         samesite="lax",
-        max_age=settings.session_ttl_hours * 3600,
+        max_age=600,
     )
-    write_audit(db, request, "auth.login", user=user)
+    response.set_cookie(
+        "opnhub_ms_verifier",
+        verifier,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        max_age=600,
+    )
+    return response
+
+
+@app.get("/auth/microsoft/callback", name="microsoft_callback")
+def microsoft_callback(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not microsoft_login_configured(integration_settings):
+        raise HTTPException(status_code=501, detail="Microsoft sign-in is not configured")
+    assert integration_settings is not None
+    if error:
+        message = clean_optional(error_description) or clean_optional(error) or "Microsoft sign-in failed"
+        return render_login_template(db, request, error=message, status_code=401)
+    expected_state = request.cookies.get("opnhub_ms_state")
+    verifier = request.cookies.get("opnhub_ms_verifier")
+    if not code or not state or not expected_state or state != expected_state or not verifier:
+        response = render_login_template(
+            db,
+            request,
+            error="Microsoft sign-in session is invalid or has expired. Please try again.",
+            status_code=401,
+        )
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
+    try:
+        token_payload = exchange_microsoft_authorization_code(
+            integration_settings, request, code, verifier
+        )
+        access_token = clean_optional(cast(str | None, token_payload.get("access_token")))
+        if not access_token:
+            raise RuntimeError("Microsoft sign-in did not return an access token")
+        claims = validate_microsoft_access_token(integration_settings, access_token)
+    except (RuntimeError, httpx.HTTPError, jwt.PyJWTError) as exc:
+        response = render_login_template(
+            db,
+            request,
+            error=f"Microsoft sign-in failed: {exc}",
+            status_code=401,
+        )
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
+    email = clean_optional(
+        str(
+            claims.get("preferred_username")
+            or claims.get("email")
+            or claims.get("upn")
+            or ""
+        )
+    )
+    if not email or not is_valid_email_address(email):
+        response = render_login_template(
+            db,
+            request,
+            error="Microsoft token does not contain a usable email address",
+            status_code=400,
+        )
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
+    first_name, last_name = split_display_name(cast(str | None, claims.get("name")))
+    groups = [str(group) for group in cast(list[Any], claims.get("groups") or [])]
+    existing = db.scalar(select(User).where(User.email == email.lower()))
+    role, allowed = microsoft_role_from_groups(
+        integration_settings, groups, existing.role if existing else None
+    )
+    if not allowed:
+        response = render_login_template(
+            db,
+            request,
+            error="Microsoft account is not mapped to an allowed Entra group",
+            status_code=403,
+        )
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
+    user = upsert_external_user(
+        db,
+        email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+    )
+    session_token = create_user_session(db, user)
+    write_audit(db, request, "auth.microsoft.login", user=user)
     db.commit()
+    response = RedirectResponse("/dashboard", status_code=303)
+    set_session_cookie(response, session_token)
+    response.delete_cookie("opnhub_ms_state")
+    response.delete_cookie("opnhub_ms_verifier")
     return response
 
 
@@ -1819,14 +2021,7 @@ def microsoft_login(
     write_audit(db, request, "auth.microsoft.login", user=user)
     db.commit()
     response = JSONResponse({"ok": True, "redirect": "/dashboard"})
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        httponly=True,
-        secure=settings.session_secure,
-        samesite="lax",
-        max_age=settings.session_ttl_hours * 3600,
-    )
+    set_session_cookie(response, session_token)
     return response
 
 
@@ -1846,20 +2041,7 @@ def local_ad_login(
             integration_settings, email, password
         )
     except RuntimeError as exc:
-        return render_template(
-            db,
-            "login.html",
-            {
-                "request": request,
-                "error": str(exc),
-                "microsoft_login_enabled": microsoft_login_configured(integration_settings),
-                "local_ad_login_enabled": local_ad_login_configured(integration_settings),
-                "microsoft_client_id": integration_settings.microsoft_client_id,
-                "microsoft_authority_url": microsoft_authority_url(integration_settings),
-                "microsoft_access_scope": microsoft_access_scope(integration_settings),
-            },
-            status_code=401,
-        )
+        return render_login_template(db, request, error=str(exc), status_code=401)
     existing = db.scalar(select(User).where(User.email == resolved_email.lower()))
     role = existing.role if existing else "user"
     user = upsert_external_user(
@@ -1873,14 +2055,7 @@ def local_ad_login(
     write_audit(db, request, "auth.local_ad.login", user=user)
     db.commit()
     response = RedirectResponse("/dashboard", status_code=303)
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        httponly=True,
-        secure=settings.session_secure,
-        samesite="lax",
-        max_age=settings.session_ttl_hours * 3600,
-    )
+    set_session_cookie(response, session_token)
     return response
 
 

@@ -545,6 +545,14 @@ th {
 .login-separator span {
     font-size: 0.9rem;
 }
+.login-external-action {
+    display: flex;
+    justify-content: center;
+}
+.login-external-action .button {
+    margin-left: auto;
+    margin-right: auto;
+}
 .footer {
     color: var(--muted);
     text-align: center;

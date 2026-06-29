@@ -184,6 +184,43 @@ def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monke
         assert ("formaction=\"/auth/local-ad\"" in response.text) == expect_local_ad
 
 
+def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
+    db = FakeDb(
+        integration_settings=IntegrationSettings(
+            id=1,
+            microsoft_enabled=True,
+            microsoft_tenant_id="tenant",
+            microsoft_client_id="client",
+            microsoft_audience="api://hub-client",
+        )
+    )
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr("app.main.bootstrap", lambda: None)
+    monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
+    monkeypatch.setattr("app.main.device_health_check_loop", noop)
+    monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        response = client.get("/auth/microsoft/start", follow_redirects=False)
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(
+        "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?"
+    )
+    cookie_header = response.headers.get("set-cookie", "")
+    assert "opnhub_ms_state=" in cookie_header
+    assert "opnhub_ms_verifier=" in cookie_header
+
+
+
 def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):
     db = FakeDb()
 

@@ -57,97 +57,16 @@
             </form>
             {% if microsoft_login_enabled %}
             <div class="login-separator"><span>or</span></div>
-            <button
-                class="button secondary"
-                type="button"
-                id="microsoft-login-button"
-                data-client-id="{{ microsoft_client_id or '' }}"
-                data-authority="{{ microsoft_authority_url or '' }}"
-                data-scope="{{ microsoft_access_scope or '' }}"
-            >
-                <i class="fa-brands fa-microsoft"></i> Sign in with Microsoft
-                365
-            </button>
-            <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-            <script>
-                (function () {
-                    const button = document.getElementById(
-                        "microsoft-login-button",
-                    );
-                    if (!button || !window.msal) {
-                        return;
-                    }
-                    button.addEventListener("click", async function () {
-                        const clientId = button.dataset.clientId || "";
-                        const authority = button.dataset.authority || "";
-                        const scope = button.dataset.scope || "";
-                        if (!clientId || !authority || !scope) {
-                            return;
-                        }
-                        button.disabled = true;
-                        try {
-                            const app = new window.msal.PublicClientApplication(
-                                {
-                                    auth: {
-                                        clientId,
-                                        authority,
-                                        redirectUri:
-                                            window.location.origin + "/login",
-                                    },
-                                    cache: {
-                                        cacheLocation: "sessionStorage",
-                                    },
-                                },
-                            );
-                            await app.initialize();
-                            const loginRequest = {
-                                scopes: ["openid", "profile", "email", scope],
-                                prompt: "select_account",
-                            };
-                            const loginResult =
-                                await app.loginPopup(loginRequest);
-                            const account =
-                                loginResult.account || app.getAllAccounts()[0];
-                            const tokenResult = await app.acquireTokenSilent({
-                                scopes: [scope],
-                                account,
-                            });
-                            const response = await fetch("/auth/microsoft", {
-                                method: "POST",
-                                headers: {
-                                    "Content-Type":
-                                        "application/x-www-form-urlencoded",
-                                    Accept: "application/json",
-                                },
-                                body: new URLSearchParams({
-                                    token: tokenResult.accessToken,
-                                }),
-                                credentials: "same-origin",
-                            });
-                            if (!response.ok) {
-                                const payload = await response
-                                    .json()
-                                    .catch(() => null);
-                                throw new Error(
-                                    payload && payload.detail
-                                        ? payload.detail
-                                        : "Microsoft sign-in failed",
-                                );
-                            }
-                            const payload = await response.json();
-                            window.location.href =
-                                payload.redirect || "/dashboard";
-                        } catch (error) {
-                            window.alert(
-                                error && error.message
-                                    ? error.message
-                                    : "Microsoft sign-in failed",
-                            );
-                            button.disabled = false;
-                        }
-                    });
-                })();
-            </script>
+            <div class="login-external-action">
+                <a
+                    class="button secondary"
+                    id="microsoft-login-button"
+                    href="/auth/microsoft/start"
+                >
+                    <i class="fa-brands fa-microsoft"></i> Sign in with
+                    Microsoft 365
+                </a>
+            </div>
             {% endif %}
         </section>
     </body>
