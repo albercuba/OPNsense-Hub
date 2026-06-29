@@ -32,7 +32,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Boolean, DateTime, Integer, delete, inspect, select, text
-from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from .audit import write_audit
@@ -1406,10 +1405,6 @@ def firmware_status_ui(device: Device) -> dict[str, str]:
 
 
 def current_brand_logo_url(db: Session | None = None) -> str | None:
-    try:
-        ensure_schema_compat()
-    except (OperationalError, ProgrammingError):
-        pass
     if uploaded_logo_path(settings.branding_upload_dir):
         return "/branding/logo"
     close_db = False
