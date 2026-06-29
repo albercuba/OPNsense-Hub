@@ -222,25 +222,13 @@
                         >
                             <option
                                 value="user"
-                                {%
-                                if
-                                managed_user.role=""
-                                ="user"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if managed_user.role == 'user' %}selected{% endif %}
                             >
-                                User
+</option>                                User
                             </option>
                             <option
                                 value="administrator"
-                                {%
-                                if
-                                managed_user.role=""
-                                ="administrator"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if managed_user.role == 'administrator' %}selected{% endif %}
                             >
                                 Administrator
                             </option>
