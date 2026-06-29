@@ -1726,6 +1726,18 @@ select option {
     display: none;
     -webkit-appearance: none;
 }
+.audit-datetime-filter {
+    padding-right: 0.95rem;
+    background-image: linear-gradient(to bottom, #ffffff, #f7fbff);
+    background-position: 0 0;
+    background-size: 100% 100%;
+}
+.audit-datetime-filter::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    display: block;
+    -webkit-appearance: auto;
+    cursor: pointer;
+}
 .dashboard-select:hover,
 .dashboard-text-filter:hover,
 .dashboard-filters-form select:hover,
