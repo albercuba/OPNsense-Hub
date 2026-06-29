@@ -1374,6 +1374,15 @@ summary,
     margin-bottom: 0;
 }
 
+.dashboard-company-overview-card
+    .dashboard-collapsible-body
+    > .responsive-table,
+.dashboard-notification-health-card
+    .dashboard-collapsible-body
+    > .dashboard-notification-grid {
+    margin-top: 0.35rem;
+}
+
 .dashboard-accordion-item {
     border: 1px solid var(--line);
     border-radius: var(--radius);
