@@ -90,7 +90,7 @@ a {
 }
 .side-menu {
     position: sticky;
-    top: 5.25rem;
+    top: 7.25rem;
     display: grid;
     gap: 0.4rem;
     margin-top: 2rem;
@@ -927,7 +927,7 @@ body {
     padding: 0 0.75rem;
 }
 .side-menu {
-    top: 3.75rem;
+    top: 4.5rem;
     gap: 0.25rem;
     margin-top: 0.75rem;
     padding: 0.5rem;
