@@ -301,6 +301,12 @@ select:focus {
     text-decoration: none;
     width: fit-content;
 }
+.button i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
 .button.secondary {
     background: var(--accent-soft);
     color: var(--accent);
