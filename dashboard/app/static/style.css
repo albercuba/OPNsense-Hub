@@ -529,6 +529,9 @@ th {
 .login .card {
     width: min(420px, 100%);
 }
+.login .card h1 {
+    text-align: center;
+}
 .login-actions {
     display: flex;
     flex-wrap: wrap;
