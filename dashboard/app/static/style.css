@@ -718,7 +718,7 @@ th {
 }
 .audit-log-filters-form {
     display: grid;
-    grid-template-columns: repeat(3, minmax(180px, 1fr)) minmax(320px, 1.3fr);
+    grid-template-columns: repeat(6, minmax(160px, 1fr));
     gap: 1rem;
     align-items: end;
     margin: 1rem 0;
@@ -1392,15 +1392,12 @@ table {
     max-height: 34rem;
     overflow: auto;
 }
-.audit-log-filter-tools {
-    width: 100%;
-    justify-content: space-between;
-}
-.audit-log-custom-range {
-    align-items: end;
-}
 .audit-log-filter-actions {
-    margin-left: auto;
+    display: grid;
+    margin-bottom: 0;
+}
+.audit-log-filter-actions .button {
+    justify-self: end;
 }
 
 thead th {
