@@ -1394,9 +1394,10 @@ table {
 }
 .audit-log-filter-actions {
     display: flex;
-    align-items: end;
+    align-items: center;
+    margin-top: 1.45rem;
     margin-bottom: 0;
-    align-self: end;
+    align-self: start;
 }
 .audit-log-filter-actions .button {
     white-space: nowrap;
