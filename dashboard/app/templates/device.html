@@ -1,9 +1,9 @@
 {% extends "base.html" %} {% block content %} {% if status %}
 <div id="device-status-card" class="card status-card device-status-card">
     <i class="fa-solid fa-circle-check"></i> {% if status == 'backup-requested'
-    %}Backup request queued.{% elif status ==
-    'email-notification-settings-saved' %}Email notification settings saved.{%
-    else %}Backup settings saved.{% endif %}
+    %}Backup request queued.{% elif status == 'backup-deleted' %}Stored backup
+    deleted.{% elif status == 'email-notification-settings-saved' %}Email
+    notification settings saved.{% else %}Backup settings saved.{% endif %}
 </div>
 {% endif %}
 <section id="device-summary-card" class="card device-summary-card">
@@ -122,37 +122,19 @@
                         >
                             <option
                                 value="hours"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="hours"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
+                            ></option>
                                 Hours
                             </option>
                             <option
                                 value="days"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="days"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
                             >
                                 Days
                             </option>
                             <option
                                 value="months"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="months"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
                             >
                                 Months
                             </option>
