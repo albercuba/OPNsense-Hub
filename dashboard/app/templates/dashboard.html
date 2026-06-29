@@ -731,8 +731,17 @@
             </thead>
             <tbody>
                 {% for row in license_rows %}
+                {% if row.license_status.label == 'Community' %}
+                {% set license_tooltip = 'Community firewall. No business license expiration applies.' %}
+                {% elif row.license_status.days_left is none %}
+                {% set license_tooltip = 'Business license detected, but this firewall has not reported an expiration date yet.' %}
+                {% elif row.license_status.expired %}
+                {% set license_tooltip = 'Business license expired on ' ~ format_datetime(row.device.license_expires_at) ~ '.' %}
+                {% else %}
+                {% set license_tooltip = 'Business license expires in ' ~ row.license_status.days_left ~ ' days on ' ~ format_datetime(row.device.license_expires_at) ~ '.' %}
+                {% endif %}
                 <tr>
-                    <td>
+                    <t</tr>d>
                         <a href="{{ row.action_link }}"
                             >{{ row.device.hostname }}</a
                         >
@@ -740,9 +749,14 @@
                     <td>{{ row.company.name if row.company else '-' }}</td>
                     <td>
                         <span
-                            class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left is not none and row.license_status.days_left <= 7 else 'text-info' }}"
+                            class="status hub-tooltip-trigger {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left is not none and row.license_status.days_left <= 7 else 'text-info' }}"
+                            tabindex="0"
                         >
                             {{ row.license_status.label }}
+                            <span class="hub-tooltip-popup" role="tooltip">
+                                <span class="hub-tooltip-title">License status</span>
+                                <span class="hub-tooltip-body">{{ license_tooltip }}</span>
+                            </span>
                         </span>
                     </td>
                     <td
@@ -756,8 +770,13 @@
                     >
                         {% if row.license_status.days_left is not none %}
                         <span
-                            class="status {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left <= 7 else 'text-info' }}"
-                            >{{ row.license_status.days_left }}</span
+                            class="status hub-tooltip-trigger {{ 'text-danger' if row.license_status.expired else 'text-warning' if row.license_status.days_left <= 7 else 'text-info' }}"
+                            tabindex="0"
+                            >{{ row.license_status.days_left }}
+                            <span class="hub-tooltip-popup" role="tooltip">
+                                <span class="hub-tooltip-title">Days left</span>
+                                <span class="hub-tooltip-body">{{ license_tooltip }}</span>
+                            </span></span
                         >
                         {% else %} - {% endif %}
                     </td>
