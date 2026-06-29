@@ -993,7 +993,9 @@ def microsoft_access_scope(integration_settings: IntegrationSettings | None) -> 
 
 
 def microsoft_redirect_uri(request: Request) -> str:
-    return str(request.url_for("microsoft_callback"))
+    public_base = settings.public_url.rstrip("/")
+    callback_path = str(request.url_for("microsoft_callback").path)
+    return public_base + callback_path
 
 
 def microsoft_pkce_verifier() -> str:
