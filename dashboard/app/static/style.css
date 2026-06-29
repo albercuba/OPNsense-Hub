@@ -495,6 +495,52 @@ th {
     padding-top: 1rem;
     margin-top: 0.5rem;
 }
+.integration-steps {
+    margin-top: 1rem;
+    padding: 0;
+    overflow: hidden;
+}
+.integration-steps summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 1rem 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+.integration-steps summary::-webkit-details-marker {
+    display: none;
+}
+.integration-steps summary::after {
+    content: "\f078";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    color: var(--muted);
+    font-size: 0.8rem;
+    transition: transform 0.16s ease;
+}
+.integration-steps[open] summary::after {
+    transform: rotate(180deg);
+}
+.integration-steps > p,
+.integration-steps > .integration-steps-list {
+    margin-left: 1.1rem;
+    margin-right: 1.1rem;
+}
+.integration-steps > p {
+    margin-top: 0;
+    margin-bottom: 0.9rem;
+}
+.integration-steps-list {
+    margin-top: 0;
+    margin-bottom: 1.1rem;
+    padding-left: 1.2rem;
+}
+.integration-steps-list li + li {
+    margin-top: 0.45rem;
+}
 .checkbox-label {
     display: inline-flex;
     align-items: center;

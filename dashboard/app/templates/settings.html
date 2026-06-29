@@ -222,13 +222,25 @@
                         >
                             <option
                                 value="user"
-                                {% if managed_user.role == 'user' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="user"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 User
                             </option>
                             <option
                                 value="administrator"
-                                {% if managed_user.role == 'administrator' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="administrator"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Administrator
                             </option>
@@ -314,6 +326,74 @@
             method can be active at a time.
         </p>
     </div>
+    <details class="integration-steps card full-row">
+        <summary>
+            Steps to configure Microsoft Graph sendMail app-only auth
+        </summary>
+        <p class="muted">
+            Use this setup only for server-side notification delivery. The app
+            uses Microsoft Graph client credentials, so no user mailbox password
+            is stored and no interactive sign-in is required.
+        </p>
+        <ol class="integration-steps-list">
+            <li>
+                In Microsoft Entra admin center, open App registrations → New
+                registration.
+            </li>
+            <li>
+                Name the app registration clearly, for example OPNsense Hub
+                Mailer. Use Accounts in this organizational directory only
+                unless you intentionally need multi-tenant mail delivery.
+            </li>
+            <li>
+                Do not add a redirect URI for this mailer app. The Graph
+                sendMail integration uses app-only client credentials, not a
+                browser sign-in callback.
+            </li>
+            <li>
+                After creating the app, copy the Directory (tenant) ID into the
+                Tenant ID field under Microsoft Graph sendMail.
+            </li>
+            <li>Copy the Application (client) ID into the Client ID field.</li>
+            <li>
+                Open Certificates & secrets → Client secrets → New client
+                secret. Choose a short, managed expiry, create the secret, and
+                copy the secret Value immediately. Paste the Value, not the
+                Secret ID, into the Client secret field.
+            </li>
+            <li>
+                Open API permissions → Add a permission → Microsoft Graph →
+                Application permissions. Add Mail.Send and remove any broader
+                permissions that are not required.
+            </li>
+            <li>
+                Click Grant admin consent for the tenant and confirm that
+                Microsoft Graph Mail.Send shows Granted for your organization.
+            </li>
+            <li>
+                Choose the sender mailbox that Graph should send as, for example
+                alerts@example.com. Enter that mailbox address in Sender
+                mailbox. The mailbox must exist in Exchange Online and be
+                allowed for app-only sending.
+            </li>
+            <li>
+                For least privilege, create an Exchange Online application
+                access policy that restricts this app registration to only the
+                approved sender mailbox or a dedicated mail-enabled security
+                group.
+            </li>
+            <li>
+                In OPNsense Hub, enable Graph sendMail, save the Tenant ID,
+                Client ID, Client secret, and Sender mailbox, then trigger a
+                test notification to verify delivery.
+            </li>
+            <li>
+                Store and rotate the client secret securely. Do not paste Graph
+                secrets into logs, tickets, screenshots, browser local storage,
+                or source control.
+            </li>
+        </ol>
+    </details>
     <form action="/settings/email" method="post" class="settings-grid-form">
         <h3 class="full-row">SMTP</h3>
         <label class="checkbox-label full-row"
@@ -400,7 +480,8 @@
                 autocomplete="new-password"
             />
             <span class="muted"
-                >{% if settings.graph_client_secret %}Client secret saved{% else %}Client secret not set{% endif %}</span
+                >{% if settings.graph_client_secret %}Client secret saved{% else
+                %}Client secret not set{% endif %}</span
             >
         </label>
         <label class="form-row"
@@ -420,6 +501,69 @@
 {% endif %} {% if active_settings == 'microsoft-365' %}
 <section class="admin-card card">
     <div class="admin-card-header"><h2>Microsoft 365 Integration</h2></div>
+    <details class="integration-steps card">
+        <summary>Microsoft Integration Setup Instructions</summary>
+        <p class="muted">
+            Create a backend API app registration, expose an `access_as_user`
+            delegated scope, create a frontend SPA app registration with this
+            app login page as the redirect URI, grant the frontend permission to
+            the backend API, grant admin consent if required, and configure
+            token group claims if you plan to map Entra groups to app roles. The
+            browser signs in with MSAL using authorization code with PKCE,
+            receives an access token for the backend API audience, and the
+            backend validates it with Entra OpenID/JWKS metadata before issuing
+            an HTTP-only app session. Do not create or store a client secret for
+            Microsoft login.
+        </p>
+        <ol class="integration-steps-list">
+            <li>
+                Open Microsoft Entra admin center, go to App registrations, and
+                create a backend API app registration for OPNsense Hub.
+            </li>
+            <li>
+                Copy the backend API Application (client) ID. This value goes in
+                Backend API Audience.
+            </li>
+            <li>
+                In the backend API app, open Expose an API. Set the Application
+                ID URI to api://&lt;backend-api-client-id&gt;, then add a
+                delegated scope named access_as_user.
+            </li>
+            <li>
+                Open Token configuration on the backend API app and add a groups
+                claim to access tokens if you plan to map Entra groups to app
+                roles. Prefer group object IDs.
+            </li>
+            <li>
+                Create a second app registration for the browser client. In
+                Authentication, add a Single-page application platform and add
+                the exact redirect URI for the login page:
+                &lt;your-hub-url&gt;/login.
+            </li>
+            <li>
+                Copy the browser app Application (client) ID. This value goes in
+                Frontend Client ID.
+            </li>
+            <li>
+                In the browser app API permissions, add a permission to your
+                backend API app and select the delegated access_as_user scope.
+                Grant admin consent if your tenant requires it.
+            </li>
+            <li>
+                In OPNsense Hub, fill in Tenant ID, Frontend Client ID, Backend
+                API Audience, and optional Authority URL. Enable Microsoft
+                sign-in only after the login-page SPA redirect URI, API
+                permission, admin consent, and token claims are verified.
+            </li>
+            <li>
+                The browser signs in with MSAL using authorization code with
+                PKCE, receives an access token for the backend API audience, and
+                the backend validates it with Entra OpenID/JWKS metadata before
+                issuing an HTTP-only app session. Do not create or store a
+                client secret for Microsoft login.
+            </li>
+        </ol>
+    </details>
     <form action="/settings/microsoft" method="post" class="settings-grid-form">
         <label class="checkbox-label full-row"
             ><input
@@ -458,9 +602,9 @@
                 name="microsoft_authority"
                 value="{{ settings.microsoft_authority or '' }}"
                 placeholder="https://login.microsoftonline.com/{tenant}"
-                accept=""        /></label>
+        /></label>
         <div class="full-row divider-top">
-            <h3></h3>Entra group role mappings</h3>
+            <h3>Entra group role mappings</h3>
             <p class="muted">
                 Map Microsoft Entra groups to Hub roles by name and/or group ID.
             </p>
@@ -499,6 +643,17 @@
 {% endif %} {% if active_settings == 'local-ad' %}
 <section class="admin-card card">
     <div class="admin-card-header"><h2>Microsoft Local AD Integration</h2></div>
+    <details class="integration-steps card">
+        <summary>Steps to configure local Active Directory sign-in</summary>
+        <p class="muted">
+            Choose an internal domain controller or LDAP endpoint reachable by
+            the OPNsense Hub container. Use LDAPS whenever possible, set the
+            base DN that contains allowed users, and use a least-privilege bind
+            DN that can search users. Keep the local admin account available as
+            break-glass access. Never log AD passwords, bind credentials, or
+            directory tokens.
+        </p>
+    </details>
     <form action="/settings/local-ad" method="post" class="settings-grid-form">
         <label class="checkbox-label full-row"
             ><input
