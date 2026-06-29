@@ -1392,12 +1392,12 @@ table {
     max-height: 34rem;
     overflow: auto;
 }
-.audit-log-filter-tools {
-    width: 100%;
-    justify-content: flex-end;
-}
 .audit-log-filter-actions {
     margin-left: auto;
+    align-self: end;
+}
+.audit-log-filter-actions .button {
+    white-space: nowrap;
 }
 
 thead th {
