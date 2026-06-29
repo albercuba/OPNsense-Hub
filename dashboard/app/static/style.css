@@ -607,6 +607,7 @@ th {
     margin-top: 1rem;
     padding: 0;
     overflow: hidden;
+    padding: 0 !important;
 }
 .integration-steps summary {
     list-style: none;
