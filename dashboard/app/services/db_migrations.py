@@ -27,10 +27,13 @@ def _alembic_modules():
 
 def _alembic_config():
     dashboard_dir = Path(__file__).resolve().parents[2]
+    alembic_ini = dashboard_dir / "alembic.ini"
     _command, Config = _alembic_modules()
     if Config is None:
         raise RuntimeError("Alembic is not installed")
-    config = Config(str(dashboard_dir / "alembic.ini"))
+    if not alembic_ini.exists():
+        return None
+    config = Config(str(alembic_ini))
     config.set_main_option("script_location", str(dashboard_dir / "migrations"))
     config.set_main_option("sqlalchemy.url", settings.database_url)
     return config
@@ -172,6 +175,11 @@ def run_startup_migrations(target_engine: Engine = engine) -> None:
             ensure_schema_compat_legacy(target_engine)
         return
     config = _alembic_config()
+    if config is None:
+        Base.metadata.create_all(bind=target_engine)
+        if settings.allow_legacy_schema_bootstrap:
+            ensure_schema_compat_legacy(target_engine)
+        return
     has_tables = database_has_tables(target_engine)
     has_version = alembic_version_present(target_engine)
     if not has_tables:
