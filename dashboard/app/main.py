@@ -12,11 +12,15 @@ from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from pathlib import Path
-from typing import Annotated, cast
-from urllib.parse import quote
+from typing import Annotated, Any, cast
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+import jwt
+from ldap3 import ALL, Connection, Server, Tls
+from ldap3.core.exceptions import LDAPException
+from ldap3.utils.conv import escape_filter_chars
 from fastapi import (
     Depends,
     FastAPI,
@@ -61,6 +65,8 @@ from .health import HealthState, HealthThresholds, next_health_state
 from .integration import (
     email_settings_configured,
     graph_email_configured,
+    local_ad_login_configured,
+    microsoft_login_configured,
     smtp_email_configured,
 )
 from .models import (
@@ -960,6 +966,246 @@ def is_valid_email_address(value: str | None) -> bool:
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
 
 
+def microsoft_authority_url(
+    integration_settings: IntegrationSettings | None,
+) -> str | None:
+    if not integration_settings or not integration_settings.microsoft_tenant_id:
+        return None
+    if integration_settings.microsoft_authority:
+        return integration_settings.microsoft_authority.rstrip("/")
+    return (
+        "https://login.microsoftonline.com/"
+        + integration_settings.microsoft_tenant_id.strip()
+    )
+
+
+def microsoft_access_scope(integration_settings: IntegrationSettings | None) -> str | None:
+    if not integration_settings or not integration_settings.microsoft_audience:
+        return None
+    audience = integration_settings.microsoft_audience.strip()
+    audience = audience.removeprefix("api://")
+    audience = audience.removesuffix("/access_as_user")
+    if not audience:
+        return None
+    return f"api://{audience}/access_as_user"
+
+
+def split_display_name(name: str | None) -> tuple[str | None, str | None]:
+    normalized = clean_optional(name)
+    if not normalized:
+        return None, None
+    parts = normalized.split(None, 1)
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], parts[1]
+
+
+def microsoft_group_matches(
+    groups: list[str], *candidates: str | None
+) -> bool:
+    normalized_groups = {group.strip().lower() for group in groups if group.strip()}
+    for candidate in candidates:
+        normalized = (candidate or "").strip().lower()
+        if normalized and normalized in normalized_groups:
+            return True
+    return False
+
+
+def microsoft_role_from_groups(
+    integration_settings: IntegrationSettings, groups: list[str], existing_role: str | None
+) -> tuple[str, bool]:
+    admin_mapped = bool(
+        integration_settings.microsoft_admin_group_name
+        or integration_settings.microsoft_admin_group_id
+    )
+    user_mapped = bool(
+        integration_settings.microsoft_user_group_name
+        or integration_settings.microsoft_user_group_id
+    )
+    if microsoft_group_matches(
+        groups,
+        integration_settings.microsoft_admin_group_name,
+        integration_settings.microsoft_admin_group_id,
+    ):
+        return "administrator", True
+    if microsoft_group_matches(
+        groups,
+        integration_settings.microsoft_user_group_name,
+        integration_settings.microsoft_user_group_id,
+    ):
+        return "user", True
+    if admin_mapped or user_mapped:
+        return existing_role or "user", False
+    return existing_role or "user", True
+
+
+def upsert_external_user(
+    db: Session,
+    email: str,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    role: str | None = None,
+) -> User:
+    normalized_email = email.strip().lower()
+    existing = db.scalar(select(User).where(User.email == normalized_email))
+    if existing:
+        existing.first_name = clean_optional(first_name) or existing.first_name
+        existing.last_name = clean_optional(last_name) or existing.last_name
+        if role:
+            existing.role = role
+        return existing
+    user = User(
+        email=normalized_email,
+        password_hash=hash_secret(random_token(32)),
+        first_name=clean_optional(first_name),
+        last_name=clean_optional(last_name),
+        role=role or "user",
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def validate_microsoft_access_token(
+    integration_settings: IntegrationSettings, token: str
+) -> dict[str, Any]:
+    authority_url = microsoft_authority_url(integration_settings)
+    if not authority_url or not integration_settings.microsoft_tenant_id:
+        raise RuntimeError("Microsoft sign-in is not configured")
+    jwks_client = jwt.PyJWKClient(authority_url.rstrip("/") + "/discovery/v2.0/keys")
+    signing_key = jwks_client.get_signing_key_from_jwt(token)
+    claims = cast(
+        dict[str, Any],
+        jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        ),
+    )
+    tenant_id = integration_settings.microsoft_tenant_id.strip()
+    expected_issuers = {
+        f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+        f"https://sts.windows.net/{tenant_id}/",
+        authority_url.rstrip("/") + "/v2.0",
+    }
+    if str(claims.get("iss", "")) not in expected_issuers:
+        raise RuntimeError("Microsoft token has an invalid issuer")
+    audience = (integration_settings.microsoft_audience or "").strip()
+    normalized_audience = audience.removeprefix("api://").removesuffix("/access_as_user")
+    token_aud = claims.get("aud")
+    allowed_audiences = {normalized_audience, f"api://{normalized_audience}"}
+    if str(token_aud) not in allowed_audiences:
+        raise RuntimeError("Microsoft token has an invalid audience")
+    claim_names = claims.get("_claim_names")
+    if isinstance(claim_names, dict) and "groups" in claim_names:
+        raise RuntimeError(
+            "Microsoft token uses group overage claims. Configure the app registration to emit groups for the API token or reduce group memberships before login."
+        )
+    return claims
+
+
+def base_dn_domain(base_dn: str | None) -> str | None:
+    if not base_dn:
+        return None
+    labels = []
+    for part in base_dn.split(","):
+        key, _sep, value = part.strip().partition("=")
+        if key.lower() == "dc" and value.strip():
+            labels.append(value.strip())
+    if not labels:
+        return None
+    return ".".join(labels)
+
+
+def ldap_server_from_host(host_value: str) -> Server:
+    parsed = urlparse(host_value if "://" in host_value else f"ldaps://{host_value}")
+    use_ssl = parsed.scheme.lower() == "ldaps"
+    host = parsed.hostname or host_value
+    port = parsed.port or (636 if use_ssl else 389)
+    tls = Tls(validate=0) if use_ssl else None
+    return Server(host, port=port, use_ssl=use_ssl, get_info=ALL, tls=tls)
+
+
+def local_ad_bind_candidates(identifier: str, base_dn: str | None) -> list[str]:
+    candidates: list[str] = []
+    stripped = identifier.strip()
+    if stripped:
+        candidates.append(stripped)
+    if stripped and "@" not in stripped and "\\" not in stripped:
+        domain = base_dn_domain(base_dn)
+        if domain:
+            candidates.append(f"{stripped}@{domain}")
+    seen = set()
+    ordered = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
+
+
+def authenticate_local_ad_user(
+    integration_settings: IntegrationSettings, identifier: str, password: str
+) -> tuple[str, str | None, str | None]:
+    ad_host = integration_settings.ad_host
+    ad_base_dn = integration_settings.ad_base_dn
+    if not ad_host or not ad_base_dn:
+        raise RuntimeError("Local AD sign-in is not configured")
+    server = ldap_server_from_host(ad_host)
+    login_value = identifier.strip()
+    if not login_value or not password:
+        raise RuntimeError("Username and password are required")
+    last_error = RuntimeError("Local AD sign-in failed")
+    for bind_user in local_ad_bind_candidates(login_value, ad_base_dn):
+        try:
+            with Connection(server, user=bind_user, password=password, auto_bind=True) as conn:
+                escaped_identifier = escape_filter_chars(login_value)
+                localpart = escape_filter_chars(login_value.split("@", 1)[0])
+                search_filter = (
+                    "(|"
+                    f"(mail={escaped_identifier})"
+                    f"(userPrincipalName={escaped_identifier})"
+                    f"(sAMAccountName={localpart})"
+                    f"(cn={escaped_identifier})"
+                    ")"
+                )
+                conn.search(
+                    ad_base_dn,
+                    search_filter,
+                    attributes=["mail", "userPrincipalName", "givenName", "sn", "displayName"],
+                    size_limit=1,
+                )
+                entry = conn.entries[0] if conn.entries else None
+                email = None
+                first_name = None
+                last_name = None
+                if entry is not None:
+                    entry_data = entry.entry_attributes_as_dict
+                    email = clean_optional(
+                        (entry_data.get("mail") or [None])[0]
+                        or (entry_data.get("userPrincipalName") or [None])[0]
+                    )
+                    first_name = clean_optional((entry_data.get("givenName") or [None])[0])
+                    last_name = clean_optional((entry_data.get("sn") or [None])[0])
+                    if not first_name and not last_name:
+                        first_name, last_name = split_display_name(
+                            (entry_data.get("displayName") or [None])[0]
+                        )
+                if not email:
+                    candidate_email = bind_user if is_valid_email_address(bind_user) else login_value
+                    if not is_valid_email_address(candidate_email):
+                        raise RuntimeError(
+                            "Local AD sign-in succeeded, but no usable email address was found for this account"
+                        )
+                    email = candidate_email
+                return email, first_name, last_name
+        except LDAPException as exc:
+            last_error = RuntimeError(f"Local AD authentication failed: {exc}")
+    raise last_error
+
+
 def send_smtp_email(
     integration_settings: IntegrationSettings, to_email: str, subject: str, body: str
 ) -> None:
@@ -1476,8 +1722,21 @@ def index(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return render_template(None, "login.html", {"request": request, "error": None})
+def login_page(request: Request, db: Annotated[Session, Depends(get_db)]):
+    integration_settings = db.get(IntegrationSettings, 1)
+    return render_template(
+        db,
+        "login.html",
+        {
+            "request": request,
+            "error": None,
+            "microsoft_login_enabled": microsoft_login_configured(integration_settings),
+            "local_ad_login_enabled": local_ad_login_configured(integration_settings),
+            "microsoft_client_id": integration_settings.microsoft_client_id if integration_settings else None,
+            "microsoft_authority_url": microsoft_authority_url(integration_settings),
+            "microsoft_access_scope": microsoft_access_scope(integration_settings),
+        },
+    )
 
 
 @app.post("/api/v1/auth/login")
@@ -1490,10 +1749,19 @@ def login(
 ):
     user = db.scalar(select(User).where(User.email == email.lower().strip()))
     if not user or not verify_secret(password, user.password_hash):
+        integration_settings = db.get(IntegrationSettings, 1)
         return render_template(
             db,
             "login.html",
-            {"request": request, "error": "Invalid email or password"},
+            {
+                "request": request,
+                "error": "Invalid email or password",
+                "microsoft_login_enabled": microsoft_login_configured(integration_settings),
+                "local_ad_login_enabled": local_ad_login_configured(integration_settings),
+                "microsoft_client_id": integration_settings.microsoft_client_id if integration_settings else None,
+                "microsoft_authority_url": microsoft_authority_url(integration_settings),
+                "microsoft_access_scope": microsoft_access_scope(integration_settings),
+            },
             status_code=401,
         )
     token = create_user_session(db, user)
@@ -1508,6 +1776,111 @@ def login(
     )
     write_audit(db, request, "auth.login", user=user)
     db.commit()
+    return response
+
+
+@app.post("/auth/microsoft")
+def microsoft_login(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    token: str = Form(...),
+):
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not microsoft_login_configured(integration_settings):
+        raise HTTPException(status_code=501, detail="Microsoft sign-in is not configured")
+    assert integration_settings is not None
+    claims = validate_microsoft_access_token(integration_settings, token)
+    email = clean_optional(
+        str(
+            claims.get("preferred_username")
+            or claims.get("email")
+            or claims.get("upn")
+            or ""
+        )
+    )
+    if not email or not is_valid_email_address(email):
+        raise HTTPException(status_code=400, detail="Microsoft token does not contain a usable email address")
+    first_name, last_name = split_display_name(cast(str | None, claims.get("name")))
+    groups = [str(group) for group in cast(list[Any], claims.get("groups") or [])]
+    existing = db.scalar(select(User).where(User.email == email.lower()))
+    role, allowed = microsoft_role_from_groups(
+        integration_settings, groups, existing.role if existing else None
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Microsoft account is not mapped to an allowed Entra group")
+    user = upsert_external_user(
+        db,
+        email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+    )
+    session_token = create_user_session(db, user)
+    write_audit(db, request, "auth.microsoft.login", user=user)
+    db.commit()
+    response = JSONResponse({"ok": True, "redirect": "/dashboard"})
+    response.set_cookie(
+        settings.session_cookie_name,
+        session_token,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+    )
+    return response
+
+
+@app.post("/auth/local-ad")
+def local_ad_login(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not local_ad_login_configured(integration_settings):
+        raise HTTPException(status_code=501, detail="Local AD sign-in is not configured")
+    assert integration_settings is not None
+    try:
+        resolved_email, first_name, last_name = authenticate_local_ad_user(
+            integration_settings, email, password
+        )
+    except RuntimeError as exc:
+        return render_template(
+            db,
+            "login.html",
+            {
+                "request": request,
+                "error": str(exc),
+                "microsoft_login_enabled": microsoft_login_configured(integration_settings),
+                "local_ad_login_enabled": local_ad_login_configured(integration_settings),
+                "microsoft_client_id": integration_settings.microsoft_client_id,
+                "microsoft_authority_url": microsoft_authority_url(integration_settings),
+                "microsoft_access_scope": microsoft_access_scope(integration_settings),
+            },
+            status_code=401,
+        )
+    existing = db.scalar(select(User).where(User.email == resolved_email.lower()))
+    role = existing.role if existing else "user"
+    user = upsert_external_user(
+        db,
+        resolved_email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+    )
+    session_token = create_user_session(db, user)
+    write_audit(db, request, "auth.local_ad.login", user=user)
+    db.commit()
+    response = RedirectResponse("/dashboard", status_code=303)
+    response.set_cookie(
+        settings.session_cookie_name,
+        session_token,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+    )
     return response
 
 

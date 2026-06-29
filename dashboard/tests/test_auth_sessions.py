@@ -13,9 +13,10 @@ from starlette.testclient import TestClient
 
 
 class FakeDb:
-    def __init__(self, user=None, session=None):
+    def __init__(self, user=None, session=None, integration_settings=None):
         self.user = user
         self.session = session
+        self.integration_settings = integration_settings
         self.added = []
         self.committed = False
 
@@ -27,6 +28,8 @@ class FakeDb:
     def get(self, model, key):
         if model is User and self.user and key == self.user.id:
             return self.user
+        if model is IntegrationSettings and key == 1:
+            return self.integration_settings
         return None
 
     def add(self, obj):
@@ -122,6 +125,63 @@ def test_logout_revokes_session_and_clears_cookie():
     assert session.revoked_at is not None
     assert db.committed is True
     assert settings.session_cookie_name in response.headers.get("set-cookie", "")
+
+
+def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monkeypatch):
+    async def noop():
+        return None
+
+    monkeypatch.setattr("app.main.bootstrap", lambda: None)
+    monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
+    monkeypatch.setattr("app.main.device_health_check_loop", noop)
+    monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+
+    cases = [
+        (
+            IntegrationSettings(
+                id=1,
+                microsoft_enabled=True,
+                microsoft_tenant_id="tenant",
+                microsoft_client_id="client",
+                microsoft_audience="api://hub-client",
+                ad_enabled=True,
+                ad_host="ldaps://ad.example.com",
+                ad_base_dn="DC=example,DC=com",
+            ),
+            True,
+            True,
+        ),
+        (
+            IntegrationSettings(
+                id=1,
+                microsoft_enabled=True,
+                microsoft_tenant_id="tenant",
+                microsoft_client_id="client",
+                microsoft_audience=None,
+                ad_enabled=True,
+                ad_host="ldaps://ad.example.com",
+                ad_base_dn=None,
+            ),
+            False,
+            False,
+        ),
+        (IntegrationSettings(id=1), False, False),
+    ]
+
+    for integration_settings, expect_microsoft, expect_local_ad in cases:
+        db = FakeDb(integration_settings=integration_settings)
+
+        def override_get_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            response = client.get("/login")
+        app.dependency_overrides.clear()
+
+        assert response.status_code == 200
+        assert ("id=\"microsoft-login-button\"" in response.text) == expect_microsoft
+        assert ("formaction=\"/auth/local-ad\"" in response.text) == expect_local_ad
 
 
 def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):

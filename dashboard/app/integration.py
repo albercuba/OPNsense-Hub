@@ -28,3 +28,20 @@ def email_settings_configured(integration_settings: IntegrationSettings | None) 
     return smtp_email_configured(integration_settings) or graph_email_configured(
         integration_settings
     )
+
+
+def microsoft_login_configured(integration_settings: IntegrationSettings | None) -> bool:
+    if not integration_settings or not integration_settings.microsoft_enabled:
+        return False
+    return bool(
+        integration_settings.microsoft_tenant_id
+        and integration_settings.microsoft_client_id
+        and integration_settings.microsoft_audience
+    )
+
+
+
+def local_ad_login_configured(integration_settings: IntegrationSettings | None) -> bool:
+    if not integration_settings or not integration_settings.ad_enabled:
+        return False
+    return bool(integration_settings.ad_host and integration_settings.ad_base_dn)
