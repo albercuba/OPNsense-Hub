@@ -212,6 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const response = await fetch(form.action, {
           method: "POST",
           headers: { Accept: "application/json" },
+          body: new FormData(form),
           credentials: "same-origin",
         });
         if (!response.ok) {

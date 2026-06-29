@@ -35,6 +35,7 @@
                 >
                 {% endif %}
                 <form action="/api/v1/auth/logout" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                     <button class="link-button" type="submit">
                         <i class="fa-solid fa-right-from-bracket"></i> Sign out
                     </button>

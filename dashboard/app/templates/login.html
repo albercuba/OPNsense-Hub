@@ -31,6 +31,11 @@
                 method="post"
                 class="settings-form narrow-form"
             >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token }}"
+                />
                 <label class="form-row"
                     >Email or username
                     <input name="email" type="text" required autofocus

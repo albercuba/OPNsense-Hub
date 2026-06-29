@@ -6,6 +6,7 @@
         method="post"
         data-enrollment-form
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <button class="button" type="submit">
             <i class="fa-solid fa-key"></i> Generate enrollment OTP
         </button>
@@ -80,6 +81,11 @@
                     >
                         <input
                             type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token }}"
+                        />
+                        <input
+                            type="hidden"
                             name="redirect_to"
                             value="/companies/{{ company.id }}"
                         />
@@ -102,6 +108,11 @@
                         class="inline-action-form"
                         onsubmit="return confirm('Revoke this firewall?');"
                     >
+                        <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token }}"
+                        />
                         <button class="icon-button" title="Revoke">
                             <i class="fa-solid fa-ban"></i>
                         </button>
@@ -133,8 +144,8 @@
                 <td>{{ format_datetime(code.created_at) }}</td>
                 <td>{{ format_datetime(code.expires_at) }}</td>
                 <td>
-                    {{ format_datetime(code.used_at) if code.used_at
-                    else 'No' }}
+                    {{ format_datetime(code.used_at) if code.used_at else 'No'
+                    }}
                 </td>
             </tr>
             {% else %}

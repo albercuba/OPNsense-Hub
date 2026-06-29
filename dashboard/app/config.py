@@ -12,6 +12,8 @@ class Settings(BaseSettings):
         "postgresql+psycopg://opnsensehub:opnsensehub@db:5432/opnsensehub"
     )
     secret_key: str = "change-me"
+    secret_encryption_key: str | None = None
+    csrf_cookie_name: str = "opnsense_hub_csrf"
     initial_admin_email: str = "admin@example.com"
     initial_admin_password: str = "change-me"
     session_cookie_name: str = "opnsense_hub_session"
@@ -37,6 +39,24 @@ class Settings(BaseSettings):
     branding_logo_max_bytes: int = 1_000_000
     firewall_health_check_interval_seconds: int = 60
     firewall_health_check_timeout_seconds: int = 15
+    rate_limit_login_attempts: int = 5
+    rate_limit_login_window_seconds: int = 300
+    rate_limit_local_ad_login_attempts: int = 5
+    rate_limit_local_ad_login_window_seconds: int = 300
+    rate_limit_microsoft_login_attempts: int = 10
+    rate_limit_microsoft_login_window_seconds: int = 300
+    rate_limit_enrollment_attempts: int = 10
+    rate_limit_enrollment_window_seconds: int = 300
+    rate_limit_enrollment_code_attempts: int = 10
+    rate_limit_enrollment_code_window_seconds: int = 300
+    rate_limit_device_heartbeat_attempts: int = 120
+    rate_limit_device_heartbeat_window_seconds: int = 60
+    rate_limit_device_backup_attempts: int = 20
+    rate_limit_device_backup_window_seconds: int = 300
+    rate_limit_backup_restore_attempts: int = 3
+    rate_limit_backup_restore_window_seconds: int = 900
+    run_db_migrations_on_startup: bool = True
+    allow_legacy_schema_bootstrap: bool = True
     firewall_health_warning_misses: int = 3
     firewall_health_critical_misses: int = 4
     firewall_health_warning_recovery_successes: int = 1

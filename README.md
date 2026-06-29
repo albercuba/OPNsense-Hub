@@ -173,14 +173,54 @@ In development the same conditions remain usable but are logged as warnings.
 
 The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRANDING_LOGO_MAX_BYTES` and stores them under `BRANDING_UPLOAD_DIR`. Uploaded branding takes precedence over `branding_logo_url`, appears on the login page and dashboard shell, and can be removed with the Branding settings form.
 
+## CSRF protection
+
+Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions, and backup export/restore. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
+
+## Rate limiting
+
+Rate limiting is in-process and works in local Docker without Redis. Configure limits with environment variables such as:
+
+- `RATE_LIMIT_LOGIN_ATTEMPTS`
+- `RATE_LIMIT_LOGIN_WINDOW_SECONDS`
+- `RATE_LIMIT_LOCAL_AD_LOGIN_ATTEMPTS`
+- `RATE_LIMIT_LOCAL_AD_LOGIN_WINDOW_SECONDS`
+- `RATE_LIMIT_MICROSOFT_LOGIN_ATTEMPTS`
+- `RATE_LIMIT_MICROSOFT_LOGIN_WINDOW_SECONDS`
+- `RATE_LIMIT_ENROLLMENT_ATTEMPTS`
+- `RATE_LIMIT_ENROLLMENT_WINDOW_SECONDS`
+- `RATE_LIMIT_ENROLLMENT_CODE_ATTEMPTS`
+- `RATE_LIMIT_ENROLLMENT_CODE_WINDOW_SECONDS`
+- `RATE_LIMIT_DEVICE_HEARTBEAT_ATTEMPTS`
+- `RATE_LIMIT_DEVICE_HEARTBEAT_WINDOW_SECONDS`
+- `RATE_LIMIT_DEVICE_BACKUP_ATTEMPTS`
+- `RATE_LIMIT_DEVICE_BACKUP_WINDOW_SECONDS`
+- `RATE_LIMIT_BACKUP_RESTORE_ATTEMPTS`
+- `RATE_LIMIT_BACKUP_RESTORE_WINDOW_SECONDS`
+
+## Secret encryption
+
+Sensitive integration secrets are encrypted at the application layer before being stored. Set `SECRET_ENCRYPTION_KEY` to a dedicated value in production. If omitted, Hub derives an encryption key from `SECRET_KEY` for backward compatibility.
+
+## Database migrations
+
+Hub now supports explicit Alembic migrations. Existing deployments can still start through the legacy compatibility bootstrap path, but production should prefer running migrations explicitly:
+
+```sh
+cd dashboard
+python -m alembic upgrade head
+```
+
+On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` can still be bootstrapped and stamped when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`.
+
 ## Hub backup and restore
 
 Under `Settings > Backup`, administrators can:
 
-- click `Backup configuration` to download a `.zip` archive
-- click `Restore configuration` to upload a previously exported archive
+- click `Backup configuration` to download a `.zip` archive, or provide a passphrase to download an encrypted `.opnhub` archive
+- click `Restore configuration` to upload a previously exported archive, plus the passphrase when restoring an encrypted backup
 
-The backup archive is application-level and portable across supported database backends. It includes:
+The backup archive is application-level and portable across supported database backends. Unencrypted restore remains supported for backward compatibility, but encrypted export is strongly recommended. The archive includes:
 
 - Hub database content needed to restore users, companies, memberships, enrollment codes, devices, stored firewall backups, device events, audit logs, and integration settings
 - uploaded branding logo, if present

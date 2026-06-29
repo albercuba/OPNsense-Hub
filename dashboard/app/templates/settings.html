@@ -28,6 +28,7 @@
         method="post"
         class="settings-grid-form compact-form"
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <label class="form-row"
             >Company name
             <input name="name" required autocomplete="organization"
@@ -61,7 +62,13 @@
                             action="/settings/companies/{{ company.id }}"
                             method="post"
                             class="inline-company-form"
-                        ></form>
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
+                        </form>
                         <input
                             class="edit-field"
                             form="company-edit-{{ company.id }}"
@@ -100,6 +107,11 @@
                             method="post"
                             class="inline-delete-form"
                         >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
                             <button
                                 class="icon-button danger-text"
                                 type="submit"
@@ -126,6 +138,7 @@
         <h2>Create user</h2>
     </div>
     <form action="/settings/users" method="post" class="settings-grid-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <label class="form-row"
             >Email
             <input type="email" name="email" required autocomplete="email"
@@ -180,7 +193,13 @@
                             id="user-edit-{{ managed_user.id }}"
                             action="/settings/users/{{ managed_user.id }}"
                             method="post"
-                        ></form>
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
+                        </form>
                         <input
                             class="edit-field"
                             form="user-edit-{{ managed_user.id }}"
@@ -222,13 +241,25 @@
                         >
                             <option
                                 value="user"
-                                {% if managed_user.role == 'user' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="user"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 User
                             </option>
                             <option
                                 value="administrator"
-                                {% if managed_user.role == 'administrator' %}selected{% endif %}
+                                {%
+                                if
+                                managed_user.role=""
+                                ="administrator"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Administrator
                             </option>
@@ -278,6 +309,11 @@
                             method="post"
                             class="inline-delete-form"
                         >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
                             <button
                                 class="icon-button danger-text"
                                 type="submit"
@@ -330,59 +366,25 @@
             </li>
             <li>
                 Name the app registration clearly, for example OPNsense Hub
-                Mailer. Use Accounts in this organizational directory only
-                unless you intentionally need multi-tenant mail delivery.
+                Mailer.
+            </li>
+            <li>Do not add a redirect URI for this mailer app.</li>
+            <li>Copy the Directory (tenant) ID into Tenant ID.</li>
+            <li>Copy the Application (client) ID into Client ID.</li>
+            <li>
+                Create a client secret and paste the secret Value, not the
+                Secret ID.
             </li>
             <li>
-                Do not add a redirect URI for this mailer app. The Graph
-                sendMail integration uses app-only client credentials, not a
-                browser sign-in callback.
+                Add Microsoft Graph `Mail.Send` application permission and grant
+                admin consent.
             </li>
-            <li>
-                After creating the app, copy the Directory (tenant) ID into the
-                Tenant ID field under Microsoft Graph sendMail.
-            </li>
-            <li>Copy the Application (client) ID into the Client ID field.</li>
-            <li>
-                Open Certificates & secrets → Client secrets → New client
-                secret. Choose a short, managed expiry, create the secret, and
-                copy the secret Value immediately. Paste the Value, not the
-                Secret ID, into the Client secret field.
-            </li>
-            <li>
-                Open API permissions → Add a permission → Microsoft Graph →
-                Application permissions. Add Mail.Send and remove any broader
-                permissions that are not required.
-            </li>
-            <li>
-                Click Grant admin consent for the tenant and confirm that
-                Microsoft Graph Mail.Send shows Granted for your organization.
-            </li>
-            <li>
-                Choose the sender mailbox that Graph should send as, for example
-                alerts@example.com. Enter that mailbox address in Sender
-                mailbox. The mailbox must exist in Exchange Online and be
-                allowed for app-only sending.
-            </li>
-            <li>
-                For least privilege, create an Exchange Online application
-                access policy that restricts this app registration to only the
-                approved sender mailbox or a dedicated mail-enabled security
-                group.
-            </li>
-            <li>
-                In OPNsense Hub, enable Graph sendMail, save the Tenant ID,
-                Client ID, Client secret, and Sender mailbox, then trigger a
-                test notification to verify delivery.
-            </li>
-            <li>
-                Store and rotate the client secret securely. Do not paste Graph
-                secrets into logs, tickets, screenshots, browser local storage,
-                or source control.
-            </li>
+            <li>Enter the sender mailbox address that Graph should send as.</li>
+            <li>Store and rotate the client secret securely.</li>
         </ol>
     </details>
     <form action="/settings/email" method="post" class="settings-grid-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <h3 class="full-row">SMTP</h3>
         <label class="checkbox-label full-row"
             ><input
@@ -400,22 +402,24 @@
         >
         <label class="form-row"
             >SMTP host
-            <input name="smtp_host" value="{{ settings.smtp_host or '' }}"
-        /></label>
+            <input name="smtp_host" value="{{ settings.smtp_host or '' }}" />
+        </label>
         <label class="form-row"
             >SMTP port
             <input
                 type="number"
                 name="smtp_port"
                 value="{{ settings.smtp_port or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >SMTP username
             <input
                 name="smtp_username"
                 value="{{ settings.smtp_username or '' }}"
                 autocomplete="off"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >SMTP password
             <input
@@ -423,14 +427,16 @@
                 name="smtp_password"
                 placeholder="Leave blank to keep current"
                 autocomplete="new-password"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >From address
             <input
                 type="email"
                 name="smtp_from"
                 value="{{ settings.smtp_from or '' }}"
-        /></label>
+            />
+        </label>
 
         <h3 class="full-row divider-top">Microsoft Graph sendMail</h3>
         <label class="checkbox-label full-row"
@@ -452,13 +458,15 @@
             <input
                 name="graph_tenant_id"
                 value="{{ settings.graph_tenant_id or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Client ID
             <input
                 name="graph_client_id"
                 value="{{ settings.graph_client_id or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Client secret
             <input
@@ -478,7 +486,8 @@
                 type="email"
                 name="graph_sender"
                 value="{{ settings.graph_sender or '' }}"
-        /></label>
+            />
+        </label>
         <div class="form-row submit-row">
             <button class="button" type="submit">
                 <i class="fa-solid fa-floppy-disk"></i> Save email settings
@@ -492,68 +501,16 @@
     <details class="integration-steps card">
         <summary>Microsoft Integration Setup Instructions</summary>
         <p class="muted">
-            Create a backend API app registration, expose an `access_as_user`
-            delegated scope, create a frontend SPA app registration with this
-            app login page as the redirect URI, grant the frontend permission to
-            the backend API, grant admin consent if required, and configure
-            token group claims if you plan to map Entra groups to app roles. The
-            browser signs in with MSAL using authorization code with PKCE,
-            receives an access token for the backend API audience, and the
-            backend validates it with Entra OpenID/JWKS metadata before issuing
-            an HTTP-only app session. Do not create or store a client secret for
-            Microsoft login.
+            OPNsense Hub uses a server-side authorization code + PKCE flow for
+            Microsoft 365 sign-in. Register a web redirect URI for the Hub
+            callback, keep the application client secret in Hub, and map Entra
+            groups to Hub roles as needed.
         </p>
-        <ol class="integration-steps-list">
-            <li>
-                Open Microsoft Entra admin center, go to App registrations, and
-                create a backend API app registration for OPNsense Hub.
-            </li>
-            <li>
-                Copy the backend API Application (client) ID. This value goes in
-                Backend API Audience.
-            </li>
-            <li>
-                In the backend API app, open Expose an API. Set the Application
-                ID URI to api://&lt;backend-api-client-id&gt;, then add a
-                delegated scope named access_as_user.
-            </li>
-            <li>
-                Open Token configuration on the backend API app and add a groups
-                claim to access tokens if you plan to map Entra groups to app
-                roles. Prefer group object IDs.
-            </li>
-            <li>
-                Create a second app registration for the browser client. In
-                Authentication, add a Single-page application platform and add
-                the exact redirect URI for the login page:
-                &lt;your-hub-url&gt;/login.
-            </li>
-            <li>
-                Copy the browser app Application (client) ID. This value goes in
-                Frontend Client ID.
-            </li>
-            <li>
-                In the browser app API permissions, add a permission to your
-                backend API app and select the delegated access_as_user scope.
-                Grant admin consent if your tenant requires it.
-            </li>
-            <li>
-                In OPNsense Hub, fill in Tenant ID, Client ID, Client Secret,
-                Backend API Audience, and optional Authority URL. Enable
-                Microsoft sign-in only after the Web redirect URI, API
-                permission, admin consent, and token claims are verified.
-            </li>
-            <li>
-                OPNsense Hub signs users in with a server-side authorization
-                code + PKCE flow and exchanges the code at Microsoft before
-                validating the returned access token. Register a Web redirect
-                URI and store the application client secret in Hub.
-            </li>
-        </ol>
     </details>
     <form action="/settings/microsoft" method="post" class="settings-grid-form">
-        <label class="checkbox-label full-row"
-            ><input
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="checkbox-label full-row">
+            <input
                 type="checkbox"
                 name="microsoft_enabled"
                 {%
@@ -563,40 +520,46 @@
                 endif
                 %}
             />
-            Enable Microsoft 365 sign-in</label
-        >
+            Enable Microsoft 365 sign-in
+        </label>
         <label class="form-row"
             >Tenant ID
             <input
                 name="microsoft_tenant_id"
                 value="{{ settings.microsoft_tenant_id or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Client ID
             <input
                 name="microsoft_client_id"
                 value="{{ settings.microsoft_client_id or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Client secret
             <input
                 type="password"
                 name="microsoft_client_secret"
                 placeholder="{% if settings.microsoft_client_secret %}Saved — enter a new value to replace it{% else %}Enter Microsoft client secret{% endif %}"
-        /></label>
+                autocomplete="new-password"
+            />
+        </label>
         <label class="form-row"
             >Backend API audience
             <input
                 name="microsoft_audience"
                 value="{{ settings.microsoft_audience or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Authority URL
             <input
                 name="microsoft_authority"
                 value="{{ settings.microsoft_authority or '' }}"
                 placeholder="https://login.microsoftonline.com/{tenant}"
-        /></label>
+            />
+        </label>
         <div class="full-row divider-top">
             <h3>Entra group role mappings</h3>
             <p class="muted">
@@ -608,25 +571,29 @@
             <input
                 name="microsoft_admin_group_name"
                 value="{{ settings.microsoft_admin_group_name or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Admin group ID
             <input
                 name="microsoft_admin_group_id"
                 value="{{ settings.microsoft_admin_group_id or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >User group name
             <input
                 name="microsoft_user_group_name"
                 value="{{ settings.microsoft_user_group_name or '' }}"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >User group ID
             <input
                 name="microsoft_user_group_id"
                 value="{{ settings.microsoft_user_group_id or '' }}"
-        /></label>
+            />
+        </label>
         <div class="form-row submit-row">
             <button class="button" type="submit">
                 <i class="fa-solid fa-floppy-disk"></i> Save Microsoft settings
@@ -641,16 +608,13 @@
         <summary>Steps to configure local Active Directory sign-in</summary>
         <p class="muted">
             Choose an internal domain controller or LDAP endpoint reachable by
-            the OPNsense Hub container. Use LDAPS whenever possible, set the
-            base DN that contains allowed users, and use a least-privilege bind
-            DN that can search users. Keep the local admin account available as
-            break-glass access. Never log AD passwords, bind credentials, or
-            directory tokens.
+            the OPNsense Hub container.
         </p>
     </details>
     <form action="/settings/local-ad" method="post" class="settings-grid-form">
-        <label class="checkbox-label full-row"
-            ><input
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="checkbox-label full-row">
+            <input
                 type="checkbox"
                 name="ad_enabled"
                 {%
@@ -660,29 +624,32 @@
                 endif
                 %}
             />
-            Enable Local AD sign-in</label
-        >
+            Enable Local AD sign-in
+        </label>
         <label class="form-row"
             >AD host
             <input
                 name="ad_host"
                 value="{{ settings.ad_host or '' }}"
                 placeholder="ldaps://ad.example.com"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Base DN
             <input
                 name="ad_base_dn"
                 value="{{ settings.ad_base_dn or '' }}"
                 placeholder="DC=example,DC=com"
-        /></label>
+            />
+        </label>
         <label class="form-row"
             >Bind DN
             <input
                 name="ad_bind_dn"
                 value="{{ settings.ad_bind_dn or '' }}"
                 placeholder="CN=service,OU=Users,DC=example,DC=com"
-        /></label>
+            />
+        </label>
         <div class="form-row submit-row">
             <button class="button" type="submit">
                 <i class="fa-solid fa-floppy-disk"></i> Save Local AD settings
@@ -699,6 +666,7 @@
         enctype="multipart/form-data"
         class="settings-form narrow-form"
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="form-row">
             <span>Upload logo</span>
             <div class="file-upload-control">
@@ -723,7 +691,8 @@
                 name="branding_logo_url"
                 value="{{ settings.branding_logo_url or '' }}"
                 placeholder="https://example.com/logo.png"
-        /></label>
+            />
+        </label>
         <p class="muted">
             Uploaded PNG, JPEG, or WebP logos are used for the header, login
             page, and favicon before the fallback URL.
@@ -767,6 +736,21 @@
         method="post"
         class="settings-form narrow-form"
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="form-row"
+            >Encryption passphrase (recommended)
+            <input
+                type="password"
+                name="backup_passphrase"
+                autocomplete="new-password"
+                placeholder="Leave blank for an unencrypted backup"
+            />
+        </label>
+        <p class="muted">
+            Encrypted exports are strongly recommended because Hub backups can
+            include users, integration settings, stored firewall backups,
+            branding assets, and the Hub WireGuard private key.
+        </p>
         <button class="button backup-action" type="submit">
             <i class="fa-solid fa-box-archive"></i> Backup configuration
         </button>
@@ -783,6 +767,7 @@
         enctype="multipart/form-data"
         class="settings-form narrow-form"
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="form-row">
             <span>Backup archive</span>
             <div class="file-upload-control">
@@ -791,7 +776,7 @@
                     id="backup_file"
                     type="file"
                     name="backup_file"
-                    accept=".zip,application/zip"
+                    accept=".zip,.opnhub,application/zip,application/octet-stream"
                     required
                 />
                 <label class="button secondary" for="backup_file">
@@ -802,6 +787,15 @@
                 >
             </div>
         </div>
+        <label class="form-row"
+            >Backup passphrase
+            <input
+                type="password"
+                name="backup_passphrase"
+                autocomplete="new-password"
+                placeholder="Required for encrypted .opnhub backups"
+            />
+        </label>
         <button class="button restore-action" type="submit">
             <i class="fa-solid fa-rotate-left"></i> Restore configuration
         </button>

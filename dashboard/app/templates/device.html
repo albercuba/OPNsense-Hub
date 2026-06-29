@@ -47,6 +47,7 @@
             );
         "
     >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <input type="hidden" name="redirect_to" value="/companies" />
         <button class="button danger-text" type="submit">
             <i class="fa-solid fa-trash"></i> Remove revoked firewall
@@ -78,6 +79,7 @@
             method="post"
             class="settings-grid-form backup-settings-form"
         >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <label class="checkbox-label full-row"
                 ><input
                     type="checkbox"
@@ -122,19 +124,37 @@
                         >
                             <option
                                 value="hours"
-                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
-                            ></option>
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="hours"
+                                %}selected{%
+                                endif
+                                %}
+                            >
                                 Hours
                             </option>
                             <option
                                 value="days"
-                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="days"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Days
                             </option>
                             <option
                                 value="months"
-                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="months"
+                                %}selected{%
+                                endif
+                                %}
                             >
                                 Months
                             </option>
@@ -198,6 +218,11 @@
                                 return confirm('Delete this stored backup?');
                             "
                         >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
                             <button
                                 class="icon-button danger-text"
                                 type="submit"
@@ -241,6 +266,7 @@
             method="post"
             class="settings-grid-form email-notifications-form"
         >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <label class="checkbox-label full-row"
                 ><input
                     type="checkbox"

@@ -1,16 +1,11 @@
 import io
 import json
+import os
 import zipfile
 from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
-
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import INET
-from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base, get_db
 from app.main import app, current_user, export_backup_bundle, settings
@@ -27,6 +22,13 @@ from app.models import (
     User,
 )
 from app.security import hash_secret, hash_session_token, utc_now
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
 
 @compiles(INET, "sqlite")
 def compile_inet_sqlite(_type, _compiler, **_kw):
@@ -48,8 +50,11 @@ async def noop():
 
 @contextmanager
 def sqlite_session(tmp_path: Path, name: str):
-    db_path = tmp_path / f"{name}.db"
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     Base.metadata.create_all(engine)
     session = SessionLocal()
@@ -100,7 +105,9 @@ def seed_backup_source(session: Session) -> User:
     )
     session.add_all(
         [
-            CompanyUser(company_id=company.id, user_id=admin.id, role="owner", created_at=now),
+            CompanyUser(
+                company_id=company.id, user_id=admin.id, role="owner", created_at=now
+            ),
             EnrollmentCode(
                 id=uuid4(),
                 company_id=company.id,
@@ -161,11 +168,15 @@ def seed_restore_target(session: Session) -> User:
         role="administrator",
     )
     company = Company(id=uuid4(), name="Old Company", created_at=now)
-    session.add_all([admin, company, IntegrationSettings(id=1, smtp_enabled=False, updated_at=now)])
+    session.add_all(
+        [admin, company, IntegrationSettings(id=1, smtp_enabled=False, updated_at=now)]
+    )
     session.flush()
     session.add_all(
         [
-            CompanyUser(company_id=company.id, user_id=admin.id, role="owner", created_at=now),
+            CompanyUser(
+                company_id=company.id, user_id=admin.id, role="owner", created_at=now
+            ),
             Device(
                 id=uuid4(),
                 company_id=company.id,
@@ -202,6 +213,17 @@ def configure_test_client(monkeypatch, session: Session, acting_user: User):
     app.dependency_overrides[current_user] = lambda: acting_user
 
 
+def get_csrf(client: TestClient, path: str = "/settings/backup") -> str:
+    response = client.get(path)
+    assert response.status_code == 200
+    csrf_cookie = client.cookies.get(settings.csrf_cookie_name)
+    assert csrf_cookie
+    marker = 'name="csrf_token" value="'
+    start = response.text.index(marker) + len(marker)
+    end = response.text.index('"', start)
+    return response.text[start:end]
+
+
 def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path):
     branding_dir = tmp_path / "branding-source"
     branding_dir.mkdir(parents=True, exist_ok=True)
@@ -216,17 +238,26 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
         admin = seed_backup_source(session)
         configure_test_client(monkeypatch, session, admin)
         with TestClient(app) as client:
-            response = client.post("/settings/backup/export")
+            csrf_token = get_csrf(client)
+            response = client.post(
+                "/settings/backup/export", data={"csrf_token": csrf_token}
+            )
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
-    assert "attachment; filename=\"opnsense-hub-backup-" in response.headers["content-disposition"]
+    assert (
+        'attachment; filename="opnsense-hub-backup-'
+        in response.headers["content-disposition"]
+    )
 
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert {"manifest.json", "data.json", "branding/logo.png", "wireguard/server.key"}.issubset(
-            set(archive.namelist())
-        )
+        assert {
+            "manifest.json",
+            "data.json",
+            "branding/logo.png",
+            "wireguard/server.key",
+        }.issubset(set(archive.namelist()))
         manifest = json.loads(archive.read("manifest.json"))
         data = json.loads(archive.read("data.json"))
         exported_key = archive.read("wireguard/server.key").decode("utf-8").strip()
@@ -242,8 +273,14 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
 
 
 def test_backup_export_requires_admin(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "branding_upload_dir", str(tmp_path / "branding-non-admin"))
-    monkeypatch.setattr(settings, "wg_server_private_key_path", str(tmp_path / "wireguard-non-admin" / "server.key"))
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-non-admin")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-non-admin" / "server.key"),
+    )
 
     with sqlite_session(tmp_path, "non_admin") as session:
         member = User(
@@ -256,7 +293,10 @@ def test_backup_export_requires_admin(monkeypatch, tmp_path):
         session.commit()
         configure_test_client(monkeypatch, session, member)
         with TestClient(app) as client:
-            response = client.post("/settings/backup/export")
+            csrf_token = get_csrf(client, "/companies")
+            response = client.post(
+                "/settings/backup/export", data={"csrf_token": csrf_token}
+            )
         app.dependency_overrides.clear()
 
     assert response.status_code == 403
@@ -295,7 +335,6 @@ def test_audit_logs_page_lists_firewall_access_entries(monkeypatch, tmp_path):
     assert company.name in response.text
 
 
-
 def test_device_page_writes_firewall_access_audit_log(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "device_view_audit") as session:
         admin = seed_backup_source(session)
@@ -316,7 +355,6 @@ def test_device_page_writes_firewall_access_audit_log(monkeypatch, tmp_path):
     assert access_logs[0].user_id == admin.id
 
 
-
 def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "delete_backup") as session:
         admin = seed_backup_source(session)
@@ -327,8 +365,10 @@ def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
         assert backup is not None
 
         with TestClient(app) as client:
+            csrf_token = get_csrf(client, f"/devices/{device.id}")
             response = client.post(
                 f"/devices/{device.id}/backups/{backup.id}/delete",
+                data={"csrf_token": csrf_token},
                 follow_redirects=False,
             )
         app.dependency_overrides.clear()
@@ -340,8 +380,9 @@ def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
     assert remaining_backups == []
 
 
-
-def test_backup_restore_replaces_configuration_and_clears_sessions(monkeypatch, tmp_path):
+def test_backup_restore_replaces_configuration_and_clears_sessions(
+    monkeypatch, tmp_path
+):
     source_branding_dir = tmp_path / "branding-source-restore"
     source_branding_dir.mkdir(parents=True, exist_ok=True)
     (source_branding_dir / "logo.png").write_bytes(PNG_BYTES)
@@ -352,8 +393,10 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(monkeypatch, 
     with sqlite_session(tmp_path, "source_restore") as source_session:
         seed_backup_source(source_session)
         monkeypatch.setattr(settings, "branding_upload_dir", str(source_branding_dir))
-        monkeypatch.setattr(settings, "wg_server_private_key_path", str(source_wg_key_path))
-        bundle, _filename = export_backup_bundle(source_session)
+        monkeypatch.setattr(
+            settings, "wg_server_private_key_path", str(source_wg_key_path)
+        )
+        bundle, _filename, _media_type = export_backup_bundle(source_session)
 
     target_branding_dir = tmp_path / "branding-target-restore"
     target_branding_dir.mkdir(parents=True, exist_ok=True)
@@ -368,16 +411,22 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(monkeypatch, 
         acting_admin = seed_restore_target(target_session)
         configure_test_client(monkeypatch, target_session, acting_admin)
         with TestClient(app) as client:
+            csrf_token = get_csrf(client)
             response = client.post(
                 "/settings/backup/restore",
+                data={"csrf_token": csrf_token},
                 files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
                 follow_redirects=False,
             )
         app.dependency_overrides.clear()
 
         restored_users = target_session.scalars(select(User).order_by(User.email)).all()
-        restored_companies = target_session.scalars(select(Company).order_by(Company.name)).all()
-        restored_devices = target_session.scalars(select(Device).order_by(Device.hostname)).all()
+        restored_companies = target_session.scalars(
+            select(Company).order_by(Company.name)
+        ).all()
+        restored_devices = target_session.scalars(
+            select(Device).order_by(Device.hostname)
+        ).all()
         restored_sessions = target_session.scalars(select(SessionToken)).all()
         restored_settings = target_session.get(IntegrationSettings, 1)
 
