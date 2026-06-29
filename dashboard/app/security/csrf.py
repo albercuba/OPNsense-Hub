@@ -76,6 +76,7 @@ async def validate_csrf_request(request: Request) -> None:
         raise HTTPException(status_code=403, detail="missing or invalid CSRF token")
     provided = request.headers.get(_CSRF_HEADER)
     if not provided:
+        await request.body()
         form = await request.form()
         provided = form.get(_CSRF_FORM_FIELD)
     if not provided or not hmac.compare_digest(str(provided), expected):
