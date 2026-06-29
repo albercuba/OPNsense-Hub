@@ -143,6 +143,7 @@ def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monke
                 microsoft_enabled=True,
                 microsoft_tenant_id="tenant",
                 microsoft_client_id="client",
+                microsoft_client_secret="secret",
                 microsoft_audience="api://hub-client",
                 ad_enabled=True,
                 ad_host="ldaps://ad.example.com",
@@ -157,6 +158,7 @@ def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monke
                 microsoft_enabled=True,
                 microsoft_tenant_id="tenant",
                 microsoft_client_id="client",
+                microsoft_client_secret=None,
                 microsoft_audience=None,
                 ad_enabled=True,
                 ad_host="ldaps://ad.example.com",
@@ -191,6 +193,7 @@ def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
             microsoft_enabled=True,
             microsoft_tenant_id="tenant",
             microsoft_client_id="client",
+            microsoft_client_secret="secret",
             microsoft_audience="api://hub-client",
         )
     )

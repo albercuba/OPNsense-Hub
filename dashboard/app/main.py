@@ -412,6 +412,11 @@ def ensure_schema_compat() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_client_secret text NULL"
+            )
+        )
+        conn.execute(
+            text(
                 "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS microsoft_admin_group_name text NULL"
             )
         )
@@ -624,6 +629,7 @@ def ensure_schema_compat() -> None:
                   microsoft_enabled boolean NOT NULL DEFAULT false,
                   microsoft_tenant_id text NULL,
                   microsoft_client_id text NULL,
+                  microsoft_client_secret text NULL,
                   microsoft_audience text NULL,
                   microsoft_authority text NULL,
                   microsoft_admin_group_name text NULL,
@@ -1047,6 +1053,7 @@ def exchange_microsoft_authorization_code(
             data={
                 "grant_type": "authorization_code",
                 "client_id": integration_settings.microsoft_client_id,
+                "client_secret": integration_settings.microsoft_client_secret,
                 "code": code,
                 "redirect_uri": microsoft_redirect_uri(request),
                 "code_verifier": verifier,
@@ -2332,6 +2339,7 @@ def update_microsoft_settings(
     microsoft_enabled: str | None = Form(None),
     microsoft_tenant_id: str = Form(""),
     microsoft_client_id: str = Form(""),
+    microsoft_client_secret: str = Form(""),
     microsoft_audience: str = Form(""),
     microsoft_authority: str = Form(""),
     microsoft_admin_group_name: str = Form(""),
@@ -2344,6 +2352,8 @@ def update_microsoft_settings(
     integration_settings.microsoft_enabled = microsoft_enabled == "on"
     integration_settings.microsoft_tenant_id = clean_optional(microsoft_tenant_id)
     integration_settings.microsoft_client_id = clean_optional(microsoft_client_id)
+    if microsoft_client_secret.strip():
+        integration_settings.microsoft_client_secret = microsoft_client_secret
     integration_settings.microsoft_audience = clean_optional(microsoft_audience)
     integration_settings.microsoft_authority = clean_optional(microsoft_authority)
     integration_settings.microsoft_admin_group_name = clean_optional(

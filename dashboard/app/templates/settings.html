@@ -538,17 +538,16 @@
                 Grant admin consent if your tenant requires it.
             </li>
             <li>
-                In OPNsense Hub, fill in Tenant ID, Frontend Client ID, Backend
-                API Audience, and optional Authority URL. Enable Microsoft
-                sign-in only after the login-page SPA redirect URI, API
+                In OPNsense Hub, fill in Tenant ID, Client ID, Client Secret,
+                Backend API Audience, and optional Authority URL. Enable
+                Microsoft sign-in only after the Web redirect URI, API
                 permission, admin consent, and token claims are verified.
             </li>
             <li>
-                The browser signs in with MSAL using authorization code with
-                PKCE, receives an access token for the backend API audience, and
-                the backend validates it with Entra OpenID/JWKS metadata before
-                issuing an HTTP-only app session. Do not create or store a
-                client secret for Microsoft login.
+                OPNsense Hub signs users in with a server-side authorization
+                code + PKCE flow and exchanges the code at Microsoft before
+                validating the returned access token. Register a Web redirect
+                URI and store the application client secret in Hub.
             </li>
         </ol>
     </details>
@@ -573,10 +572,17 @@
                 value="{{ settings.microsoft_tenant_id or '' }}"
         /></label>
         <label class="form-row"
-            >Frontend client ID
+            >Client ID
             <input
                 name="microsoft_client_id"
                 value="{{ settings.microsoft_client_id or '' }}"
+        /></label>
+        <label class="form-row"
+            >Client secret
+            <input
+                type="password"
+                name="microsoft_client_secret"
+                placeholder="{% if settings.microsoft_client_secret %}Saved — enter a new value to replace it{% else %}Enter Microsoft client secret{% endif %}"
         /></label>
         <label class="form-row"
             >Backend API audience

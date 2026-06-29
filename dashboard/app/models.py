@@ -84,6 +84,7 @@ class IntegrationSettings(Base):
     )
     microsoft_tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     microsoft_client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    microsoft_client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     microsoft_audience: Mapped[str | None] = mapped_column(String(255), nullable=True)
     microsoft_authority: Mapped[str | None] = mapped_column(String(255), nullable=True)
     microsoft_admin_group_name: Mapped[str | None] = mapped_column(

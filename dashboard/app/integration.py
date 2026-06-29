@@ -36,6 +36,7 @@ def microsoft_login_configured(integration_settings: IntegrationSettings | None)
     return bool(
         integration_settings.microsoft_tenant_id
         and integration_settings.microsoft_client_id
+        and integration_settings.microsoft_client_secret
         and integration_settings.microsoft_audience
     )
 
