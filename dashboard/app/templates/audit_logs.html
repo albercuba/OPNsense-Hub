@@ -59,29 +59,39 @@
             </datalist>
         </label>
 
-        <div
-            <div class="dashboard-section-tools dashboard-events-tools audit-log-filter-tools">
-                <div class="dashboard-custom-range audit-log-custom-range">
-                    <label class="form-row">
-                        <span>From</span>
-                        <input class="dashboard-text-filter" type="datetime-local" data-audit-start />
-                    </label>
-                    <label class="form-row">
-                        <span>To</span>
-                        <input class="dashboard-text-filter" type="datetime-local" data-audit-end />
-                    </label>
-                </div>
+        <label class="form-row">
+            <span>From</span>
+            <input
+                class="dashboard-text-filter"
+                type="datetime-local"
+                data-audit-start
+            />
+        </label>
 
-                <div class="dashboard-filter-actions companies-filter-actions audit-log-filter-actions">
-                    <button
-                        class="button secondary button-small"
-                        type="reset"
-                        data-audit-filter-reset
-                    >
-                        <i class="fa-solid fa-rotate-left"></i> Clear filters
-                    </button>
-                </div>
+        <label class="form-row">
+            <span>To</span>
+            <input
+                class="dashboard-text-filter"
+                type="datetime-local"
+                data-audit-end
+            />
+        </label>
+
+        <div
+            class="dashboard-section-tools dashboard-events-tools audit-log-filter-tools"
+        >
+            <div
+                class="dashboard-filter-actions companies-filter-actions audit-log-filter-actions"
+            >
+                <button
+                    class="button secondary button-small"
+                    type="reset"
+                    data-audit-filter-reset
+                >
+                    <i class="fa-solid fa-rotate-left"></i> Clear filters
+                </button>
             </div>
+        </div>
     </form>
 
     <div class="responsive-table audit-log-table-wrap">

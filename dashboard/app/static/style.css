@@ -718,7 +718,7 @@ th {
 }
 .audit-log-filters-form {
     display: grid;
-    grid-template-columns: repeat(3, minmax(180px, 1fr)) minmax(320px, 1.3fr);
+    grid-template-columns: repeat(5, minmax(170px, 1fr)) auto;
     gap: 1rem;
     align-items: end;
     margin: 1rem 0;
@@ -1394,10 +1394,7 @@ table {
 }
 .audit-log-filter-tools {
     width: 100%;
-    justify-content: space-between;
-}
-.audit-log-custom-range {
-    align-items: end;
+    justify-content: flex-end;
 }
 .audit-log-filter-actions {
     margin-left: auto;
