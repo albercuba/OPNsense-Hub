@@ -1392,6 +1392,16 @@ table {
     max-height: 34rem;
     overflow: auto;
 }
+.audit-log-filter-tools {
+    width: 100%;
+    justify-content: space-between;
+}
+.audit-log-custom-range {
+    align-items: end;
+}
+.audit-log-filter-actions {
+    margin-left: auto;
+}
 
 thead th {
     position: sticky;

@@ -529,8 +529,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const auditCompanyFilter = document.querySelector(
     "[data-audit-company-filter]",
   );
-  const auditRangeSelect = document.querySelector("[data-audit-range-select]");
-  const auditCustomRange = document.querySelector("[data-audit-custom-range]");
   const auditStart = document.querySelector("[data-audit-start]");
   const auditEnd = document.querySelector("[data-audit-end]");
   const auditFilterReset = document.querySelector("[data-audit-filter-reset]");
@@ -542,30 +540,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const userValue = (auditUserFilter?.value || "").trim().toLowerCase();
     const deviceValue = (auditDeviceFilter?.value || "").trim().toLowerCase();
     const companyValue = (auditCompanyFilter?.value || "").trim().toLowerCase();
-    const selectedRange =
-      resolveDatalistValue(
-        "audit-time-range-options",
-        auditRangeSelect?.value,
-        "rangeValue",
-      ) || "all";
-    const now = Date.now();
-    let minTimestamp = null;
-    let maxTimestamp = null;
-
-    if (selectedRange === "1h") {
-      minTimestamp = now - 60 * 60 * 1000;
-    } else if (selectedRange === "24h") {
-      minTimestamp = now - 24 * 60 * 60 * 1000;
-    } else if (selectedRange === "7d") {
-      minTimestamp = now - 7 * 24 * 60 * 60 * 1000;
-    } else if (selectedRange === "custom") {
-      minTimestamp = auditStart?.value ? Date.parse(auditStart.value) : null;
-      maxTimestamp = auditEnd?.value ? Date.parse(auditEnd.value) : null;
-    }
-
-    if (auditCustomRange) {
-      auditCustomRange.hidden = selectedRange !== "custom";
-    }
+    const minTimestamp = auditStart?.value
+      ? Date.parse(auditStart.value)
+      : null;
+    const maxTimestamp = auditEnd?.value ? Date.parse(auditEnd.value) : null;
 
     setTableRowVisibility(auditLogTable, (row) => {
       const userText =
@@ -614,14 +592,10 @@ document.addEventListener("DOMContentLoaded", () => {
     input?.addEventListener("input", applyAuditLogFilters);
     input?.addEventListener("change", applyAuditLogFilters);
   });
-  auditRangeSelect?.addEventListener("change", applyAuditLogFilters);
   auditStart?.addEventListener("change", applyAuditLogFilters);
   auditEnd?.addEventListener("change", applyAuditLogFilters);
   auditFilterReset?.addEventListener("click", () => {
     window.setTimeout(() => {
-      if (auditRangeSelect) {
-        auditRangeSelect.value = "All audit events";
-      }
       if (auditStart) {
         auditStart.value = "";
       }
