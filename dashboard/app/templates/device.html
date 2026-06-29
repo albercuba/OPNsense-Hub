@@ -120,13 +120,40 @@
                             class="backup-interval-field"
                             name="backup_interval_unit"
                         >
-                            <option value="hours" {% if device.backup_interval_unit == 'hours' %}selected{% endif %}>
+                            <option
+                                value="hours"
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="hours"
+                                %}selected{%
+                                endif
+                                %}
+                            >
                                 Hours
                             </option>
-                            <option value="days" {% if device.backup_interval_unit == 'days' %}selected{% endif %}>
+                            <option
+                                value="days"
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="days"
+                                %}selected{%
+                                endif
+                                %}
+                            >
                                 Days
                             </option>
-                            <option value="months" {% if device.backup_interval_unit == 'months' %}selected{% endif %}>
+                            <option
+                                value="months"
+                                {%
+                                if
+                                device.backup_interval_unit=""
+                                ="months"
+                                %}selected{%
+                                endif
+                                %}
+                            >
                                 Months
                             </option>
                         </select>
@@ -175,10 +202,29 @@
                     <td>{{ backup.filename }}</td>
                     <td class="actions">
                         <a
-                            class="button secondary"
+                            class="icon-button"
                             href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
-                            ><i class="fa-solid fa-download"></i> Download</a
+                            title="Download backup"
+                            aria-label="Download backup"
+                            ><i class="fa-solid fa-download"></i
+                        ></a>
+                        <form
+                            action="/devices/{{ device.id }}/backups/{{ backup.id }}/delete"
+                            method="post"
+                            class="inline-action-form"
+                            onsubmit="
+                                return confirm('Delete this stored backup?');
+                            "
                         >
+                            <button
+                                class="icon-button danger-text"
+                                type="submit"
+                                title="Delete backup"
+                                aria-label="Delete backup"
+                            >
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% else %}

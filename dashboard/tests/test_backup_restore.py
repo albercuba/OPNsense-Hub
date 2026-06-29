@@ -263,6 +263,30 @@ def test_backup_export_requires_admin(monkeypatch, tmp_path):
     assert response.json()["detail"] == "administrator access required"
 
 
+def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "delete_backup") as session:
+        admin = seed_backup_source(session)
+        configure_test_client(monkeypatch, session, admin)
+        device = session.scalars(select(Device)).first()
+        backup = session.scalars(select(DeviceBackup)).first()
+        assert device is not None
+        assert backup is not None
+
+        with TestClient(app) as client:
+            response = client.post(
+                f"/devices/{device.id}/backups/{backup.id}/delete",
+                follow_redirects=False,
+            )
+        app.dependency_overrides.clear()
+
+        remaining_backups = session.scalars(select(DeviceBackup)).all()
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/devices/{device.id}?status=backup-deleted"
+    assert remaining_backups == []
+
+
+
 def test_backup_restore_replaces_configuration_and_clears_sessions(monkeypatch, tmp_path):
     source_branding_dir = tmp_path / "branding-source-restore"
     source_branding_dir.mkdir(parents=True, exist_ok=True)

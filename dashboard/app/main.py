@@ -2956,6 +2956,35 @@ def download_device_backup(
     )
 
 
+@app.post("/devices/{device_id}/backups/{backup_id}/delete")
+def delete_device_backup(
+    request: Request,
+    device_id: uuid.UUID,
+    backup_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    backup = db.get(DeviceBackup, backup_id)
+    if not backup or backup.device_id != device.id:
+        raise HTTPException(status_code=404)
+    db.delete(backup)
+    write_audit(
+        db,
+        request,
+        "device.backup.delete",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return RedirectResponse(
+        f"/devices/{device.id}?status=backup-deleted", status_code=303
+    )
+
+
 @app.post("/api/v1/devices/{device_id}/revoke")
 def revoke_device(
     request: Request,
