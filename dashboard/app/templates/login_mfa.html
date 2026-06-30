@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Verify sign in · OPNsense Hub</title>
+        {% if brand_logo_url %}
+        <link rel="icon" href="{{ brand_logo_url }}" />
+        {% endif %}
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        />
+        <link rel="stylesheet" href="/static/style.css" />
+    </head>
+    <body class="login">
+        <section class="card">
+            <h1>
+                {% if brand_logo_url %}<img
+                    class="login-brand-logo"
+                    src="{{ brand_logo_url }}"
+                    alt="OPNsense Hub logo"
+                />{% else %}<i class="fa-solid fa-shield-halved brand-mark"></i
+                >{% endif %} OPNsense Hub
+            </h1>
+            <p class="muted">Enter the 6-digit code from your authenticator app for {{ pending_user.email }}.</p>
+            {% if error %}
+            <div class="card warning">{{ error }}</div>
+            {% endif %}
+            <form action="/auth/mfa" method="post" class="settings-form narrow-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <label class="form-row"
+                    >Authenticator code
+                    <input
+                        name="code"
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        maxlength="6"
+                        pattern="[0-9]{6}"
+                        required
+                        autofocus
+                    />
+                </label>
+                <div class="login-actions">
+                    <button class="button" type="submit">
+                        <i class="fa-solid fa-shield-halved"></i> Verify and sign in
+                    </button>
+                    <a class="button secondary" href="/login">
+                        <i class="fa-solid fa-arrow-left"></i> Back to sign in
+                    </a>
+                </div>
+            </form>
+        </section>
+    </body>
+</html>

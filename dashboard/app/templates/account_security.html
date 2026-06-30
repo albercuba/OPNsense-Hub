@@ -1,0 +1,149 @@
+{% extends "base.html" %} {% block content %}
+<section class="settings-header card">
+    <div>
+        <p class="eyebrow">Account</p>
+        <h1>Security</h1>
+    </div>
+</section>
+
+{% if status == 'mfa-enabled' %}
+<div class="card status-card">
+    <i class="fa-solid fa-circle-check"></i> Multi-factor authentication
+    enabled.
+</div>
+{% elif status == 'mfa-disabled' %}
+<div class="card status-card">
+    <i class="fa-solid fa-circle-check"></i> Multi-factor authentication
+    disabled.
+</div>
+{% endif %}
+
+<section class="admin-card card narrow-form">
+    <div class="admin-card-header">
+        <div>
+            <h2>Local TOTP MFA</h2>
+            <p class="muted">
+                Protect your local OPNsense Hub account with a time-based
+                one-time passcode.
+            </p>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="card warning">{{ error }}</div>
+    {% endif %} {% if not local_mfa_available %}
+    <div class="card warning">
+        This account is managed by {% if user.auth_provider == 'microsoft'
+        %}Microsoft 365{% elif user.auth_provider == 'local_ad' %}Local AD{%
+        else %}an external identity provider{% endif %}. Configure MFA with that
+        provider instead of OPNsense Hub.
+    </div>
+    {% elif user.mfa_enabled %}
+    <div class="form-row">
+        <span class="status online">enabled</span>
+    </div>
+    <form
+        action="/account/security/mfa/disable"
+        method="post"
+        class="settings-form narrow-form"
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="form-row"
+            >Current password
+            <input
+                type="password"
+                name="password"
+                autocomplete="current-password"
+                required
+            />
+        </label>
+        <label class="form-row"
+            >Authenticator code
+            <input
+                name="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                pattern="[0-9]{6}"
+                required
+            />
+        </label>
+        <div class="form-row submit-row">
+            <button class="button secondary" type="submit">
+                <i class="fa-solid fa-shield"></i> Disable MFA
+            </button>
+        </div>
+    </form>
+    {% elif setup_secret %}
+    <div class="card">
+        <div class="form-row">
+            <strong>Step 1</strong>
+            <span class="muted"
+                >Add this account to your authenticator app using manual
+                setup.</span
+            >
+        </div>
+        <label class="form-row"
+            >Setup key
+            <input value="{{ setup_secret }}" readonly />
+        </label>
+        <label class="form-row"
+            >Account label
+            <input value="{{ user.email }}" readonly />
+        </label>
+        <label class="form-row"
+            >Issuer
+            <input value="OPNsense Hub" readonly />
+        </label>
+        <label class="form-row"
+            >Provisioning URI
+            <input value="{{ setup_uri }}" readonly />
+        </label>
+    </div>
+    <form
+        action="/account/security/mfa/enable"
+        method="post"
+        class="settings-form narrow-form"
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="secret" value="{{ setup_secret }}" />
+        <label class="form-row"
+            >Step 2: Enter the 6-digit code from your authenticator app
+            <input
+                name="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                pattern="[0-9]{6}"
+                required
+                autofocus
+            />
+        </label>
+        <div class="login-actions">
+            <button class="button backup-action" type="submit">
+                <i class="fa-solid fa-shield-halved"></i> Enable MFA
+            </button>
+            <a class="button secondary" href="/account/security">
+                <i class="fa-solid fa-rotate-left"></i> Cancel
+            </a>
+        </div>
+    </form>
+    {% else %}
+    <div class="form-row">
+        <span class="status">not enabled</span>
+    </div>
+    <form
+        action="/account/security/mfa/begin"
+        method="post"
+        class="settings-form narrow-form"
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="form-row submit-row">
+            <button class="button backup-action" type="submit">
+                <i class="fa-solid fa-shield-halved"></i> Set up TOTP MFA
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</section>
+{% endblock %}

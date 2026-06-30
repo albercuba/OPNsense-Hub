@@ -1,8 +1,12 @@
+import re
+from contextlib import contextmanager
 from datetime import timedelta
+from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import pytest
+from app.database import Base
 from app.main import (
     app,
     current_user,
@@ -13,12 +17,22 @@ from app.main import (
     settings,
 )
 from app.models import IntegrationSettings, SessionToken, User
-from app.security import hash_secret, hash_session_token, utc_now
+from app.security import hash_secret, hash_session_token, totp_code, utc_now
+from app.security.secrets import encrypt_secret
 from app.services.auth_service import upsert_external_user
 from fastapi import HTTPException, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 from starlette.testclient import TestClient
+
+
+@compiles(INET, "sqlite")
+def compile_inet_sqlite(_type, _compiler, **_kw):
+    return "TEXT"
 
 
 class FakeDb:
@@ -262,6 +276,47 @@ def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
     assert "opnhub_ms_verifier=" in cookie_header
 
 
+def disable_background_startup(monkeypatch):
+    async def noop():
+        return None
+
+    monkeypatch.setattr("app.main.bootstrap", lambda: None)
+    monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
+    monkeypatch.setattr("app.main.device_health_check_loop", noop)
+    monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+
+
+@contextmanager
+def sqlite_session(_tmp_path: Path):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    Base.metadata.create_all(engine)
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def extract_csrf_token(response_text: str) -> str:
+    match = re.search(r'name="csrf_token"\s+value="([^"]+)"', response_text)
+    assert match is not None
+    return match.group(1)
+
+
+def extract_input_value(response_text: str, field_name: str) -> str:
+    match = re.search(
+        rf'name="{re.escape(field_name)}"\s+value="([^"]*)"', response_text
+    )
+    assert match is not None
+    return match.group(1)
+
+
 def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):
     db = FakeDb()
 
@@ -283,3 +338,136 @@ def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
+
+
+def test_local_user_can_enable_and_disable_totp_mfa(monkeypatch, tmp_path):
+    disable_background_startup(monkeypatch)
+    with sqlite_session(tmp_path) as session:
+        user = User(
+            id=uuid4(),
+            email="local-user@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+        )
+        session.add(user)
+        session.commit()
+
+        def override_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            login_page = client.get("/login")
+            csrf_token = extract_csrf_token(login_page.text)
+            login_response = client.post(
+                "/api/v1/auth/login",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": user.email,
+                    "password": "StrongPassword123",
+                },
+                follow_redirects=False,
+            )
+            assert login_response.status_code == 303
+            assert login_response.headers["location"] == "/dashboard"
+
+            account_page = client.get("/account/security")
+            assert account_page.status_code == 200
+            csrf_token = extract_csrf_token(account_page.text)
+            begin_response = client.post(
+                "/account/security/mfa/begin",
+                data={"csrf_token": csrf_token},
+            )
+            assert begin_response.status_code == 200
+            secret = extract_input_value(begin_response.text, "secret")
+            enable_csrf = extract_csrf_token(begin_response.text)
+            enable_response = client.post(
+                "/account/security/mfa/enable",
+                data={
+                    "csrf_token": enable_csrf,
+                    "secret": secret,
+                    "code": totp_code(secret),
+                },
+                follow_redirects=False,
+            )
+            assert enable_response.status_code == 303
+            assert (
+                enable_response.headers["location"]
+                == "/account/security?status=mfa-enabled"
+            )
+
+            session.refresh(user)
+            assert user.mfa_enabled is True
+            assert user.mfa_secret is not None
+
+            disable_page = client.get("/account/security")
+            disable_csrf = extract_csrf_token(disable_page.text)
+            disable_response = client.post(
+                "/account/security/mfa/disable",
+                data={
+                    "csrf_token": disable_csrf,
+                    "password": "StrongPassword123",
+                    "code": totp_code(secret),
+                },
+                follow_redirects=False,
+            )
+            assert disable_response.status_code == 303
+            assert (
+                disable_response.headers["location"]
+                == "/account/security?status=mfa-disabled"
+            )
+
+            session.refresh(user)
+            assert user.mfa_enabled is False
+            assert user.mfa_secret is None
+        app.dependency_overrides.clear()
+
+
+def test_local_login_with_enabled_totp_requires_second_step(monkeypatch, tmp_path):
+    disable_background_startup(monkeypatch)
+    secret = "JBSWY3DPEHPK3PXP"
+    with sqlite_session(tmp_path) as session:
+        user = User(
+            id=uuid4(),
+            email="mfa-user@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+            mfa_enabled=True,
+            mfa_secret=encrypt_secret(secret),
+        )
+        session.add(user)
+        session.commit()
+
+        def override_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            login_page = client.get("/login")
+            csrf_token = extract_csrf_token(login_page.text)
+            login_response = client.post(
+                "/api/v1/auth/login",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": user.email,
+                    "password": "StrongPassword123",
+                },
+                follow_redirects=False,
+            )
+            assert login_response.status_code == 303
+            assert login_response.headers["location"] == "/auth/mfa"
+
+            mfa_page = client.get("/auth/mfa")
+            assert mfa_page.status_code == 200
+            mfa_csrf = extract_csrf_token(mfa_page.text)
+            mfa_response = client.post(
+                "/auth/mfa",
+                data={"csrf_token": mfa_csrf, "code": totp_code(secret)},
+                follow_redirects=False,
+            )
+            assert mfa_response.status_code == 303
+            assert mfa_response.headers["location"] == "/dashboard"
+
+            dashboard_response = client.get("/dashboard", follow_redirects=False)
+            assert dashboard_response.status_code == 200
+        app.dependency_overrides.clear()

@@ -55,6 +55,7 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name text NULL",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name text NULL",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider text NULL",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret text NULL",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_missed_checks integer NOT NULL DEFAULT 0",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_success_checks integer NOT NULL DEFAULT 0",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from fastapi import HTTPException, Request, Response
 from sqlalchemy import select
@@ -10,6 +10,12 @@ from ..models import SessionToken, User
 from ..security import hash_secret, hash_session_token, random_token, utc_now
 from ..web import settings
 from .common import clean_optional
+
+
+def _utc_datetime(value):
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -45,7 +51,11 @@ def session_from_request(request: Request, db: Session) -> SessionToken:
     session = db.scalar(
         select(SessionToken).where(SessionToken.token_hash == token_hash)
     )
-    if not session or session.revoked_at or session.expires_at <= utc_now():
+    if not session:
+        raise HTTPException(status_code=401)
+    revoked_at = _utc_datetime(session.revoked_at) if session.revoked_at else None
+    expires_at = _utc_datetime(session.expires_at)
+    if revoked_at or expires_at <= utc_now():
         raise HTTPException(status_code=401)
     return session
 

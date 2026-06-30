@@ -37,6 +37,7 @@ class User(Base):
     auth_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
     role: Mapped[str] = mapped_column(String(30), default="user", nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
+    mfa_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, nullable=False
     )

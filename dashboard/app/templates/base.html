@@ -55,6 +55,11 @@
                     ><i class="fa-solid fa-building"></i> Firewalls
                     Management</a
                 >
+                <a
+                    class="side-menu-link {% if active_page == 'account-security' %}active{% endif %}"
+                    href="/account/security"
+                    ><i class="fa-solid fa-user-shield"></i> Account Security</a
+                >
                 {% if user and user.role == 'administrator' %}
                     <a
                         class="side-menu-link {% if active_page == 'audit-logs' %}active{% endif %}"

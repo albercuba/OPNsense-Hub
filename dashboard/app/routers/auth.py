@@ -14,9 +14,16 @@ from ..database import get_db
 from ..deps import current_user, ui_user
 from ..integration import local_ad_login_configured, microsoft_login_configured
 from ..models import IntegrationSettings, User
-from ..security import random_token, utc_now, verify_secret
+from ..security import (
+    generate_totp_secret,
+    random_token,
+    totp_provisioning_uri,
+    utc_now,
+    verify_secret,
+    verify_totp_code,
+)
 from ..security.rate_limit import apply_rate_limit
-from ..security.secrets import decrypt_secret
+from ..security.secrets import decrypt_secret, encrypt_secret
 from ..services.auth_service import (
     create_user_session,
     session_from_request,
@@ -25,6 +32,11 @@ from ..services.auth_service import (
 )
 from ..services.common import clean_optional
 from ..services.local_ad_auth import authenticate_local_ad_user
+from ..services.mfa_service import (
+    clear_pending_mfa_cookie,
+    pending_mfa_user_id_from_request,
+    set_pending_mfa_cookie,
+)
 from ..services.microsoft_auth import (
     exchange_microsoft_authorization_code,
     microsoft_access_scope,
@@ -62,6 +74,62 @@ def render_login_template(
     )
 
 
+def render_mfa_login_template(
+    db: Session,
+    request: Request,
+    pending_user: User,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    return render_template(
+        db,
+        "login_mfa.html",
+        {"request": request, "error": error, "pending_user": pending_user},
+        status_code=status_code,
+    )
+
+
+def local_user_supports_hub_mfa(user: User) -> bool:
+    return clean_optional(user.auth_provider) is None
+
+
+def pending_mfa_user(db: Session, request: Request) -> User:
+    pending_user_id = pending_mfa_user_id_from_request(request)
+    user = db.get(User, pending_user_id)
+    if not user or not local_user_supports_hub_mfa(user) or not user.mfa_enabled:
+        raise HTTPException(status_code=401, detail="invalid MFA sign-in state")
+    return user
+
+
+def render_account_security_template(
+    db: Session,
+    request: Request,
+    user: User,
+    *,
+    status_code: int = 200,
+    error: str | None = None,
+    setup_secret: str | None = None,
+):
+    return render_template(
+        db,
+        "account_security.html",
+        {
+            "request": request,
+            "user": user,
+            "active_page": "account-security",
+            "status": request.query_params.get("status"),
+            "error": error,
+            "local_mfa_available": local_user_supports_hub_mfa(user),
+            "setup_secret": setup_secret,
+            "setup_uri": totp_provisioning_uri(setup_secret, user.email)
+            if setup_secret
+            else None,
+        },
+        status_code=status_code,
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Annotated[Session, Depends(get_db)]):
     user = ui_user(request, db)
@@ -73,6 +141,150 @@ def index(request: Request, db: Annotated[Session, Depends(get_db)]):
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, db: Annotated[Session, Depends(get_db)]):
     return render_login_template(db, request)
+
+
+@router.get("/auth/mfa", response_class=HTMLResponse)
+def mfa_login_page(request: Request, db: Annotated[Session, Depends(get_db)]):
+    try:
+        user = pending_mfa_user(db, request)
+    except HTTPException:
+        response = render_login_template(
+            db,
+            request,
+            error="Your MFA sign-in session is invalid or has expired. Please sign in again.",
+            status_code=401,
+        )
+        clear_pending_mfa_cookie(response)
+        return response
+    return render_mfa_login_template(db, request, user)
+
+
+@router.post("/auth/mfa")
+def complete_mfa_login(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    code: str = Form(...),
+):
+    try:
+        user = pending_mfa_user(db, request)
+    except HTTPException:
+        response = render_login_template(
+            db,
+            request,
+            error="Your MFA sign-in session is invalid or has expired. Please sign in again.",
+            status_code=401,
+        )
+        clear_pending_mfa_cookie(response)
+        return response
+    secret = decrypt_secret(user.mfa_secret)
+    if not secret or not verify_totp_code(secret, code):
+        return render_mfa_login_template(
+            db,
+            request,
+            user,
+            error="Invalid authenticator code",
+            status_code=401,
+        )
+    token = create_user_session(db, user)
+    write_audit(db, request, "auth.login", user=user)
+    db.commit()
+    response = RedirectResponse("/dashboard", status_code=303)
+    set_session_cookie(response, token)
+    clear_pending_mfa_cookie(response)
+    return response
+
+
+@router.get("/account/security", response_class=HTMLResponse)
+def account_security_page(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    return render_account_security_template(db, request, user)
+
+
+@router.post("/account/security/mfa/begin")
+def begin_account_mfa_setup(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    if not local_user_supports_hub_mfa(user):
+        raise HTTPException(
+            status_code=400,
+            detail="externally managed users must configure MFA with their identity provider",
+        )
+    if user.mfa_enabled:
+        return RedirectResponse("/account/security", status_code=303)
+    return render_account_security_template(
+        db, request, user, setup_secret=generate_totp_secret()
+    )
+
+
+@router.post("/account/security/mfa/enable")
+def enable_account_mfa(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    secret: str = Form(...),
+    code: str = Form(...),
+):
+    if not local_user_supports_hub_mfa(user):
+        raise HTTPException(
+            status_code=400,
+            detail="externally managed users must configure MFA with their identity provider",
+        )
+    if user.mfa_enabled:
+        return RedirectResponse("/account/security", status_code=303)
+    normalized_secret = clean_optional(secret)
+    if not normalized_secret or not verify_totp_code(normalized_secret, code):
+        return render_account_security_template(
+            db,
+            request,
+            user,
+            status_code=400,
+            error="Invalid authenticator code",
+            setup_secret=normalized_secret,
+        )
+    user.mfa_secret = encrypt_secret(normalized_secret)
+    user.mfa_enabled = True
+    write_audit(db, request, "auth.mfa.enable", user=user)
+    db.commit()
+    return RedirectResponse("/account/security?status=mfa-enabled", status_code=303)
+
+
+@router.post("/account/security/mfa/disable")
+def disable_account_mfa(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    password: str = Form(...),
+    code: str = Form(...),
+):
+    if not local_user_supports_hub_mfa(user):
+        raise HTTPException(
+            status_code=400,
+            detail="externally managed users must configure MFA with their identity provider",
+        )
+    secret = decrypt_secret(user.mfa_secret)
+    if (
+        not user.mfa_enabled
+        or not secret
+        or not verify_secret(password, user.password_hash)
+        or not verify_totp_code(secret, code)
+    ):
+        return render_account_security_template(
+            db,
+            request,
+            user,
+            status_code=400,
+            error="Password or authenticator code was invalid",
+        )
+    user.mfa_secret = None
+    user.mfa_enabled = False
+    write_audit(db, request, "auth.mfa.disable", user=user)
+    db.commit()
+    return RedirectResponse("/account/security?status=mfa-disabled", status_code=303)
 
 
 @router.post("/api/v1/auth/login")
@@ -96,6 +308,24 @@ def login(
         return render_login_template(
             db, request, error="Invalid email or password", status_code=401
         )
+    if user.mfa_enabled:
+        if not local_user_supports_hub_mfa(user):
+            return render_login_template(
+                db,
+                request,
+                error="This account uses MFA through its external identity provider.",
+                status_code=400,
+            )
+        if not decrypt_secret(user.mfa_secret):
+            return render_login_template(
+                db,
+                request,
+                error="MFA is enabled for this account but is not configured correctly.",
+                status_code=401,
+            )
+        response = RedirectResponse("/auth/mfa", status_code=303)
+        set_pending_mfa_cookie(response, user)
+        return response
     token = create_user_session(db, user)
     response = RedirectResponse("/dashboard", status_code=303)
     set_session_cookie(response, token)
@@ -353,6 +583,7 @@ def logout(
     db.commit()
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(settings.session_cookie_name)
+    clear_pending_mfa_cookie(response)
     return response
 
 
