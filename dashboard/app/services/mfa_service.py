@@ -1,18 +1,36 @@
 from __future__ import annotations
 
+import base64
 from datetime import timedelta
+from io import BytesIO
 from uuid import UUID
 
 import jwt
+import qrcode
+import qrcode.image.svg
 from fastapi import HTTPException, Request, Response
 from jwt import PyJWTError
 
 from ..models import User
-from ..security import utc_now
+from ..security import totp_provisioning_uri, utc_now
+from ..services.common import clean_optional
 from ..web import settings
 
 MFA_PENDING_COOKIE_NAME = "opnhub_mfa_pending"
 MFA_PENDING_PURPOSE = "login-mfa"
+
+
+def local_user_supports_hub_mfa(user: User) -> bool:
+    return clean_optional(user.auth_provider) is None
+
+
+def totp_qr_code_data_url(secret: str, account_name: str) -> str:
+    uri = totp_provisioning_uri(secret, account_name)
+    image = qrcode.make(uri, image_factory=qrcode.image.svg.SvgImage)
+    buffer = BytesIO()
+    image.save(buffer)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 def set_pending_mfa_cookie(response: Response, user: User) -> None:

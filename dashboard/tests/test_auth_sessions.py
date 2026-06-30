@@ -379,6 +379,8 @@ def test_local_user_can_enable_and_disable_totp_mfa(monkeypatch, tmp_path):
                 data={"csrf_token": csrf_token},
             )
             assert begin_response.status_code == 200
+            assert "data:image/svg+xml;base64," in begin_response.text
+            assert "Provisioning URI" not in begin_response.text
             secret = extract_input_value(begin_response.text, "secret")
             enable_csrf = extract_csrf_token(begin_response.text)
             enable_response = client.post(

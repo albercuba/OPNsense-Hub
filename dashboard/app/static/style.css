@@ -1074,6 +1074,23 @@ td {
     width: 180px;
     margin-right: 0.25rem;
 }
+.mfa-setup-card {
+    display: grid;
+    gap: 1rem;
+}
+.mfa-qr-panel {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+}
+.mfa-qr-code {
+    width: min(260px, 100%);
+    height: auto;
+}
 .editable-row.editing .password-edit-field {
     display: inline-block;
 }

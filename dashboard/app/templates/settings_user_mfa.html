@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="settings-header card">
+    <div>
+        <p class="eyebrow">Settings</p>
+        <h1>Manage User MFA</h1>
+    </div>
+</section>
+
+{% if error %}
+<div class="card warning">{{ error }}</div>
+{% endif %}
+
+<section class="admin-card card narrow-form">
+    <div class="admin-card-header">
+        <div>
+            <h2>{{ managed_user.email }}</h2>
+            <p class="muted">Generate or regenerate the local TOTP setup for this user.</p>
+        </div>
+    </div>
+
+    {% if managed_user.mfa_enabled %}
+    <div class="form-row">
+        <span class="status online">enabled</span>
+    </div>
+    {% else %}
+    <div class="form-row">
+        <span class="status">not enabled</span>
+    </div>
+    {% endif %}
+
+    {% if setup_secret and qr_code_data_url %}
+    <div class="card mfa-setup-card">
+        <div class="mfa-qr-panel">
+            <img class="mfa-qr-code" src="{{ qr_code_data_url }}" alt="TOTP setup QR code for {{ managed_user.email }}" />
+        </div>
+        <label class="form-row">
+            Setup key
+            <input value="{{ setup_secret }}" readonly />
+        </label>
+    </div>
+    <form action="/settings/users/{{ managed_user.id }}/mfa/apply" method="post" class="settings-form narrow-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="secret" value="{{ setup_secret }}" />
+        <div class="login-actions">
+            <button class="button backup-action" type="submit">
+                <i class="fa-solid fa-shield-halved"></i> Apply MFA secret
+            </button>
+            <a class="button secondary" href="/settings/users/{{ managed_user.id }}/mfa">
+                <i class="fa-solid fa-rotate-left"></i> Cancel
+            </a>
+        </div>
+    </form>
+    {% else %}
+    <form action="/settings/users/{{ managed_user.id }}/mfa/begin" method="post" class="settings-form narrow-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="form-row submit-row">
+            <button class="button backup-action" type="submit">
+                <i class="fa-solid fa-qrcode"></i> {% if managed_user.mfa_enabled %}Regenerate TOTP MFA{% else %}Generate TOTP MFA{% endif %}
+            </button>
+        </div>
+    </form>
+    {% endif %}
+
+    <form action="/settings/users/{{ managed_user.id }}/mfa/disable" method="post" class="settings-form narrow-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="form-row submit-row">
+            <button class="button secondary" type="submit" {% if not managed_user.mfa_enabled %}disabled{% endif %}>
+                <i class="fa-solid fa-shield"></i> Disable MFA
+            </button>
+        </div>
+    </form>
+</section>
+{% endblock %}

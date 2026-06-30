@@ -301,6 +301,14 @@
                         >
                             <i class="fa-solid fa-floppy-disk"></i>
                         </button>
+                        <a
+                            class="icon-button"
+                            href="/settings/users/{{ managed_user.id }}/mfa"
+                            title="Manage user MFA"
+                            aria-label="Manage user MFA"
+                        >
+                            <i class="fa-solid fa-qrcode"></i>
+                        </a>
                         {% else %}
                         <span
                             class="protected-user"

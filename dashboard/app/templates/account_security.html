@@ -74,30 +74,18 @@
             </button>
         </div>
     </form>
-    {% elif setup_secret %}
-    <div class="card">
-        <div class="form-row">
-            <strong>Step 1</strong>
-            <span class="muted"
-                >Add this account to your authenticator app using manual
-                setup.</span
-            >
+    {% elif setup_secret and qr_code_data_url %}
+    <div class="card mfa-setup-card">
+        <div class="mfa-qr-panel">
+            <img
+                class="mfa-qr-code"
+                src="{{ qr_code_data_url }}"
+                alt="TOTP setup QR code for {{ user.email }}"
+            />
         </div>
         <label class="form-row"
             >Setup key
             <input value="{{ setup_secret }}" readonly />
-        </label>
-        <label class="form-row"
-            >Account label
-            <input value="{{ user.email }}" readonly />
-        </label>
-        <label class="form-row"
-            >Issuer
-            <input value="OPNsense Hub" readonly />
-        </label>
-        <label class="form-row"
-            >Provisioning URI
-            <input value="{{ setup_uri }}" readonly />
         </label>
     </div>
     <form

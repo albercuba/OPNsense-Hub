@@ -17,7 +17,6 @@ from ..models import IntegrationSettings, User
 from ..security import (
     generate_totp_secret,
     random_token,
-    totp_provisioning_uri,
     utc_now,
     verify_secret,
     verify_totp_code,
@@ -34,8 +33,10 @@ from ..services.common import clean_optional
 from ..services.local_ad_auth import authenticate_local_ad_user
 from ..services.mfa_service import (
     clear_pending_mfa_cookie,
+    local_user_supports_hub_mfa,
     pending_mfa_user_id_from_request,
     set_pending_mfa_cookie,
+    totp_qr_code_data_url,
 )
 from ..services.microsoft_auth import (
     exchange_microsoft_authorization_code,
@@ -90,10 +91,6 @@ def render_mfa_login_template(
     )
 
 
-def local_user_supports_hub_mfa(user: User) -> bool:
-    return clean_optional(user.auth_provider) is None
-
-
 def pending_mfa_user(db: Session, request: Request) -> User:
     pending_user_id = pending_mfa_user_id_from_request(request)
     user = db.get(User, pending_user_id)
@@ -122,7 +119,7 @@ def render_account_security_template(
             "error": error,
             "local_mfa_available": local_user_supports_hub_mfa(user),
             "setup_secret": setup_secret,
-            "setup_uri": totp_provisioning_uri(setup_secret, user.email)
+            "qr_code_data_url": totp_qr_code_data_url(setup_secret, user.email)
             if setup_secret
             else None,
         },

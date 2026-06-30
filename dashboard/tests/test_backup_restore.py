@@ -345,6 +345,52 @@ def test_legacy_external_users_without_auth_provider_are_still_locked(
     )
 
 
+def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "admin_manage_user_mfa") as session:
+        admin = seed_backup_source(session)
+        managed_user = User(
+            id=uuid4(),
+            email="local-user@example.com",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+        )
+        session.add(managed_user)
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            page = client.get(f"/settings/users/{managed_user.id}/mfa")
+            assert page.status_code == 200
+            csrf_token = get_csrf(client, f"/settings/users/{managed_user.id}/mfa")
+            begin = client.post(
+                f"/settings/users/{managed_user.id}/mfa/begin",
+                data={"csrf_token": csrf_token},
+            )
+            assert begin.status_code == 200
+            assert "data:image/svg+xml;base64," in begin.text
+            secret_marker = 'name="secret" value="'
+            secret_start = begin.text.index(secret_marker) + len(secret_marker)
+            secret_end = begin.text.index('"', secret_start)
+            secret = begin.text[secret_start:secret_end]
+            csrf_marker = 'name="csrf_token" value="'
+            csrf_start = begin.text.index(csrf_marker) + len(csrf_marker)
+            csrf_end = begin.text.index('"', csrf_start)
+            apply_csrf = begin.text[csrf_start:csrf_end]
+            apply = client.post(
+                f"/settings/users/{managed_user.id}/mfa/apply",
+                data={"csrf_token": apply_csrf, "secret": secret},
+                follow_redirects=False,
+            )
+            session.refresh(managed_user)
+            assert apply.status_code == 303
+            assert (
+                apply.headers["location"]
+                == "/settings/manage-users?status=user-updated"
+            )
+            assert managed_user.mfa_enabled is True
+            assert managed_user.mfa_secret is not None
+        app.dependency_overrides.clear()
+
+
 def test_backup_export_requires_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(
         settings, "branding_upload_dir", str(tmp_path / "branding-non-admin")

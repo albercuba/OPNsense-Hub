@@ -28,9 +28,9 @@ from ..models import (
     SessionToken,
     User,
 )
-from ..security import hash_secret, utc_now
+from ..security import generate_totp_secret, hash_secret, utc_now
 from ..security.rate_limit import apply_rate_limit
-from ..security.secrets import store_secret
+from ..security.secrets import encrypt_secret, store_secret
 from ..services.backup_service import (
     export_backup_bundle,
     parse_backup_bundle,
@@ -42,6 +42,10 @@ from ..services.log_retention import (
     export_log_archive,
     get_log_retention_summary,
     run_log_retention_once,
+)
+from ..services.mfa_service import (
+    local_user_supports_hub_mfa,
+    totp_qr_code_data_url,
 )
 from ..web import render_template, settings
 
@@ -70,6 +74,40 @@ def external_auth_provider_for_user(db: Session, user: User) -> str | None:
 
 def user_is_externally_managed(db: Session, user: User) -> bool:
     return external_auth_provider_for_user(db, user) is not None
+
+
+def render_user_mfa_template(
+    db: Session,
+    request: Request,
+    user: User,
+    managed_user: User,
+    *,
+    status_code: int = 200,
+    error: str | None = None,
+    setup_secret: str | None = None,
+):
+    if not local_user_supports_hub_mfa(managed_user):
+        raise HTTPException(
+            status_code=400,
+            detail="users managed by Microsoft 365 or Local AD must configure MFA with their identity provider",
+        )
+    return render_template(
+        db,
+        "settings_user_mfa.html",
+        {
+            "request": request,
+            "user": user,
+            "managed_user": managed_user,
+            "active_page": "settings",
+            "active_settings": "manage-users",
+            "error": error,
+            "setup_secret": setup_secret,
+            "qr_code_data_url": totp_qr_code_data_url(setup_secret, managed_user.email)
+            if setup_secret
+            else None,
+        },
+        status_code=status_code,
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -199,6 +237,101 @@ def update_user(
     if password.strip():
         target.password_hash = hash_secret(password)
     write_audit(db, request, "settings.user.update", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-users?status=user-updated", status_code=303
+    )
+
+
+@router.get("/settings/users/{target_user_id}/mfa", response_class=HTMLResponse)
+def manage_user_mfa_page(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    managed_user = db.get(User, target_user_id)
+    if not managed_user:
+        raise HTTPException(status_code=404)
+    return render_user_mfa_template(db, request, user, managed_user)
+
+
+@router.post("/settings/users/{target_user_id}/mfa/begin")
+def begin_manage_user_mfa(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    managed_user = db.get(User, target_user_id)
+    if not managed_user:
+        raise HTTPException(status_code=404)
+    return render_user_mfa_template(
+        db,
+        request,
+        user,
+        managed_user,
+        setup_secret=generate_totp_secret(),
+    )
+
+
+@router.post("/settings/users/{target_user_id}/mfa/apply")
+def apply_manage_user_mfa(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    secret: str = Form(...),
+):
+    require_admin(user)
+    managed_user = db.get(User, target_user_id)
+    if not managed_user:
+        raise HTTPException(status_code=404)
+    if not local_user_supports_hub_mfa(managed_user):
+        raise HTTPException(
+            status_code=400,
+            detail="users managed by Microsoft 365 or Local AD must configure MFA with their identity provider",
+        )
+    normalized_secret = clean_optional(secret)
+    if not normalized_secret:
+        return render_user_mfa_template(
+            db,
+            request,
+            user,
+            managed_user,
+            status_code=400,
+            error="A valid MFA secret is required",
+        )
+    managed_user.mfa_secret = encrypt_secret(normalized_secret)
+    managed_user.mfa_enabled = True
+    write_audit(db, request, "settings.user.mfa.apply", user=user)
+    db.commit()
+    return RedirectResponse(
+        "/settings/manage-users?status=user-updated", status_code=303
+    )
+
+
+@router.post("/settings/users/{target_user_id}/mfa/disable")
+def disable_manage_user_mfa(
+    request: Request,
+    target_user_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    managed_user = db.get(User, target_user_id)
+    if not managed_user:
+        raise HTTPException(status_code=404)
+    if not local_user_supports_hub_mfa(managed_user):
+        raise HTTPException(
+            status_code=400,
+            detail="users managed by Microsoft 365 or Local AD must configure MFA with their identity provider",
+        )
+    managed_user.mfa_secret = None
+    managed_user.mfa_enabled = False
+    write_audit(db, request, "settings.user.mfa.disable", user=user)
     db.commit()
     return RedirectResponse(
         "/settings/manage-users?status=user-updated", status_code=303
