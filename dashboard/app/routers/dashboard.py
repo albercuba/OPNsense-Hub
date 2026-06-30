@@ -16,6 +16,14 @@ from ..web import render_template
 
 router = APIRouter()
 
+AUDIT_ACTION_LABELS = {
+    "device.enroll": "Firewall added",
+    "device.revoke": "Firewall revoked",
+    "device.delete_revoked": "Firewall removed",
+    "device.view": "Firewall viewed",
+    "device.proxy.open": "Firewall UI opened",
+}
+
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_page(
@@ -87,10 +95,10 @@ def audit_logs_page(
     user: Annotated[User, Depends(current_user)],
 ):
     require_admin(user)
-    access_actions = {"device.view", "device.proxy.open"}
+    audit_actions = set(AUDIT_ACTION_LABELS)
     audit_entries = db.scalars(
         select(AuditLog)
-        .where(AuditLog.action.in_(access_actions))
+        .where(AuditLog.action.in_(audit_actions))
         .order_by(AuditLog.created_at.desc())
         .limit(500)
     ).all()
@@ -131,9 +139,9 @@ def audit_logs_page(
             "user": users_by_id.get(entry.user_id),
             "company": companies_by_id.get(entry.company_id),
             "device": devices_by_id.get(entry.device_id),
+            "action_label": AUDIT_ACTION_LABELS.get(entry.action, entry.action),
         }
         for entry in audit_entries
-        if entry.device_id is not None
     ]
     usernames = sorted(
         {

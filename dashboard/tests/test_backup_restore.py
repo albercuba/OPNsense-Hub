@@ -450,25 +450,34 @@ def test_backup_export_requires_admin(monkeypatch, tmp_path):
     assert response.json()["detail"] == "administrator access required"
 
 
-def test_audit_logs_page_lists_firewall_access_entries(monkeypatch, tmp_path):
+def test_audit_logs_page_lists_firewall_lifecycle_and_access_entries(
+    monkeypatch, tmp_path
+):
     with sqlite_session(tmp_path, "audit_logs_page") as session:
         admin = seed_backup_source(session)
         device = session.scalars(select(Device)).first()
         company = session.scalars(select(Company)).first()
         assert device is not None
         assert company is not None
-        session.add(
-            AuditLog(
-                id=uuid4(),
-                user_id=admin.id,
-                company_id=company.id,
-                device_id=device.id,
-                action="device.view",
-                ip_address="127.0.0.1",
-                user_agent="pytest",
-                created_at=utc_now(),
+        for action in (
+            "device.enroll",
+            "device.revoke",
+            "device.delete_revoked",
+            "device.view",
+            "device.proxy.open",
+        ):
+            session.add(
+                AuditLog(
+                    id=uuid4(),
+                    user_id=admin.id,
+                    company_id=company.id,
+                    device_id=device.id,
+                    action=action,
+                    ip_address="127.0.0.1",
+                    user_agent="pytest",
+                    created_at=utc_now(),
+                )
             )
-        )
         session.commit()
         configure_test_client(monkeypatch, session, admin)
         with TestClient(app) as client:
@@ -480,6 +489,11 @@ def test_audit_logs_page_lists_firewall_access_entries(monkeypatch, tmp_path):
     assert admin.email in response.text
     assert device.hostname in response.text
     assert company.name in response.text
+    assert "Firewall added" in response.text
+    assert "Firewall revoked" in response.text
+    assert "Firewall removed" in response.text
+    assert "Firewall viewed" in response.text
+    assert "Firewall UI opened" in response.text
 
 
 def test_device_page_writes_firewall_access_audit_log(monkeypatch, tmp_path):

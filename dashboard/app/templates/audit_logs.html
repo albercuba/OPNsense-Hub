@@ -83,7 +83,8 @@
                     <th>User</th>
                     <th>Company</th>
                     <th>Firewall</th>
-                    <th>Access time</th>
+                    <th>Action</th>
+                    <th>Time</th>
                 </tr>
             </thead>
             <tbody>
@@ -104,6 +105,7 @@
                         >
                         {% else %} - {% endif %}
                     </td>
+                    <td>{{ row.action_label }}</td>
                     <td
                         data-sort-value="{{ row.entry.created_at.isoformat() if row.entry.created_at else '' }}"
                     >
@@ -113,15 +115,14 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="4">
+                    <td colspan="5">
                         <div class="table-empty-state">
                             <i class="fa-solid fa-clipboard-list"></i>
                             <div>
-                                <strong>No firewall access logs yet</strong>
+                                <strong>No firewall audit logs yet</strong>
                                 <p class="muted">
-                                    Firewall access events will appear here
-                                    after users open a firewall detail page or
-                                    the proxied OPNsense UI.
+                                    Firewall add, revoke, remove, and access
+                                    events will appear here.
                                 </p>
                             </div>
                         </div>
