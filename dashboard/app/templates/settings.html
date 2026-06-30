@@ -18,7 +18,9 @@
 {% if status %}
 <div class="card status-card">
     <i class="fa-solid fa-circle-check"></i>
-    {% if status == 'retention-cleanup-ran' %}Retention cleanup completed.{% elif status == 'retention-cleanup-skipped' %}Retention cleanup skipped because retention is disabled.{% else %}Settings saved.{% endif %}
+    {% if status == 'retention-cleanup-ran' %}Retention cleanup completed.{%
+    elif status == 'retention-cleanup-skipped' %}Retention cleanup skipped
+    because retention is disabled.{% else %}Settings saved.{% endif %}
 </div>
 {% endif %} {% if active_settings == 'manage-companies' %}
 <section class="admin-card card">
@@ -241,8 +243,30 @@
                             data-edit-control
                             disabled
                         >
-                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>User</option>
-                            <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>Administrator</option>
+                            <option
+                                value="user"
+                                {%
+                                if
+                                managed_user.role=""
+                                ="user"
+                                %}selected{%
+                                endif
+                                %}
+                            >
+                                User
+                            </option>
+                            <option
+                                value="administrator"
+                                {%
+                                if
+                                managed_user.role=""
+                                ="administrator"
+                                %}selected{%
+                                endif
+                                %}
+                            >
+                                Administrator
+                            </option>
                         </select>
                     </td>
                     <td>
@@ -800,10 +824,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Retention management</h2>
-        <p class="muted">
-            Retention settings are read from environment varia</h2>bles. Update the
-            container environment and redeploy to change these defaults.
-        </p>
     </div>
     <div class="responsive-table">
         <table>
@@ -811,20 +831,30 @@
                 <tr>
                     <th>Retention enabled</th>
                     <td>
-                        {% if retention_summary.config.enabled %}Enabled{% else %}Disabled{% endif %}
+                        {% if retention_summary.config.enabled %}Enabled{% else
+                        %}Disabled{% endif %}
                     </td>
                 </tr>
                 <tr>
                     <th>Audit log retention</th>
-                    <td>{{ retention_summary.config.audit_log_retention_days }} days</td>
+                    <td>
+                        {{ retention_summary.config.audit_log_retention_days }}
+                        days
+                    </td>
                 </tr>
                 <tr>
                     <th>Device event retention</th>
-                    <td>{{ retention_summary.config.device_event_retention_days }} days</td>
+                    <td>
+                        {{ retention_summary.config.device_event_retention_days
+                        }} days
+                    </td>
                 </tr>
                 <tr>
                     <th>Sweep interval</th>
-                    <td>{{ retention_summary.config.sweep_interval_hours }} hours</td>
+                    <td>
+                        {{ retention_summary.config.sweep_interval_hours }}
+                        hours
+                    </td>
                 </tr>
                 <tr>
                     <th>Delete batch size</th>
@@ -833,16 +863,24 @@
                 <tr>
                     <th>Run on startup</th>
                     <td>
-                        {% if retention_summary.config.run_on_startup %}Enabled{% else %}Disabled{% endif %}
+                        {% if retention_summary.config.run_on_startup
+                        %}Enabled{% else %}Disabled{% endif %}
                     </td>
                 </tr>
                 <tr>
                     <th>Minimum audit log retention</th>
-                    <td>{{ retention_summary.config.audit_log_min_retention_days }} days</td>
+                    <td>
+                        {{ retention_summary.config.audit_log_min_retention_days
+                        }} days
+                    </td>
                 </tr>
                 <tr>
                     <th>Minimum device event retention</th>
-                    <td>{{ retention_summary.config.device_event_min_retention_days }} days</td>
+                    <td>
+                        {{
+                        retention_summary.config.device_event_min_retention_days
+                        }} days
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -852,10 +890,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Database summary</h2>
-        <p class="muted">
-            Audit logs support accountability and compliance review. Device
-            events are operational troubleshooting history.
-        </p>
     </div>
     <div class="responsive-table">
         <table>
@@ -872,16 +906,39 @@
                 <tr>
                     <td>Audit logs</td>
                     <td>{{ retention_summary.audit_logs.total_rows }}</td>
-                    <td>{{ format_datetime(retention_summary.audit_logs.oldest_row_at, True) or '—' }}</td>
-                    <td>{{ retention_summary.audit_logs.rows_older_than_cutoff }}</td>
-                    <td>{{ format_datetime(retention_summary.audit_logs.cutoff_at, True) }}</td>
+                    <td>
+                        {{
+                        format_datetime(retention_summary.audit_logs.oldest_row_at,
+                        True) or '—' }}
+                    </td>
+                    <td>
+                        {{ retention_summary.audit_logs.rows_older_than_cutoff
+                        }}
+                    </td>
+                    <td>
+                        {{
+                        format_datetime(retention_summary.audit_logs.cutoff_at,
+                        True) }}
+                    </td>
                 </tr>
                 <tr>
                     <td>Device events</td>
                     <td>{{ retention_summary.device_events.total_rows }}</td>
-                    <td>{{ format_datetime(retention_summary.device_events.oldest_row_at, True) or '—' }}</td>
-                    <td>{{ retention_summary.device_events.rows_older_than_cutoff }}</td>
-                    <td>{{ format_datetime(retention_summary.device_events.cutoff_at, True) }}</td>
+                    <td>
+                        {{
+                        format_datetime(retention_summary.device_events.oldest_row_at,
+                        True) or '—' }}
+                    </td>
+                    <td>
+                        {{
+                        retention_summary.device_events.rows_older_than_cutoff
+                        }}
+                    </td>
+                    <td>
+                        {{
+                        format_datetime(retention_summary.device_events.cutoff_at,
+                        True) }}
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -898,10 +955,7 @@
         class="settings-form narrow-form"
     >
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <p class="muted">
-            Reducing retention can permanently remove database history. Review
-            the archive export options below before running cleanup.
-        </p>
+
         <button class="button restore-action" type="submit">
             <i class="fa-solid fa-broom"></i> Run cleanup now
         </button>
@@ -911,11 +965,6 @@
 <section class="admin-card card">
     <div class="admin-card-header">
         <h2>Export log archive</h2>
-        <p class="muted">
-            Export old audit logs and device events into a local downloadable
-            archive before manual cleanup. Archives may contain sensitive
-            metadata and are not uploaded to any offsite target by this feature.
-        </p>
     </div>
     <form
         action="/settings/retention/export"
@@ -928,10 +977,12 @@
             <input type="datetime-local" name="cutoff_at" required
         /></label>
         <label class="checkbox-label form-row"
-            ><input type="checkbox" name="include_audit_logs" checked /> Include audit logs</label
+            ><input type="checkbox" name="include_audit_logs" checked /> Include
+            audit logs</label
         >
         <label class="checkbox-label form-row"
-            ><input type="checkbox" name="include_device_events" checked /> Include device events</label
+            ><input type="checkbox" name="include_device_events" checked />
+            Include device events</label
         >
         <label class="form-row"
             >Archive passphrase (optional)
@@ -942,11 +993,7 @@
                 placeholder="Leave blank for an unencrypted archive"
             />
         </label>
-        <p class="muted">
-            ZIP archives contain separate `audit_logs.jsonl` and
-            `device_events.jsonl` files plus `manifest.json`. Optional
-            passphrase protection reuses the Hub backup encryption format.
-        </p>
+
         <button class="button backup-action" type="submit">
             <i class="fa-solid fa-file-zipper"></i> Export log archive
         </button>
