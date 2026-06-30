@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..dashboard import accessible_companies_for_user, build_dashboard_context
 from ..database import get_db
-from ..deps import current_user, require_admin
+from ..deps import current_user, has_company_access, require_admin
 from ..models import AuditLog, Company, Device, User
 from ..web import render_template
 
@@ -63,6 +63,10 @@ def companies_page(
         devices_by_company.setdefault(device.company_id, []).append(device)
     for company in companies:
         company.devices = devices_by_company.get(company.id, [])
+    company_admin_access = {
+        company.id: has_company_access(db, user, company.id, "admin")
+        for company in companies
+    }
     return render_template(
         db,
         "companies.html",
@@ -70,6 +74,7 @@ def companies_page(
             "request": request,
             "user": user,
             "companies": companies,
+            "company_admin_access": company_admin_access,
             "active_page": "companies",
         },
     )

@@ -413,6 +413,8 @@ def test_non_admin_user_can_view_existing_companies_and_firewalls(
     assert companies_response.status_code == 200
     assert "Acme" in companies_response.text
     assert "fw-acme-1" in companies_response.text
+    assert "You need company admin access to add firewalls" in companies_response.text
+    assert "Add Firewall" not in companies_response.text
     assert dashboard_response.status_code == 200
     assert "fw-acme-1" in dashboard_response.text
 

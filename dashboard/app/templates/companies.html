@@ -56,7 +56,8 @@
             </tr>
         </thead>
         <tbody>
-            {% for company in companies %}
+            {% for company in companies %} {% set can_manage_company =
+            company_admin_access.get(company.id, false) %}
             <tr
                 class="company-row"
                 data-company-row
@@ -69,6 +70,7 @@
                     company.name }}
                 </td>
                 <td class="actions">
+                    {% if can_manage_company %}
                     <form
                         action="/api/v1/companies/{{ company.id }}/enrollment-codes"
                         method="post"
@@ -89,6 +91,14 @@
                             <i class="fa-solid fa-plus"></i>
                         </button>
                     </form>
+                    {% else %}
+                    <span
+                        class="protected-user"
+                        title="You need company admin access to add firewalls"
+                        aria-label="Company admin access required"
+                        ><i class="fa-solid fa-lock"></i
+                    ></span>
+                    {% endif %}
                 </td>
             </tr>
             <tr class="company-firewalls-row" data-company-firewalls hidden>
@@ -156,7 +166,8 @@
                                             aria-label="Firewall settings"
                                             ><i class="fa-solid fa-gear"></i
                                         ></a>
-                                        {% if device.revoked_at %}
+                                        {% if device.revoked_at %} {% if
+                                        can_manage_company %}
                                         <form
                                             action="/api/v1/devices/{{ device.id }}/delete"
                                             method="post"
@@ -186,7 +197,7 @@
                                                 ></i>
                                             </button>
                                         </form>
-                                        {% else %}
+                                        {% endif %} {% else %}
                                         <a
                                             class="icon-button"
                                             href="/proxy/devices/{{ device.id }}/"
@@ -197,6 +208,7 @@
                                                 class="fa-solid fa-up-right-from-square"
                                             ></i
                                         ></a>
+                                        {% if can_manage_company %}
                                         <form
                                             action="/api/v1/devices/{{ device.id }}/revoke"
                                             method="post"
@@ -219,7 +231,7 @@
                                                 <i class="fa-solid fa-ban"></i>
                                             </button>
                                         </form>
-                                        {% endif %}
+                                        {% endif %} {% endif %}
                                     </td>
                                 </tr>
                                 {% else %}
