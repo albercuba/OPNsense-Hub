@@ -11,7 +11,9 @@ from connect import (
     WG_IFACE,
     cleanup_opnsense_integration,
     hub_route_for,
+    load_config_root,
     remove_heartbeat_cron,
+    write_config_root,
 )
 
 
@@ -23,6 +25,35 @@ def delete_path(path):
     except Exception:
         return False
     return False
+
+
+def set_child_text(parent, tag, value):
+    child = parent.find(tag)
+    if child is None:
+        return False
+    if (child.text or "") == value:
+        return False
+    child.text = value
+    return True
+
+
+def clear_plugin_settings():
+    try:
+        root = load_config_root()
+        node = root.find("./OPNsense/OPNsenseHub")
+        if node is None:
+            return False
+        changed = False
+        changed |= set_child_text(node, "enabled", "0")
+        changed |= set_child_text(node, "hub_url", "")
+        changed |= set_child_text(node, "otp", "")
+        changed |= set_child_text(node, "last_heartbeat", "")
+        changed |= set_child_text(node, "last_error", "")
+        if changed:
+            write_config_root(root)
+        return changed
+    except Exception:
+        return False
 
 
 def main():
@@ -53,6 +84,7 @@ def main():
     remove_heartbeat_cron()
 
     cleanup = cleanup_opnsense_integration()
+    settings_cleared = clear_plugin_settings()
     removed_files = {
         "wireguard_config": delete_path(WG_CONF),
         "private_key": delete_path(KEY_FILE),
@@ -63,9 +95,10 @@ def main():
         json.dumps(
             {
                 "status": "removed",
-                "message": "Removed local OPNsense Hub tunnel, interface assignment, and state",
+                "message": "Removed local OPNsense Hub tunnel, interface assignment, saved settings, and state",
                 "interface": cleanup.get("interface_key"),
                 "config_changed": cleanup.get("config_changed", False),
+                "settings_cleared": settings_cleared,
                 "removed_files": removed_files,
                 "device_id": state.get("device_id"),
             }
