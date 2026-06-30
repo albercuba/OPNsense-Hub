@@ -1050,6 +1050,25 @@ td {
     grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr);
     gap: 0.4rem;
 }
+.user-status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+.external-auth-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0.12rem 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: #fff;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
 .password-edit-field {
     display: none;
     width: 180px;

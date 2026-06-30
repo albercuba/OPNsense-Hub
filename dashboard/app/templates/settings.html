@@ -245,24 +245,29 @@
                             data-edit-control
                             disabled
                         >
-                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>
+                            <option value="user" {% if managed_user.role == "user" %}selected{% endif %}>
                                 User
                             </option>
-                            <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>
+                            <option value="administrator" {% if managed_user.role == "administrator" %}selected{% endif %}>
                                 Administrator
                             </option>
                         </select>
                     </td>
                     <td>
-                        <span class="status"
-                            >{% if managed_user.mfa_enabled %}enabled{% else
-                            %}ready{% endif %}</span
-                        >
-                        {% if externally_managed %}
-                        <div class="muted">
-                            {{ external_provider|replace('_', ' ')|title }}
+                        <div class="user-status-group">
+                            <span class="status"
+                                >{% if managed_user.mfa_enabled %}enabled{% else
+                                %}ready{% endif %}</span
+                            >
+                            {% if externally_managed %}
+                            <span class="external-auth-badge">
+                                {% if external_provider == 'microsoft'
+                                %}Microsoft{% elif external_provider ==
+                                'local_ad' %}Local AD{% else %}External{% endif
+                                %}
+                            </span>
+                            {% endif %}
                         </div>
-                        {% endif %}
                     </td>
                     <td class="actions">
                         {% if not externally_managed %}
@@ -300,6 +305,7 @@
                         <span
                             class="protected-user"
                             title="Users managed by Microsoft 365 or Local AD cannot be edited here"
+                            aria-label="Externally managed user"
                             ><i class="fa-solid fa-lock"></i
                         ></span>
                         {% endif %} {% if managed_user.id != user.id and
