@@ -7,6 +7,9 @@ from urllib.parse import urlparse
 from .config import Settings
 from .security import password_is_strong_enough
 
+MAX_LOG_RETENTION_DELETE_BATCH_SIZE = 20000
+MAX_LOG_RETENTION_SWEEP_INTERVAL_HOURS = 720
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +60,39 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
     ):
         errors.append(
             "Set PROXY_VERIFY_TLS=true in production or explicitly set ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true"
+        )
+    if settings.log_retention_sweep_interval_hours <= 0:
+        errors.append("Set LOG_RETENTION_SWEEP_INTERVAL_HOURS to a positive value")
+    elif (
+        settings.log_retention_sweep_interval_hours
+        > MAX_LOG_RETENTION_SWEEP_INTERVAL_HOURS
+    ):
+        errors.append(
+            f"Set LOG_RETENTION_SWEEP_INTERVAL_HOURS to {MAX_LOG_RETENTION_SWEEP_INTERVAL_HOURS} or less"
+        )
+    if settings.log_retention_delete_batch_size <= 0:
+        errors.append("Set LOG_RETENTION_DELETE_BATCH_SIZE to a positive value")
+    elif settings.log_retention_delete_batch_size > MAX_LOG_RETENTION_DELETE_BATCH_SIZE:
+        errors.append(
+            f"Set LOG_RETENTION_DELETE_BATCH_SIZE to {MAX_LOG_RETENTION_DELETE_BATCH_SIZE} or less"
+        )
+    if settings.audit_device_view_throttle_minutes <= 0:
+        errors.append("Set AUDIT_DEVICE_VIEW_THROTTLE_MINUTES to a positive value")
+    if settings.audit_log_min_retention_days <= 0:
+        errors.append("Set AUDIT_LOG_MIN_RETENTION_DAYS to a positive value")
+    if settings.device_event_min_retention_days <= 0:
+        errors.append("Set DEVICE_EVENT_MIN_RETENTION_DAYS to a positive value")
+    if settings.log_retention_enabled and (
+        settings.audit_log_retention_days < settings.audit_log_min_retention_days
+    ):
+        errors.append(
+            f"Set AUDIT_LOG_RETENTION_DAYS to at least {settings.audit_log_min_retention_days}"
+        )
+    if settings.log_retention_enabled and (
+        settings.device_event_retention_days < settings.device_event_min_retention_days
+    ):
+        errors.append(
+            f"Set DEVICE_EVENT_RETENTION_DAYS to at least {settings.device_event_min_retention_days}"
         )
     return errors
 

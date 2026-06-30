@@ -143,6 +143,11 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_device_backups_device_id ON device_backups(device_id)",
+            "CREATE INDEX IF NOT EXISTS idx_device_events_created_at ON device_events(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_device_events_device_created_at ON device_events(device_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created_at ON audit_logs(action, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_logs_device_created_at ON audit_logs(device_id, created_at DESC)",
         ]
         for statement in statements:
             conn.execute(text(statement))

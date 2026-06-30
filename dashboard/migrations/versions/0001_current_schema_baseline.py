@@ -7,7 +7,8 @@ Create Date: 2026-06-29 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
+from importlib import import_module
+
 from app.database import Base
 from app.models import (  # noqa: F401
     AuditLog,
@@ -21,7 +22,8 @@ from app.models import (  # noqa: F401
     SessionToken,
     User,
 )
-from sqlalchemy.dialects import postgresql
+
+op = import_module("alembic.op")
 
 # revision identifiers, used by Alembic.
 revision = "0001_current_schema_baseline"

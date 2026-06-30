@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from importlib import import_module
 from logging.config import fileConfig
 
-from alembic import context
 from app import models  # noqa: F401
 from app.database import Base
 from sqlalchemy import engine_from_config, pool
+
+context = import_module("alembic.context")
 
 config = context.config
 

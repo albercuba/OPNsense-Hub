@@ -50,11 +50,12 @@ docker-compose.yml
 - Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and optional automatic Hub firewall isolation rules.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
-- Audit logs for login, company creation, enrollment, revoke, and proxy access.
+- Audit logs for login, company creation, enrollment, revoke, and proxy access, with throttled `device.view` entries to reduce browsing noise.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
 - Branding logo upload with persistent storage and login/app-shell rendering.
 - Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.
+- Configurable database-backed retention management for audit logs and device events, with batched cleanup and local archive export from the Hub UI.
 - Daily firmware update-status checks requested by Hub and executed locally by the OPNsense plugin at 23:00 Hub time.
 - Colored firmware status icons in the firewalls table for unknown, up to date, updates available, upgrade available, and check failed states.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
@@ -197,6 +198,50 @@ Rate limiting is in-process and works in local Docker without Redis. Configure l
 - `RATE_LIMIT_DEVICE_BACKUP_WINDOW_SECONDS`
 - `RATE_LIMIT_BACKUP_RESTORE_ATTEMPTS`
 - `RATE_LIMIT_BACKUP_RESTORE_WINDOW_SECONDS`
+
+## Log retention and local archives
+
+Hub keeps `audit_logs` and `device_events` as separate database tables and manages them separately:
+
+- audit logs are accountability and access-history records
+- device events are operational troubleshooting history reported by the Hub and firewalls
+- retention cleanup never deletes stored firewall backups
+- local archive export downloads files through the Hub UI only
+- no offsite archive target such as S3, Azure Blob, SFTP, or email export is supported by this feature
+
+Default retention environment variables:
+
+- `LOG_RETENTION_ENABLED=true`
+- `LOG_RETENTION_RUN_ON_STARTUP=true`
+- `AUDIT_LOG_RETENTION_DAYS=365`
+- `DEVICE_EVENT_RETENTION_DAYS=90`
+- `AUDIT_LOG_MIN_RETENTION_DAYS=30`
+- `DEVICE_EVENT_MIN_RETENTION_DAYS=7`
+- `LOG_RETENTION_SWEEP_INTERVAL_HOURS=24`
+- `LOG_RETENTION_DELETE_BATCH_SIZE=5000`
+- `AUDIT_DEVICE_VIEW_THROTTLE_MINUTES=15`
+
+Behavior:
+
+- when retention is enabled, startup and scheduled sweeps remove old `audit_logs` and `device_events` in separate batched deletes
+- in production, the app rejects unsafe retention values below the configured minimums or invalid batch/sweep values
+- in development, unsafe retention days are clamped to the configured minimums for cleanup behavior while startup still logs clear warnings
+- opening the same firewall page repeatedly only writes one `device.view` audit row per user/device within the throttle window, while higher-value actions such as `device.proxy.open` are still logged every time
+
+Under `Settings > Retention`, administrators can:
+
+- review current retention configuration from environment variables
+- see current database counts, oldest rows, and rows older than the active retention cutoffs
+- run cleanup immediately
+- export a local log archive up to a selected cutoff timestamp
+
+Log archive details:
+
+- archives are downloaded locally from the Hub UI
+- the ZIP layout uses `manifest.json`, `audit_logs.jsonl`, and `device_events.jsonl`
+- you can export audit logs only, device events only, or both
+- optional passphrase protection reuses the Hub backup encryption format
+- archives may contain sensitive metadata such as IP addresses, user agents, user IDs, device IDs, and operational event history
 
 ## Secret encryption
 

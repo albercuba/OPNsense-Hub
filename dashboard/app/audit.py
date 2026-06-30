@@ -1,7 +1,44 @@
+from datetime import timedelta
+
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .config import get_settings
 from .models import AuditLog, User
+from .security import utc_now
+
+settings = get_settings()
+
+
+def should_write_audit(
+    db: Session,
+    action: str,
+    *,
+    user: User | None = None,
+    device_id=None,
+) -> bool:
+    if action != "device.view":
+        return True
+    if (
+        user is None
+        or device_id is None
+        or settings.audit_device_view_throttle_minutes <= 0
+    ):
+        return True
+    cutoff = utc_now() - timedelta(minutes=settings.audit_device_view_throttle_minutes)
+    recent_entry = db.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.action == action,
+            AuditLog.user_id == user.id,
+            AuditLog.device_id == device_id,
+            AuditLog.created_at >= cutoff,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+    ).first()
+    return recent_entry is None
 
 
 def write_audit(
@@ -11,7 +48,9 @@ def write_audit(
     user: User | None = None,
     company_id=None,
     device_id=None,
-) -> None:
+) -> bool:
+    if not should_write_audit(db, action, user=user, device_id=device_id):
+        return False
     ip_address = None
     user_agent = None
     if request is not None:
@@ -25,5 +64,7 @@ def write_audit(
             action=action,
             ip_address=ip_address,
             user_agent=user_agent,
+            created_at=utc_now(),
         )
     )
+    return True

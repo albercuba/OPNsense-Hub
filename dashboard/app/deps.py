@@ -31,9 +31,10 @@ def ui_user(request: Request, db: Session) -> User | None:
 def has_company_access(
     db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
 ) -> bool:
-    return user.role == "administrator" or has_company_role(
-        db, user, company_id, minimum
-    )
+    from . import main as main_module
+
+    role_checker = getattr(main_module, "has_company_role", has_company_role)
+    return user.role == "administrator" or role_checker(db, user, company_id, minimum)
 
 
 def require_company(

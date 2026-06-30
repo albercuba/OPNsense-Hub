@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     rate_limit_device_backup_window_seconds: int = 300
     rate_limit_backup_restore_attempts: int = 3
     rate_limit_backup_restore_window_seconds: int = 900
+    audit_log_retention_days: int = 365
+    device_event_retention_days: int = 90
+    log_retention_sweep_interval_hours: int = 24
+    log_retention_delete_batch_size: int = 5000
+    audit_log_min_retention_days: int = 30
+    device_event_min_retention_days: int = 7
+    log_retention_run_on_startup: bool = True
+    log_retention_enabled: bool = True
+    audit_device_view_throttle_minutes: int = 15
     run_db_migrations_on_startup: bool = True
     allow_legacy_schema_bootstrap: bool = True
     firewall_health_warning_misses: int = 3

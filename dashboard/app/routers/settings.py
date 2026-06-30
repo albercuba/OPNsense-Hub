@@ -36,6 +36,12 @@ from ..services.backup_service import (
     restore_backup_bundle,
 )
 from ..services.common import clean_optional, get_or_create_integration_settings
+from ..services.log_retention import (
+    create_log_archive_selection,
+    export_log_archive,
+    get_log_retention_summary,
+    run_log_retention_once,
+)
 from ..web import render_template, settings
 
 router = APIRouter()
@@ -63,12 +69,16 @@ def settings_page(
         "local-ad",
         "branding",
         "backup",
+        "retention",
     }
     if section not in allowed_sections:
         raise HTTPException(status_code=404)
     companies = db.scalars(select(Company).order_by(Company.name)).all()
     users = db.scalars(select(User).order_by(User.email)).all()
     integration_settings = get_or_create_integration_settings(db)
+    retention_summary = (
+        get_log_retention_summary(db) if section == "retention" else None
+    )
     return render_template(
         db,
         "settings.html",
@@ -82,6 +92,7 @@ def settings_page(
             "active_page": "settings",
             "active_settings": section,
             "status": request.query_params.get("status"),
+            "retention_summary": retention_summary,
         },
     )
 
@@ -350,6 +361,50 @@ def export_settings_backup(
     db.commit()
     return Response(
         content=bundle,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/settings/retention/run-cleanup")
+def run_retention_cleanup(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    result = run_log_retention_once(db)
+    write_audit(db, request, "settings.retention.cleanup", user=user)
+    db.commit()
+    status = "retention-cleanup-skipped" if result.skipped else "retention-cleanup-ran"
+    return RedirectResponse(f"/settings/retention?status={status}", status_code=303)
+
+
+@router.post("/settings/retention/export")
+def export_retention_archive(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    cutoff_at: str = Form(...),
+    include_audit_logs: str | None = Form(None),
+    include_device_events: str | None = Form(None),
+    archive_passphrase: str = Form(""),
+):
+    require_admin(user)
+    selection = create_log_archive_selection(
+        cutoff_at,
+        include_audit_logs=include_audit_logs == "on",
+        include_device_events=include_device_events == "on",
+    )
+    archive, filename, media_type, _manifest = export_log_archive(
+        db,
+        selection,
+        passphrase=clean_optional(archive_passphrase),
+    )
+    write_audit(db, request, "settings.retention.export", user=user)
+    db.commit()
+    return Response(
+        content=archive,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

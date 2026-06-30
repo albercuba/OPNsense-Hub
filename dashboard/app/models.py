@@ -5,10 +5,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    desc,
 )
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -229,9 +231,7 @@ class Device(Base):
     firmware_check_request_reason: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )
-    backup_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
+    backup_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     backup_retention_count: Mapped[int] = mapped_column(
         Integer, default=3, nullable=False
     )
@@ -307,6 +307,14 @@ class DeviceBackup(Base):
 
 class DeviceEvent(Base):
     __tablename__ = "device_events"
+    __table_args__ = (
+        Index("idx_device_events_created_at", "created_at"),
+        Index(
+            "idx_device_events_device_created_at",
+            "device_id",
+            desc("created_at"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -326,6 +334,15 @@ class DeviceEvent(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("idx_audit_logs_created_at", "created_at"),
+        Index("idx_audit_logs_action_created_at", "action", desc("created_at")),
+        Index(
+            "idx_audit_logs_device_created_at",
+            "device_id",
+            desc("created_at"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
