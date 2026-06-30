@@ -243,28 +243,10 @@
                             data-edit-control
                             disabled
                         >
-                            <option
-                                value="user"
-                                {%
-                                if
-                                managed_user.role=""
-                                ="user"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>
                                 User
                             </option>
-                            <option
-                                value="administrator"
-                                {%
-                                if
-                                managed_user.role=""
-                                ="administrator"
-                                %}selected{%
-                                endif
-                                %}
-                            >
+                            <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>
                                 Administrator
                             </option>
                         </select>
