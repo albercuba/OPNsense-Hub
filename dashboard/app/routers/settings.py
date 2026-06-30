@@ -19,6 +19,7 @@ from ..branding import (
 from ..database import get_db
 from ..deps import current_user, require_admin
 from ..models import (
+    AuditLog,
     Company,
     CompanyUser,
     Device,
@@ -47,8 +48,28 @@ from ..web import render_template, settings
 router = APIRouter()
 
 
-def user_is_externally_managed(user: User) -> bool:
-    return bool((user.auth_provider or "").strip())
+def external_auth_provider_for_user(db: Session, user: User) -> str | None:
+    provider = (user.auth_provider or "").strip()
+    if provider:
+        return provider
+    action = db.scalar(
+        select(AuditLog.action)
+        .where(
+            AuditLog.user_id == user.id,
+            AuditLog.action.in_({"auth.microsoft.login", "auth.local_ad.login"}),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+    )
+    if action == "auth.microsoft.login":
+        return "microsoft"
+    if action == "auth.local_ad.login":
+        return "local_ad"
+    return None
+
+
+def user_is_externally_managed(db: Session, user: User) -> bool:
+    return external_auth_provider_for_user(db, user) is not None
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -83,6 +104,10 @@ def settings_page(
     retention_summary = (
         get_log_retention_summary(db) if section == "retention" else None
     )
+    external_user_providers = {
+        managed_user.id: external_auth_provider_for_user(db, managed_user)
+        for managed_user in users
+    }
     return render_template(
         db,
         "settings.html",
@@ -97,7 +122,7 @@ def settings_page(
             "active_settings": section,
             "status": request.query_params.get("status"),
             "retention_summary": retention_summary,
-            "user_is_externally_managed": user_is_externally_managed,
+            "external_user_providers": external_user_providers,
         },
     )
 
@@ -152,7 +177,10 @@ def update_user(
     target = db.get(User, target_user_id)
     if not target:
         raise HTTPException(status_code=404)
-    if user_is_externally_managed(target):
+    provider = external_auth_provider_for_user(db, target)
+    if provider is not None:
+        if target.auth_provider != provider:
+            target.auth_provider = provider
         raise HTTPException(
             status_code=400,
             detail="users managed by Microsoft 365 or Local AD cannot be edited here",

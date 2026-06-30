@@ -190,8 +190,9 @@
                 </tr>
             </thead>
             <tbody>
-                {% for managed_user in users %} {% set externally_managed =
-                user_is_externally_managed(managed_user) %}
+                {% for managed_user in users %} {% set external_provider =
+                external_user_providers.get(managed_user.id) %} {% set
+                externally_managed = external_provider is not none %}
                 <tr class="editable-row" data-editable-row>
                     <td>
                         <form
@@ -244,7 +245,7 @@
                             data-edit-control
                             disabled
                         >
-                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}></option>
+                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>
                                 User
                             </option>
                             <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>
@@ -259,8 +260,7 @@
                         >
                         {% if externally_managed %}
                         <div class="muted">
-                            {{ managed_user.auth_provider|replace('_', '
-                            ')|title }}
+                            {{ external_provider|replace('_', ' ')|title }}
                         </div>
                         {% endif %}
                     </td>

@@ -310,6 +310,41 @@ def test_externally_managed_users_cannot_be_edited_from_settings(monkeypatch, tm
     )
 
 
+def test_legacy_external_users_without_auth_provider_are_still_locked(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "legacy_external_user_settings") as session:
+        admin = seed_backup_source(session)
+        external_user = User(
+            id=uuid4(),
+            email="legacy-entra-user@example.com",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+            auth_provider=None,
+        )
+        session.add(external_user)
+        session.flush()
+        session.add(
+            AuditLog(
+                id=uuid4(),
+                user_id=external_user.id,
+                action="auth.microsoft.login",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get("/settings/manage-users")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert (
+        "Users managed by Microsoft 365 or Local AD cannot be edited here"
+        in response.text
+    )
+
+
 def test_backup_export_requires_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(
         settings, "branding_upload_dir", str(tmp_path / "branding-non-admin")
