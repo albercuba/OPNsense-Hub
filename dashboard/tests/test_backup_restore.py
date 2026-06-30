@@ -391,6 +391,32 @@ def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_
         app.dependency_overrides.clear()
 
 
+def test_non_admin_user_can_view_existing_companies_and_firewalls(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "non_admin_company_visibility") as session:
+        seed_backup_source(session)
+        member = User(
+            id=uuid4(),
+            email="member@example.com",
+            password_hash=hash_secret("MemberPassword123"),
+            role="user",
+        )
+        session.add(member)
+        session.commit()
+        configure_test_client(monkeypatch, session, member)
+        with TestClient(app) as client:
+            companies_response = client.get("/companies")
+            dashboard_response = client.get("/dashboard")
+        app.dependency_overrides.clear()
+
+    assert companies_response.status_code == 200
+    assert "Acme" in companies_response.text
+    assert "fw-acme-1" in companies_response.text
+    assert dashboard_response.status_code == 200
+    assert "fw-acme-1" in dashboard_response.text
+
+
 def test_backup_export_requires_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(
         settings, "branding_upload_dir", str(tmp_path / "branding-non-admin")

@@ -24,13 +24,7 @@ STATUS_COLORS = {
 
 def accessible_companies_for_user(db: Session, user: User) -> list[Company]:
     statement = select(Company).order_by(Company.name)
-    if user.role == "administrator":
-        return list(db.scalars(statement).all())
-    return list(
-        db.scalars(
-            statement.join(CompanyUser).where(CompanyUser.user_id == user.id)
-        ).all()
-    )
+    return list(db.scalars(statement).all())
 
 
 def accessible_devices_for_user(db: Session, user: User) -> list[Device]:
@@ -40,15 +34,7 @@ def accessible_devices_for_user(db: Session, user: User) -> list[Device]:
         .join(Company)
         .order_by(Company.name, Device.hostname)
     )
-    if user.role == "administrator":
-        return list(db.scalars(statement).all())
-    return list(
-        db.scalars(
-            statement.join(
-                CompanyUser, CompanyUser.company_id == Device.company_id
-            ).where(CompanyUser.user_id == user.id)
-        ).all()
-    )
+    return list(db.scalars(statement).all())
 
 
 def normalized_status(device: Device) -> str:

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import write_audit
+from ..dashboard import accessible_companies_for_user
 from ..database import get_db
 from ..deps import current_user, require_company
 from ..models import Company, CompanyUser, Device, EnrollmentCode, User
@@ -25,12 +26,7 @@ def list_companies(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
 ):
-    companies = db.scalars(
-        select(Company)
-        .join(CompanyUser)
-        .where(CompanyUser.user_id == user.id)
-        .order_by(Company.name)
-    ).all()
+    companies = accessible_companies_for_user(db, user)
     return [
         {"id": str(c.id), "name": c.name, "created_at": c.created_at.isoformat()}
         for c in companies
