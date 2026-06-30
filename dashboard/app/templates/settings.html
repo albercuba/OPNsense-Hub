@@ -190,7 +190,8 @@
                 </tr>
             </thead>
             <tbody>
-                {% for managed_user in users %}
+                {% for managed_user in users %} {% set externally_managed =
+                user_is_externally_managed(managed_user) %}
                 <tr class="editable-row" data-editable-row>
                     <td>
                         <form
@@ -243,7 +244,7 @@
                             data-edit-control
                             disabled
                         >
-                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>
+                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}></option>
                                 User
                             </option>
                             <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>
@@ -256,8 +257,15 @@
                             >{% if managed_user.mfa_enabled %}enabled{% else
                             %}ready{% endif %}</span
                         >
+                        {% if externally_managed %}
+                        <div class="muted">
+                            {{ managed_user.auth_provider|replace('_', '
+                            ')|title }}
+                        </div>
+                        {% endif %}
                     </td>
                     <td class="actions">
+                        {% if not externally_managed %}
                         <input
                             class="edit-field password-edit-field"
                             form="user-edit-{{ managed_user.id }}"
@@ -288,8 +296,14 @@
                         >
                             <i class="fa-solid fa-floppy-disk"></i>
                         </button>
-                        {% if managed_user.id != user.id and managed_user.email
-                        != protected_admin_email %}
+                        {% else %}
+                        <span
+                            class="protected-user"
+                            title="Users managed by Microsoft 365 or Local AD cannot be edited here"
+                            ><i class="fa-solid fa-lock"></i
+                        ></span>
+                        {% endif %} {% if managed_user.id != user.id and
+                        managed_user.email != protected_admin_email %}
                         <form
                             action="/settings/users/{{ managed_user.id }}/delete"
                             method="post"

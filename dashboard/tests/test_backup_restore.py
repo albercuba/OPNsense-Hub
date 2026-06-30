@@ -272,6 +272,44 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
     assert exported_key == "test-private-key"
 
 
+def test_externally_managed_users_cannot_be_edited_from_settings(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "external_user_settings") as session:
+        admin = seed_backup_source(session)
+        external_user = User(
+            id=uuid4(),
+            email="entra-user@example.com",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+            auth_provider="microsoft",
+        )
+        session.add(external_user)
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get("/settings/manage-users")
+            csrf_token = get_csrf(client, "/settings/manage-users")
+            update_response = client.post(
+                f"/settings/users/{external_user.id}",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": external_user.email,
+                    "first_name": "Changed",
+                    "last_name": "User",
+                    "role": "administrator",
+                    "password": "",
+                },
+            )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "cannot be edited here" in response.text
+    assert update_response.status_code == 400
+    assert (
+        update_response.json()["detail"]
+        == "users managed by Microsoft 365 or Local AD cannot be edited here"
+    )
+
+
 def test_backup_export_requires_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(
         settings, "branding_upload_dir", str(tmp_path / "branding-non-admin")

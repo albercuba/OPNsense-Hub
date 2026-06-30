@@ -47,6 +47,10 @@ from ..web import render_template, settings
 router = APIRouter()
 
 
+def user_is_externally_managed(user: User) -> bool:
+    return bool((user.auth_provider or "").strip())
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_redirect(user: Annotated[User, Depends(current_user)]):
     require_admin(user)
@@ -93,6 +97,7 @@ def settings_page(
             "active_settings": section,
             "status": request.query_params.get("status"),
             "retention_summary": retention_summary,
+            "user_is_externally_managed": user_is_externally_managed,
         },
     )
 
@@ -147,6 +152,11 @@ def update_user(
     target = db.get(User, target_user_id)
     if not target:
         raise HTTPException(status_code=404)
+    if user_is_externally_managed(target):
+        raise HTTPException(
+            status_code=400,
+            detail="users managed by Microsoft 365 or Local AD cannot be edited here",
+        )
     role = role if role in {"user", "administrator"} else "user"
     normalized_email = email.lower().strip()
     duplicate = db.scalar(

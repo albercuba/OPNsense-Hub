@@ -3,9 +3,18 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from app.main import app, current_user, get_db, login, logout, session_from_request, settings
+from app.main import (
+    app,
+    current_user,
+    get_db,
+    login,
+    logout,
+    session_from_request,
+    settings,
+)
 from app.models import IntegrationSettings, SessionToken, User
 from app.security import hash_secret, hash_session_token, utc_now
+from app.services.auth_service import upsert_external_user
 from fastapi import HTTPException, Response
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -36,6 +45,9 @@ class FakeDb:
         self.added.append(obj)
         if isinstance(obj, SessionToken):
             self.session = obj
+
+    def flush(self):
+        return None
 
     def commit(self):
         self.committed = True
@@ -112,6 +124,22 @@ def test_current_user_looks_up_user_from_hashed_session_token():
     assert current_user(make_request(token), cast(Session, db)).id == user.id
 
 
+def test_upsert_external_user_marks_auth_provider():
+    db = FakeDb()
+
+    user = upsert_external_user(
+        cast(Session, db),
+        "entra-user@example.org",
+        first_name="Entra",
+        last_name="User",
+        role="administrator",
+        auth_provider="microsoft",
+    )
+
+    assert user.auth_provider == "microsoft"
+    assert any(isinstance(item, User) for item in db.added)
+
+
 def test_logout_revokes_session_and_clears_cookie():
     user = User(id=uuid4(), email="admin@example.org", password_hash="hash")
     token = "session-token"
@@ -182,8 +210,8 @@ def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monke
         app.dependency_overrides.clear()
 
         assert response.status_code == 200
-        assert ("id=\"microsoft-login-button\"" in response.text) == expect_microsoft
-        assert ("formaction=\"/auth/local-ad\"" in response.text) == expect_local_ad
+        assert ('id="microsoft-login-button"' in response.text) == expect_microsoft
+        assert ('formaction="/auth/local-ad"' in response.text) == expect_local_ad
 
 
 def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
@@ -225,7 +253,13 @@ def test_microsoft_login_start_redirects_and_sets_pkce_cookies(monkeypatch):
     cookie_header = response.headers.get("set-cookie", "")
     assert "opnhub_ms_state=" in cookie_header
     assert "opnhub_ms_verifier=" in cookie_header
-
+    assert response.headers["location"].startswith(
+        "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?"
+    )
+    assert "login_hint=user%40example.com" in response.headers["location"]
+    cookie_header = response.headers.get("set-cookie", "")
+    assert "opnhub_ms_state=" in cookie_header
+    assert "opnhub_ms_verifier=" in cookie_header
 
 
 def test_dashboard_redirects_to_login_when_not_authenticated(monkeypatch):

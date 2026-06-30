@@ -34,6 +34,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    auth_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
     role: Mapped[str] = mapped_column(String(30), default="user", nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

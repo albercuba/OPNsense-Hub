@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, cast
+from typing import Annotated, cast
 
 import httpx
 import jwt
@@ -235,7 +235,12 @@ def microsoft_callback(
         response.delete_cookie("opnhub_ms_verifier")
         return response
     user = upsert_external_user(
-        db, email, first_name=first_name, last_name=last_name, role=role
+        db,
+        email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+        auth_provider="microsoft",
     )
     session_token = create_user_session(db, user)
     write_audit(db, request, "auth.microsoft.login", user=user)
@@ -276,7 +281,12 @@ def microsoft_login(
             detail="Microsoft account is not mapped to an allowed Entra group",
         )
     user = upsert_external_user(
-        db, email, first_name=first_name, last_name=last_name, role=role
+        db,
+        email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+        auth_provider="microsoft",
     )
     session_token = create_user_session(db, user)
     write_audit(db, request, "auth.microsoft.login", user=user)
@@ -316,7 +326,12 @@ def local_ad_login(
     existing = db.scalar(select(User).where(User.email == resolved_email.lower()))
     role = existing.role if existing else "user"
     user = upsert_external_user(
-        db, resolved_email, first_name=first_name, last_name=last_name, role=role
+        db,
+        resolved_email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+        auth_provider="local_ad",
     )
     session_token = create_user_session(db, user)
     write_audit(db, request, "auth.local_ad.login", user=user)

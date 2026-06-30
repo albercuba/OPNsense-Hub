@@ -57,12 +57,14 @@ def upsert_external_user(
     first_name: str | None = None,
     last_name: str | None = None,
     role: str | None = None,
+    auth_provider: str,
 ) -> User:
     normalized_email = email.strip().lower()
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
         existing.first_name = clean_optional(first_name) or existing.first_name
         existing.last_name = clean_optional(last_name) or existing.last_name
+        existing.auth_provider = auth_provider
         if role:
             existing.role = role
         return existing
@@ -72,6 +74,7 @@ def upsert_external_user(
         first_name=clean_optional(first_name),
         last_name=clean_optional(last_name),
         role=role or "user",
+        auth_provider=auth_provider,
     )
     db.add(user)
     db.flush()
