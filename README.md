@@ -80,6 +80,8 @@ INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=change-me
 ```
 
+`.env.example` now includes the full set of supported runtime variables, including retention, archive, rate-limit, health-check, migration, branding, and WireGuard-related settings.
+
 By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, restores enrolled peers from the database, disables IP forwarding inside the container, and installs an idempotent `wg0 -> wg0` forward-drop rule unless you explicitly opt out.
 
 Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
