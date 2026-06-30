@@ -17,14 +17,44 @@ from connect import (
 )
 
 
-def delete_path(path):
+def command_result(args, ok_codes=(0,)):
     try:
-        if path.exists():
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "command": " ".join(args),
+            "ok": False,
+            "error": str(exc),
+        }
+    return {
+        "command": " ".join(args),
+        "ok": result.returncode in ok_codes,
+        "returncode": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+
+
+def delete_path(path):
+    existed = path.exists()
+    try:
+        if existed:
             path.unlink()
-            return True
-    except Exception:
-        return False
-    return False
+        return {"path": str(path), "ok": True, "existed": existed, "removed": existed}
+    except Exception as exc:
+        return {
+            "path": str(path),
+            "ok": False,
+            "existed": existed,
+            "removed": False,
+            "error": str(exc),
+        }
 
 
 def set_child_text(parent, tag, value):
@@ -67,24 +97,31 @@ def remove_local_artifacts(reason=None, clear_settings=True):
     wireguard = (
         state.get("wireguard") if isinstance(state.get("wireguard"), dict) else None
     )
+    commands = []
     if wireguard:
-        try:
-            subprocess.run(
-                ["route", "delete", "-host", hub_route_for(wireguard)],
-                capture_output=True,
-                text=True,
-                timeout=10,
+        commands.append(
+            command_result(
+                ["route", "delete", "-host", hub_route_for(wireguard)], ok_codes=(0, 1)
             )
-        except Exception:
-            pass
+        )
 
-    subprocess.run(
-        ["ifconfig", WG_IFACE, "destroy"], capture_output=True, text=True, timeout=10
-    )
-    remove_heartbeat_cron()
+    # Equivalent to: ifconfig wgopnhub destroy
+    commands.append(command_result(["ifconfig", WG_IFACE, "destroy"], ok_codes=(0, 1)))
+
+    cron_removed = False
+    try:
+        # Equivalent to: crontab -l | grep -v "OPNsense Hub heartbeat" | crontab -
+        remove_heartbeat_cron()
+        cron_removed = True
+    except Exception:
+        cron_removed = False
 
     cleanup = cleanup_opnsense_integration()
     settings_cleared = clear_plugin_settings() if clear_settings else False
+    # Equivalent to:
+    # rm -f /usr/local/etc/wireguard/opnsensehub.conf
+    # rm -f /var/db/opnsensehub/wg_private.key
+    # rm -f /var/db/opnsensehub/state.json
     removed_files = {
         "wireguard_config": delete_path(WG_CONF),
         "private_key": delete_path(KEY_FILE),
@@ -97,6 +134,8 @@ def remove_local_artifacts(reason=None, clear_settings=True):
         "reason": reason,
         "interface": cleanup.get("interface_key"),
         "config_changed": cleanup.get("config_changed", False),
+        "commands": commands,
+        "cron_removed": cron_removed,
         "settings_cleared": settings_cleared,
         "removed_files": removed_files,
         "device_id": state.get("device_id"),
