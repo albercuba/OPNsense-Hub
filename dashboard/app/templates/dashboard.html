@@ -81,20 +81,6 @@
                 ></option>
             </datalist>
         </label>
-        <label class="checkbox-label dashboard-filter-checkbox">
-            <input
-                type="checkbox"
-                name="include_revoked"
-                value="true"
-                {%
-                if
-                filters.include_revoked
-                %}checked{%
-                endif
-                %}
-            />
-            Show revoked
-        </label>
         <div class="dashboard-filter-actions">
             <button class="button" type="submit">
                 <i class="fa-solid fa-filter"></i> Apply filters

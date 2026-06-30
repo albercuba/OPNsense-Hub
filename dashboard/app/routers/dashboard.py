@@ -32,7 +32,6 @@ def dashboard_page(
     user: Annotated[User, Depends(current_user)],
     company_id: str | None = None,
     status: str | None = None,
-    include_revoked: str | None = None,
 ):
     context = build_dashboard_context(
         db,
@@ -40,7 +39,6 @@ def dashboard_page(
         {
             "company_id": company_id,
             "status": status,
-            "include_revoked": include_revoked,
         },
     )
     context.update({"request": request, "user": user, "active_page": "dashboard"})

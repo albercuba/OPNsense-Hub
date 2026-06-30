@@ -216,19 +216,12 @@ def build_dashboard_context(
 
     selected_company_id = (filters.get("company_id") or "").strip()
     selected_status = (filters.get("status") or "").strip().lower()
-    include_revoked = str(filters.get("include_revoked") or "").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
     filtered_devices = [
         device
         for device in devices
         if (not selected_company_id or str(device.company_id) == selected_company_id)
         and status_filter_matches(device, selected_status or None)
-        and (include_revoked or active_device(device))
     ]
 
     visible_company_ids = {device.company_id for device in filtered_devices}
@@ -238,14 +231,8 @@ def build_dashboard_context(
         if company.id in visible_company_ids or str(company.id) == selected_company_id
     ]
 
-    status_count_devices = [
-        device
-        for device in devices
-        if (not selected_company_id or str(device.company_id) == selected_company_id)
-        and status_filter_matches(device, selected_status or None)
-    ]
     status_counts = {"online": 0, "warning": 0, "critical": 0, "revoked": 0, "other": 0}
-    for device in status_count_devices:
+    for device in filtered_devices:
         status_counts[normalized_status(device)] += 1
 
     active_devices = [device for device in filtered_devices if active_device(device)]
@@ -639,7 +626,6 @@ def build_dashboard_context(
         "filters": {
             "company_id": selected_company_id,
             "status": selected_status,
-            "include_revoked": include_revoked,
         },
         "filter_companies": companies,
         "summary": {
