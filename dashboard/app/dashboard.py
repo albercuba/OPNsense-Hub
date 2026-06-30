@@ -238,8 +238,14 @@ def build_dashboard_context(
         if company.id in visible_company_ids or str(company.id) == selected_company_id
     ]
 
+    status_count_devices = [
+        device
+        for device in devices
+        if (not selected_company_id or str(device.company_id) == selected_company_id)
+        and status_filter_matches(device, selected_status or None)
+    ]
     status_counts = {"online": 0, "warning": 0, "critical": 0, "revoked": 0, "other": 0}
-    for device in filtered_devices:
+    for device in status_count_devices:
         status_counts[normalized_status(device)] += 1
 
     active_devices = [device for device in filtered_devices if active_device(device)]
