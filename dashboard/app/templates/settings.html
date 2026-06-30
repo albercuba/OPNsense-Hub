@@ -920,17 +920,17 @@
     <form
         action="/settings/retention/export"
         method="post"
-        class="settings-grid-form"
+        class="settings-form narrow-form"
     >
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <label class="form-row"
             >Export rows up to cutoff ({{ app_timezone_name }})
             <input type="datetime-local" name="cutoff_at" required
         /></label>
-        <label class="checkbox-label"
+        <label class="checkbox-label form-row"
             ><input type="checkbox" name="include_audit_logs" checked /> Include audit logs</label
         >
-        <label class="checkbox-label"
+        <label class="checkbox-label form-row"
             ><input type="checkbox" name="include_device_events" checked /> Include device events</label
         >
         <label class="form-row"
@@ -942,16 +942,14 @@
                 placeholder="Leave blank for an unencrypted archive"
             />
         </label>
-        <p class="muted full-row">
+        <p class="muted">
             ZIP archives contain separate `audit_logs.jsonl` and
             `device_events.jsonl` files plus `manifest.json`. Optional
             passphrase protection reuses the Hub backup encryption format.
         </p>
-        <div class="form-row submit-row">
-            <button class="button backup-action" type="submit">
-                <i class="fa-solid fa-file-zipper"></i> Export log archive
-            </button>
-        </div>
+        <button class="button backup-action" type="submit">
+            <i class="fa-solid fa-file-zipper"></i> Export log archive
+        </button>
     </form>
 </section>
 {% endif %} {% endblock %}
