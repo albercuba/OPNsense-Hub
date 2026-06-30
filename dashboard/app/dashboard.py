@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .backups import backup_due, backup_request_pending
 from .integration import email_settings_configured
-from .models import Company, CompanyUser, Device, DeviceEvent, IntegrationSettings, User
+from .models import Company, Device, DeviceEvent, IntegrationSettings, User
 from .security import utc_now
 
 DASHBOARD_EVENT_LIMIT = 25

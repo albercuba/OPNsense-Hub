@@ -1,6 +1,5 @@
 import io
 import json
-import os
 import zipfile
 from contextlib import contextmanager
 from datetime import timedelta
