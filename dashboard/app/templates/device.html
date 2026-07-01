@@ -124,37 +124,19 @@
                         >
                             <option
                                 value="hours"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="hours"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
                             >
-                                Hours
+</option>                                Hours
                             </option>
                             <option
                                 value="days"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="days"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
                             >
                                 Days
                             </option>
                             <option
                                 value="months"
-                                {%
-                                if
-                                device.backup_interval_unit=""
-                                ="months"
-                                %}selected{%
-                                endif
-                                %}
+                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
                             >
                                 Months
                             </option>
