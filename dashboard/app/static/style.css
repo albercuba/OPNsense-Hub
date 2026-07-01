@@ -938,10 +938,11 @@ body {
     padding: 0 0.75rem;
 }
 .side-menu {
-    top: 5.5rem;
+    top: auto;
     gap: 0.25rem;
-    margin-top: 0px;
+    margin-top: 12px;
     padding: 0.5rem;
+    postition: static;
 }
 .side-menu-link,
 .side-menu-sublink {
