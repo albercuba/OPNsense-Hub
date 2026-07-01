@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import io
+import ipaddress
 import json
 import os
 import stat
@@ -73,6 +74,18 @@ def backup_json_value(value: object) -> object:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(
+        value,
+        (
+            ipaddress.IPv4Address,
+            ipaddress.IPv6Address,
+            ipaddress.IPv4Network,
+            ipaddress.IPv6Network,
+            ipaddress.IPv4Interface,
+            ipaddress.IPv6Interface,
+        ),
+    ):
+        return str(value)
     return value
 
 

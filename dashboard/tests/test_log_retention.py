@@ -1,4 +1,5 @@
 import io
+import ipaddress
 import json
 import zipfile
 from contextlib import contextmanager
@@ -315,17 +316,17 @@ def test_export_log_archive_exports_audit_logs_jsonl(monkeypatch):
     with sqlite_session() as session:
         admin, company, device = seed_log_data(session)
         now = datetime(2026, 6, 30, 12, 0, tzinfo=timezone.utc)
-        session.add(
-            AuditLog(
-                id=uuid4(),
-                user_id=admin.id,
-                company_id=company.id,
-                device_id=device.id,
-                action="device.view",
-                created_at=now - timedelta(days=40),
-            )
+        log_row = AuditLog(
+            id=uuid4(),
+            user_id=admin.id,
+            company_id=company.id,
+            device_id=device.id,
+            action="device.view",
+            created_at=now - timedelta(days=40),
         )
+        session.add(log_row)
         session.commit()
+        log_row.ip_address = ipaddress.ip_address("192.0.2.10")
         selection = create_log_archive_selection(
             now.isoformat(),
             include_audit_logs=True,
@@ -347,6 +348,7 @@ def test_export_log_archive_exports_audit_logs_jsonl(monkeypatch):
             for line in bundle.read("audit_logs.jsonl").decode().splitlines()
         ]
     assert rows[0]["action"] == "device.view"
+    assert rows[0]["ip_address"] == "192.0.2.10"
 
 
 def test_export_log_archive_exports_device_events_jsonl(monkeypatch):
