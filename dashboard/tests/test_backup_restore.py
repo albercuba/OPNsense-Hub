@@ -20,7 +20,7 @@ from app.models import (
     SessionToken,
     User,
 )
-from app.security import hash_secret, hash_session_token, utc_now
+from app.security import hash_secret, hash_session_token, totp_code, utc_now
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import INET
@@ -385,8 +385,30 @@ def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_
                 apply.headers["location"]
                 == "/settings/manage-users?status=user-updated"
             )
-            assert managed_user.mfa_enabled is True
+            assert managed_user.mfa_enabled is False
             assert managed_user.mfa_secret is not None
+
+            configure_test_client(monkeypatch, session, managed_user)
+            account_page = client.get("/account/security")
+            assert account_page.status_code == 200
+            assert "data:image/svg+xml;base64," in account_page.text
+            enable_csrf = get_csrf(client, "/account/security")
+            enable_response = client.post(
+                "/account/security/mfa/enable",
+                data={
+                    "csrf_token": enable_csrf,
+                    "secret": secret,
+                    "code": totp_code(secret),
+                },
+                follow_redirects=False,
+            )
+            assert enable_response.status_code == 303
+            assert (
+                enable_response.headers["location"]
+                == "/account/security?status=mfa-enabled"
+            )
+            session.refresh(managed_user)
+            assert managed_user.mfa_enabled is True
         app.dependency_overrides.clear()
 
 

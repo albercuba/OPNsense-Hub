@@ -108,6 +108,9 @@ def render_account_security_template(
     error: str | None = None,
     setup_secret: str | None = None,
 ):
+    effective_setup_secret = setup_secret
+    if effective_setup_secret is None and not user.mfa_enabled:
+        effective_setup_secret = decrypt_secret(user.mfa_secret)
     return render_template(
         db,
         "account_security.html",
@@ -118,9 +121,11 @@ def render_account_security_template(
             "status": request.query_params.get("status"),
             "error": error,
             "local_mfa_available": local_user_supports_hub_mfa(user),
-            "setup_secret": setup_secret,
-            "qr_code_data_url": totp_qr_code_data_url(setup_secret, user.email)
-            if setup_secret
+            "setup_secret": effective_setup_secret,
+            "qr_code_data_url": totp_qr_code_data_url(
+                effective_setup_secret, user.email
+            )
+            if effective_setup_secret
             else None,
         },
         status_code=status_code,

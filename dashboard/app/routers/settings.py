@@ -305,7 +305,7 @@ def apply_manage_user_mfa(
             error="A valid MFA secret is required",
         )
     managed_user.mfa_secret = encrypt_secret(normalized_secret)
-    managed_user.mfa_enabled = True
+    managed_user.mfa_enabled = False
     write_audit(db, request, "settings.user.mfa.apply", user=user)
     db.commit()
     return RedirectResponse(
