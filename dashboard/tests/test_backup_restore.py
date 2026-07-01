@@ -388,6 +388,12 @@ def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_
             assert managed_user.mfa_enabled is False
             assert managed_user.mfa_secret is not None
 
+            configure_test_client(monkeypatch, session, admin)
+            pending_page = client.get(f"/settings/users/{managed_user.id}/mfa")
+            assert pending_page.status_code == 200
+            assert "pending user confirmation" in pending_page.text
+            assert "data:image/svg+xml;base64," in pending_page.text
+
             configure_test_client(monkeypatch, session, managed_user)
             account_page = client.get("/account/security")
             assert account_page.status_code == 200

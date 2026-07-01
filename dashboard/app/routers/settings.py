@@ -30,7 +30,7 @@ from ..models import (
 )
 from ..security import generate_totp_secret, hash_secret, utc_now
 from ..security.rate_limit import apply_rate_limit
-from ..security.secrets import encrypt_secret, store_secret
+from ..security.secrets import decrypt_secret, encrypt_secret, store_secret
 from ..services.backup_service import (
     export_backup_bundle,
     parse_backup_bundle,
@@ -91,6 +91,9 @@ def render_user_mfa_template(
             status_code=400,
             detail="users managed by Microsoft 365 or Local AD must configure MFA with their identity provider",
         )
+    effective_setup_secret = setup_secret
+    if effective_setup_secret is None and not managed_user.mfa_enabled:
+        effective_setup_secret = decrypt_secret(managed_user.mfa_secret)
     return render_template(
         db,
         "settings_user_mfa.html",
@@ -101,9 +104,13 @@ def render_user_mfa_template(
             "active_page": "settings",
             "active_settings": "manage-users",
             "error": error,
-            "setup_secret": setup_secret,
-            "qr_code_data_url": totp_qr_code_data_url(setup_secret, managed_user.email)
-            if setup_secret
+            "setup_secret": effective_setup_secret,
+            "pending_mfa_setup": bool(effective_setup_secret)
+            and not managed_user.mfa_enabled,
+            "qr_code_data_url": totp_qr_code_data_url(
+                effective_setup_secret, managed_user.email
+            )
+            if effective_setup_secret
             else None,
         },
         status_code=status_code,
