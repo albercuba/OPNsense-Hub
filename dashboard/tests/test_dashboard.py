@@ -349,7 +349,7 @@ def test_dashboard_admin_sees_all_devices(monkeypatch, fixed_now):
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
 
-    context = build_dashboard_context(db, seeded["admin"], {"include_revoked": "true"})
+    context = build_dashboard_context(db, seeded["admin"], {})
 
     assert context["summary"]["total_firewalls"] == 6
     assert {row["company"].name for row in context["company_overview"]} == {"Alpha Co", "Beta Co"}
@@ -360,7 +360,7 @@ def test_dashboard_summary_counts_are_correct(monkeypatch, fixed_now):
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
 
-    context = build_dashboard_context(db, seeded["member"], {"include_revoked": "true"})
+    context = build_dashboard_context(db, seeded["member"], {})
 
     assert context["summary"]["online"] == 1
     assert context["summary"]["warning"] == 1
@@ -467,7 +467,7 @@ def test_dashboard_company_filter_does_not_leak_inaccessible_company(monkeypatch
     context = build_dashboard_context(
         db,
         seeded["member"],
-        {"company_id": str(seeded["company_b"].id), "include_revoked": "true"},
+        {"company_id": str(seeded["company_b"].id)},
     )
 
     assert context["summary"]["total_firewalls"] == 0
@@ -486,16 +486,15 @@ def test_dashboard_status_filter_works(monkeypatch, fixed_now):
     assert context["summary"]["critical"] == 1
 
 
-def test_dashboard_include_revoked_filter_works(monkeypatch, fixed_now):
+def test_dashboard_includes_revoked_firewalls(monkeypatch, fixed_now):
     seeded = seed_dashboard_data(fixed_now)
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
 
-    without_revoked = build_dashboard_context(db, seeded["admin"], {})
-    with_revoked = build_dashboard_context(db, seeded["admin"], {"include_revoked": "true"})
+    context = build_dashboard_context(db, seeded["admin"], {})
 
-    assert without_revoked["summary"]["revoked"] == 0
-    assert with_revoked["summary"]["revoked"] == 1
+    assert context["summary"]["revoked"] == 1
+    assert "alpha-revoked" in context["device_filter_options"]["hostnames"]
 
 
 def test_dashboard_renders_when_zero_devices(monkeypatch, fixed_now):

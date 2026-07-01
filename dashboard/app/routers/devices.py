@@ -533,8 +533,16 @@ def delete_revoked_device(
             status_code=400, detail="only revoked firewalls can be removed"
         )
     company_id = device.company_id
+    device_id_for_audit = device.id
     db.execute(delete(DeviceEvent).where(DeviceEvent.device_id == device.id))
-    write_audit(db, request, "device.delete_revoked", user=user, company_id=company_id)
+    write_audit(
+        db,
+        request,
+        "device.delete_revoked",
+        user=user,
+        company_id=company_id,
+        device_id=device_id_for_audit,
+    )
     db.delete(device)
     db.commit()
     if not redirect_to.startswith("/") or redirect_to.startswith("//"):

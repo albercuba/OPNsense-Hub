@@ -13,6 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from connect import PLUGIN_VERSION, license_metadata, load_state, save_state
 from firmware_status import collect_firmware_status
+from remove import remove_local_artifacts
 
 STATE_FILE = Path("/var/db/opnsensehub/state.json")
 CONFIG_XML = Path("/conf/config.xml")
@@ -142,6 +143,14 @@ def main():
     except urllib.error.HTTPError as exc:
         state["last_error"] = f"heartbeat failed with HTTP {exc.code}"
         save_state(state)
+        if exc.code in (401, 404):
+            result = remove_local_artifacts(reason=state["last_error"])
+            result["status"] = "revoked"
+            result["message"] = (
+                "Hub rejected this device; removed local OPNsense Hub tunnel and state"
+            )
+            print(json.dumps(result))
+            sys.exit(1)
         print(
             json.dumps(
                 {

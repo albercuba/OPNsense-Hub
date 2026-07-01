@@ -89,11 +89,95 @@ Branding uploads are stored in the `opnsense_hub_branding` Docker volume and ser
 ## Exact dashboard commands
 
 ```sh
-cd /Projects/OPNsense-Hub
+cd /path/to/OPNsense-Hub
 cp .env.example .env
 docker compose config
 docker compose up --build
 ```
+
+## Docker Compose deployment
+
+These steps deploy the Hub with the included Compose stack, PostgreSQL, persistent WireGuard state, persistent branding uploads, and optional Caddy TLS reverse proxy.
+
+1. Prepare the host:
+
+   - Install Docker Engine with the Compose plugin.
+   - Ensure `/dev/net/tun` exists and the host allows containers to use `NET_ADMIN`.
+   - Open inbound TCP `80`/`443` for the reverse proxy and UDP `51820` for WireGuard.
+   - Point your Hub DNS name, for example `hub.example.com`, at the Docker host.
+
+2. Create and edit the environment file:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   Set production values before starting the stack:
+
+   ```text
+   APP_ENV=production
+   PUBLIC_URL=https://hub.example.com
+   HUB_WG_ENDPOINT=hub.example.com:51820
+   SECRET_KEY=<long-random-secret>
+   SECRET_ENCRYPTION_KEY=<separate-long-random-secret>
+   INITIAL_ADMIN_EMAIL=<admin-email>
+   INITIAL_ADMIN_PASSWORD=<temporary-strong-password>
+   SESSION_SECURE=true
+   WG_DRY_RUN=false
+   ```
+
+   If you change the PostgreSQL username, password, database, or service name, keep `DATABASE_URL` in `.env` aligned with the `opnsense-hub-db` environment in `docker-compose.yml`.
+
+3. Configure the reverse proxy profile when using the bundled Caddy example:
+
+   - Edit `deploy/Caddyfile` and replace `hub.example.com` plus the email address.
+   - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service.
+
+4. Validate the Compose file:
+
+   ```sh
+   docker compose config
+   ```
+
+5. Start the stack without the bundled reverse proxy when TLS is handled elsewhere:
+
+   ```sh
+   docker compose up -d --build
+   ```
+
+   Or start it with the bundled Caddy reverse proxy:
+
+   ```sh
+   docker compose --profile reverse-proxy up -d --build
+   ```
+
+6. Check service status and logs:
+
+   ```sh
+   docker compose ps
+   docker compose logs -f opnsense-hub-api
+   ```
+
+7. Back up the persistent Docker volumes:
+
+   - `opnsense_hub_db` for PostgreSQL data.
+   - `opnsense_hub_wg` for the Hub WireGuard server key and config.
+   - `opnsense_hub_branding` for uploaded branding assets.
+   - `opnsense_hub_caddy` when using the bundled Caddy profile.
+
+   Losing the WireGuard volume changes the Hub server key and requires re-enrollment or careful key rotation for existing firewalls.
+
+8. Upgrade an existing deployment:
+
+   ```sh
+   git pull
+   docker compose config
+   docker compose up -d --build
+   ```
+
+   Fresh databases run migrations automatically on startup. Existing databases should keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` unless migrations are managed manually.
+
+After the stack is running, open `PUBLIC_URL`, sign in with the initial admin credentials, change the temporary password, create a company, generate an enrollment OTP, and enroll the OPNsense firewall through `Services > OPNsense Hub`.
 
 ## WireGuard production notes
 

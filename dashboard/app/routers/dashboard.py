@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,14 @@ from ..web import render_template
 
 router = APIRouter()
 
+AUDIT_ACTION_LABELS = {
+    "device.enroll": "Firewall added",
+    "device.revoke": "Firewall revoked",
+    "device.delete_revoked": "Firewall removed",
+    "device.view": "Firewall viewed",
+    "device.proxy.open": "Firewall UI opened",
+}
+
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_page(
@@ -24,7 +32,6 @@ def dashboard_page(
     user: Annotated[User, Depends(current_user)],
     company_id: str | None = None,
     status: str | None = None,
-    include_revoked: str | None = None,
 ):
     context = build_dashboard_context(
         db,
@@ -32,7 +39,6 @@ def dashboard_page(
         {
             "company_id": company_id,
             "status": status,
-            "include_revoked": include_revoked,
         },
     )
     context.update({"request": request, "user": user, "active_page": "dashboard"})
@@ -87,10 +93,10 @@ def audit_logs_page(
     user: Annotated[User, Depends(current_user)],
 ):
     require_admin(user)
-    access_actions = {"device.view", "device.proxy.open"}
+    audit_actions = set(AUDIT_ACTION_LABELS)
     audit_entries = db.scalars(
         select(AuditLog)
-        .where(AuditLog.action.in_(access_actions))
+        .where(AuditLog.action.in_(audit_actions))
         .order_by(AuditLog.created_at.desc())
         .limit(500)
     ).all()
@@ -131,9 +137,9 @@ def audit_logs_page(
             "user": users_by_id.get(entry.user_id),
             "company": companies_by_id.get(entry.company_id),
             "device": devices_by_id.get(entry.device_id),
+            "action_label": AUDIT_ACTION_LABELS.get(entry.action, entry.action),
         }
         for entry in audit_entries
-        if entry.device_id is not None
     ]
     usernames = sorted(
         {

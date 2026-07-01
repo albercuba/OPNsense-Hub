@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .backups import backup_due, backup_request_pending
 from .integration import email_settings_configured
-from .models import Company, CompanyUser, Device, DeviceEvent, IntegrationSettings, User
+from .models import Company, Device, DeviceEvent, IntegrationSettings, User
 from .security import utc_now
 
 DASHBOARD_EVENT_LIMIT = 25
@@ -216,19 +216,12 @@ def build_dashboard_context(
 
     selected_company_id = (filters.get("company_id") or "").strip()
     selected_status = (filters.get("status") or "").strip().lower()
-    include_revoked = str(filters.get("include_revoked") or "").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
     filtered_devices = [
         device
         for device in devices
         if (not selected_company_id or str(device.company_id) == selected_company_id)
         and status_filter_matches(device, selected_status or None)
-        and (include_revoked or active_device(device))
     ]
 
     visible_company_ids = {device.company_id for device in filtered_devices}
@@ -633,7 +626,6 @@ def build_dashboard_context(
         "filters": {
             "company_id": selected_company_id,
             "status": selected_status,
-            "include_revoked": include_revoked,
         },
         "filter_companies": companies,
         "summary": {
