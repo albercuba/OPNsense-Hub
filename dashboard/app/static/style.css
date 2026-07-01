@@ -940,7 +940,7 @@ body {
 .side-menu {
     top: 4.5rem;
     gap: 0.25rem;
-    margin-top: 0.75rem;
+    margin-top: 0;
     padding: 0.5rem;
 }
 .side-menu-link,
