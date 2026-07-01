@@ -1,3 +1,4 @@
+import csv
 import io
 import ipaddress
 import json
@@ -312,7 +313,7 @@ def test_get_log_retention_summary_reports_counts(monkeypatch):
     assert summary["device_events"].rows_older_than_cutoff == 1
 
 
-def test_export_log_archive_exports_audit_logs_jsonl(monkeypatch):
+def test_export_log_archive_exports_audit_logs_csv(monkeypatch):
     with sqlite_session() as session:
         admin, company, device = seed_log_data(session)
         now = datetime(2026, 6, 30, 12, 0, tzinfo=timezone.utc)
@@ -341,17 +342,14 @@ def test_export_log_archive_exports_audit_logs_jsonl(monkeypatch):
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
         names = set(bundle.namelist())
         assert "manifest.json" in names
-        assert "audit_logs.jsonl" in names
-        assert "device_events.jsonl" not in names
-        rows = [
-            json.loads(line)
-            for line in bundle.read("audit_logs.jsonl").decode().splitlines()
-        ]
+        assert "audit_logs.csv" in names
+        assert "device_events.csv" not in names
+        rows = list(csv.DictReader(io.StringIO(bundle.read("audit_logs.csv").decode())))
     assert rows[0]["action"] == "device.view"
     assert rows[0]["ip_address"] == "192.0.2.10"
 
 
-def test_export_log_archive_exports_device_events_jsonl(monkeypatch):
+def test_export_log_archive_exports_device_events_csv(monkeypatch):
     with sqlite_session() as session:
         _admin, _company, device = seed_log_data(session)
         now = datetime(2026, 6, 30, 12, 0, tzinfo=timezone.utc)
@@ -376,10 +374,9 @@ def test_export_log_archive_exports_device_events_jsonl(monkeypatch):
 
     assert manifest["row_counts"]["device_events"] == 1
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-        rows = [
-            json.loads(line)
-            for line in bundle.read("device_events.jsonl").decode().splitlines()
-        ]
+        rows = list(
+            csv.DictReader(io.StringIO(bundle.read("device_events.csv").decode()))
+        )
     assert rows[0]["event_type"] == "heartbeat"
 
 
@@ -419,7 +416,7 @@ def test_export_log_archive_exports_both_tables_and_manifest(monkeypatch):
     assert manifest["included_tables"] == ["audit_logs", "device_events"]
     assert manifest["selected_cutoff_at"] == now.isoformat()
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-        assert {"manifest.json", "audit_logs.jsonl", "device_events.jsonl"}.issubset(
+        assert {"manifest.json", "audit_logs.csv", "device_events.csv"}.issubset(
             set(bundle.namelist())
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import io
 import json
 import logging
@@ -288,10 +289,15 @@ def create_log_archive_selection(
     )
 
 
-def _jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
-    return "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode(
-        "utf-8"
-    )
+def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
+    if not rows:
+        return b""
+    output = io.StringIO()
+    fieldnames = list(rows[0].keys())
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue().encode("utf-8")
 
 
 def _archive_manifest(
@@ -357,9 +363,9 @@ def export_log_archive(
             "manifest.json", json.dumps(manifest, indent=2, sort_keys=True)
         )
         if selection.include_audit_logs:
-            archive.writestr("audit_logs.jsonl", _jsonl_bytes(audit_logs_rows))
+            archive.writestr("audit_logs.csv", _csv_bytes(audit_logs_rows))
         if selection.include_device_events:
-            archive.writestr("device_events.jsonl", _jsonl_bytes(device_event_rows))
+            archive.writestr("device_events.csv", _csv_bytes(device_event_rows))
     raw_archive = content.getvalue()
     if passphrase and passphrase.strip():
         return (
