@@ -10,6 +10,20 @@ OPNsense Hub is an independent project. It is not affiliated with, endorsed by, 
 
 See `docs/architecture.md`.
 
+## Screenshots
+
+### Dashboard
+
+![OPNsense Hub dashboard](docs/screenshots/2026-07-02%2012_06_48-WhatsApp.png)
+
+### Firewall settings
+
+![OPNsense Hub firewall settings](docs/screenshots/2026-07-02%2012_07_44-Greenshot.png)
+
+### Account security
+
+![OPNsense Hub account security](docs/screenshots/2026-07-02%2012_08_18-WhatsApp.png)
+
 ## License and notices
 
 This project is licensed under the BSD 2-Clause License. See `LICENSE`.
