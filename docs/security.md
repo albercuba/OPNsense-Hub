@@ -8,6 +8,8 @@
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.
 - Hub only installs `/32` WireGuard `AllowedIPs` for each firewall tunnel IP and never routes customer LAN subnets.
+- Startup validation now fails closed on unsafe forwarding/isolation combinations, such as enabling IP forwarding while moving network control outside the app or disabling inline isolation rule management.
+- When inline isolation is enabled, startup explicitly verifies that the `wg0 -> wg0` drop rule exists after installation.
 - The OPNsense plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the tunnel.
 - Hub disables IPv4 and IPv6 forwarding by default unless `HUB_ENABLE_IP_FORWARDING=true`.
 - When enabled, Hub startup installs an idempotent `wg0 -> wg0` forward-drop isolation rule using nftables or iptables so one firewall cannot talk to another through the Hub.
@@ -27,7 +29,7 @@ This is intentional:
 - customer LANs must never be routed through the management overlay
 - overlapping customer LANs remain safe because they are never advertised as WireGuard `AllowedIPs`
 
-The `wg0 -> wg0` forward-drop rule is a defense-in-depth control that prevents firewall-to-firewall forwarding on the Hub even if OS forwarding or other host routing changes are introduced later.
+The `wg0 -> wg0` forward-drop rule is a defense-in-depth control that prevents firewall-to-firewall forwarding on the Hub even if OS forwarding or other host routing changes are introduced later. The runtime now hard-fails if unsafe forwarding/isolation settings are combined, and the `/32`-only peer-route invariant is covered by unit tests so customer LAN CIDRs are not added to peer routes by accident.
 
 ## Redacted/sensitive fields
 

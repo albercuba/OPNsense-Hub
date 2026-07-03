@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 from app.wireguard import (
     WireGuardError,
+    client_allowed_ips,
     next_tunnel_ip,
     peer_allowed_ips,
     validate_hub_wireguard_config,
@@ -70,6 +71,20 @@ def test_validate_public_key_rejects_shell_input():
 
 def test_peer_allowed_ips_is_tunnel_ip_only():
     assert peer_allowed_ips("100.96.0.10") == "100.96.0.10/32"
+    assert "/24" not in peer_allowed_ips("100.96.0.10")
+    assert "/16" not in peer_allowed_ips("100.96.0.10")
+
+
+def test_client_allowed_ips_is_hub_tunnel_only(monkeypatch):
+    monkeypatch.setattr(
+        "app.wireguard.get_validated_hub_wireguard_config",
+        lambda: SimpleNamespace(
+            hub_ip=__import__("ipaddress").ip_address("100.96.0.1")
+        ),
+    )
+    assert client_allowed_ips() == "100.96.0.1/32"
+    assert "/24" not in client_allowed_ips()
+    assert "/16" not in client_allowed_ips()
 
 
 def test_peer_allowed_ips_rejects_network_routes():

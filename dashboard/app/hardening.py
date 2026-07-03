@@ -56,6 +56,24 @@ def _trusted_proxy_networks(
     return tuple(networks)
 
 
+def isolation_invariant_errors(settings: Settings) -> list[str]:
+    errors: list[str] = []
+    mode = settings.network_control_mode.strip().lower()
+    if settings.hub_enable_ip_forwarding and mode == "external":
+        errors.append(
+            "Do not set HUB_ENABLE_IP_FORWARDING=true with NETWORK_CONTROL_MODE=external unless isolation is enforced and verified outside the app"
+        )
+    if (
+        settings.hub_enable_ip_forwarding
+        and mode == "inline"
+        and not settings.hub_manage_firewall_rules
+    ):
+        errors.append(
+            "Set HUB_MANAGE_FIREWALL_RULES=true when HUB_ENABLE_IP_FORWARDING=true in NETWORK_CONTROL_MODE=inline"
+        )
+    return errors
+
+
 def runtime_validation_errors(settings: Settings) -> list[str]:
     errors: list[str] = []
     public_url = urlparse(settings.public_url)
@@ -140,6 +158,7 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append(
             f"Set DEVICE_EVENT_RETENTION_DAYS to at least {settings.device_event_min_retention_days}"
         )
+    errors.extend(isolation_invariant_errors(settings))
     return errors
 
 
@@ -208,6 +227,24 @@ def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
 
 
 NFT_DROP_RULE = 'iifname "{iface}" oifname "{iface}" counter drop'
+
+
+def verify_nftables_rule_present(settings: Settings, runner=run_command) -> None:
+    iface = settings.wg_interface
+    chain_args = ["nft", "list", "chain", "inet", "opnsense_hub", "forward"]
+    chain_result = runner(chain_args)
+    ensure_command_ok(chain_result, chain_args)
+    rule_text = NFT_DROP_RULE.format(iface=iface)
+    if rule_text not in f"{chain_result.stdout}\n{chain_result.stderr}":
+        raise StartupHardeningError(
+            f"Hub firewall isolation rule for {iface} is missing after installation"
+        )
+
+
+def verify_iptables_rule_present(settings: Settings, runner=run_command) -> None:
+    iface = settings.wg_interface
+    check_args = ["iptables", "-C", "FORWARD", "-i", iface, "-o", iface, "-j", "DROP"]
+    ensure_command_ok(runner(check_args), check_args)
 
 
 def install_nftables_rules(settings: Settings, runner=run_command) -> None:
@@ -302,14 +339,18 @@ def install_firewall_rules(
     try:
         if which("nft"):
             install_nftables_rules(settings, runner=runner)
+            verify_nftables_rule_present(settings, runner=runner)
             logger.info(
-                "Installed nftables isolation rule for %s", settings.wg_interface
+                "Installed and verified nftables isolation rule for %s",
+                settings.wg_interface,
             )
             return
         if which("iptables"):
             install_iptables_rules(settings, runner=runner)
+            verify_iptables_rule_present(settings, runner=runner)
             logger.info(
-                "Installed iptables isolation rule for %s", settings.wg_interface
+                "Installed and verified iptables isolation rule for %s",
+                settings.wg_interface,
             )
             return
         raise StartupHardeningError(
