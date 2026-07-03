@@ -694,71 +694,8 @@ th {
     right: 1rem;
     z-index: 40;
 }
-.login-theme-toggle-button {
-    position: relative;
-    display: inline-grid;
-    place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--topbar-panel);
+.login-theme-toggle-wrap .tdnn {
     box-shadow: var(--shadow);
-    color: var(--muted);
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    transition:
-        color 0.16s ease,
-        background-color 0.16s ease,
-        border-color 0.16s ease,
-        box-shadow 0.16s ease,
-        transform 0.16s ease;
-}
-.login-theme-toggle-button:hover,
-.login-theme-toggle-button:focus-visible {
-    color: var(--accent);
-    border-color: var(--accent);
-    transform: translateY(-1px);
-}
-.login-theme-icon {
-    position: absolute;
-    display: inline-grid;
-    place-items: center;
-    font-size: 0.95rem;
-    line-height: 1;
-    transition:
-        opacity 0.16s ease,
-        transform 0.16s ease;
-}
-.login-theme-icon-sun {
-    opacity: 1;
-    transform: scale(1);
-    color: var(--warning);
-}
-.login-theme-icon-moon {
-    opacity: 0;
-    transform: scale(0.85);
-    color: var(--info);
-}
-.login-theme-toggle-wrap
-    .theme-toggle-input:checked
-    + .login-theme-toggle-button
-    .login-theme-icon-sun {
-    opacity: 0;
-    transform: scale(0.85);
-}
-.login-theme-toggle-wrap
-    .theme-toggle-input:checked
-    + .login-theme-toggle-button
-    .login-theme-icon-moon {
-    opacity: 1;
-    transform: scale(1);
-}
-.login-theme-toggle-wrap
-    .theme-toggle-input:focus-visible
-    + .login-theme-toggle-button {
-    outline: 2px solid rgba(47, 125, 225, 0.28);
-    outline-offset: 2px;
 }
 .login .card {
     width: min(420px, 100%);
@@ -1128,10 +1065,6 @@ th {
     .login-theme-toggle-wrap {
         top: 0.75rem;
         right: 0.75rem;
-    }
-    .login-theme-toggle-button {
-        width: 2.2rem;
-        height: 2.2rem;
     }
     .nav {
         gap: 0.75rem;

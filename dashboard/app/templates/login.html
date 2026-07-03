@@ -30,7 +30,7 @@
         <link rel="stylesheet" href="/static/style.css" />
     </head>
     <body class="login">
-        <div class="login-theme-toggle-wrap">
+        <div class="login-theme-toggle-wrap theme-toggle-wrap">
             <input
                 class="theme-toggle-input"
                 id="theme-toggle"
@@ -38,19 +38,12 @@
                 role="switch"
                 aria-label="Toggle dark mode"
             />
-            <label class="login-theme-toggle-button" for="theme-toggle">
-                <span
-                    class="login-theme-icon login-theme-icon-sun"
-                    aria-hidden="true"
-                >
-                    <i class="fa-solid fa-sun"></i>
-                </span>
-                <span
-                    class="login-theme-icon login-theme-icon-moon"
-                    aria-hidden="true"
-                >
-                    <i class="fa-solid fa-moon"></i>
-                </span>
+            <label
+                class="theme-toggle tdnn"
+                for="theme-toggle"
+                aria-hidden="true"
+            >
+                <span class="theme-toggle-knob moon"></span>
             </label>
         </div>
         <section class="card">
