@@ -4,6 +4,16 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>OPNsense Hub</title>
+        <script>
+            (() => {
+                const storedTheme = window.localStorage.getItem("opnsense-hub-theme");
+                const preferredDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                const theme = storedTheme === "dark" || storedTheme === "light"
+                    ? storedTheme
+                    : (preferredDark ? "dark" : "light");
+                document.documentElement.dataset.theme = theme;
+            })();
+        </script>
         {% if brand_logo_url %}
         <link rel="icon" href="{{ brand_logo_url }}" />
         {% endif %}
@@ -29,6 +39,18 @@
                 {% endif %} OPNsense Hub
             </div>
             <nav class="nav">
+                <label class="theme-toggle" for="theme-toggle" aria-label="Toggle dark mode">
+                    <input
+                        class="theme-toggle-input"
+                        id="theme-toggle"
+                        type="checkbox"
+                        role="switch"
+                        aria-label="Toggle dark mode"
+                    />
+                    <span class="theme-toggle-track" aria-hidden="true">
+                        <span class="theme-toggle-knob"></span>
+                    </span>
+                </label>
                 {% if user %}
                 <span class="user-summary"
                     ><i class="fa-solid fa-user"></i> {{ user.email }}</span

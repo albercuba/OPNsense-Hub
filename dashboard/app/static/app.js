@@ -1,4 +1,31 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const themeToggle = document.querySelector("#theme-toggle");
+  const root = document.documentElement;
+  const storedTheme = window.localStorage.getItem("opnsense-hub-theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const initialTheme =
+    storedTheme === "dark" || storedTheme === "light"
+      ? storedTheme
+      : prefersDark
+        ? "dark"
+        : "light";
+
+  const applyTheme = (theme, persist = true) => {
+    root.dataset.theme = theme;
+    if (themeToggle) {
+      themeToggle.checked = theme === "dark";
+      themeToggle.setAttribute("aria-checked", String(theme === "dark"));
+    }
+    if (persist) {
+      window.localStorage.setItem("opnsense-hub-theme", theme);
+    }
+  };
+
+  applyTheme(initialTheme, false);
+  themeToggle?.addEventListener("change", () => {
+    applyTheme(themeToggle.checked ? "dark" : "light");
+  });
+
   const setCompanyRowExpanded = (row, expanded) => {
     const firewallsRow = row.nextElementSibling;
     if (!firewallsRow || !firewallsRow.matches("[data-company-firewalls]")) {
