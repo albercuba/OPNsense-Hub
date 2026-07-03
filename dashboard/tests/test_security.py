@@ -9,6 +9,14 @@ from app.security import (
     verify_secret,
     verify_totp_code,
 )
+from app.security.request_context import (
+    allowed_hosts,
+    client_ip,
+    host_is_allowed,
+    trusted_proxy_networks,
+)
+from app.web import settings
+from starlette.requests import Request
 
 
 def test_hash_secret_roundtrip():
@@ -51,3 +59,38 @@ def test_totp_code_verifies_with_current_and_adjacent_window():
     assert verify_totp_code(secret, code, for_time=1700000000)
     assert verify_totp_code(secret, code, for_time=1700000029)
     assert not verify_totp_code(secret, code, for_time=1700000065)
+
+
+def test_host_allowlist_blocks_unknown_hosts():
+    assert host_is_allowed("localhost:8083")
+    assert host_is_allowed("testserver")
+    assert not host_is_allowed("evil.example.com")
+
+
+def test_client_ip_only_trusts_forwarded_header_from_trusted_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "127.0.0.1/32")
+    trusted_proxy_networks.cache_clear()
+    allowed_hosts.cache_clear()
+    proxied_request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+    direct_request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("198.51.100.4", 12345),
+        }
+    )
+
+    assert client_ip(proxied_request) == "203.0.113.10"
+    assert client_ip(direct_request) == "198.51.100.4"
+    trusted_proxy_networks.cache_clear()
+    allowed_hosts.cache_clear()

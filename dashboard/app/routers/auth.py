@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..audit import write_audit
+from ..audit import log_security_warning, write_audit
 from ..database import get_db
 from ..deps import current_user, ui_user
 from ..integration import local_ad_login_configured, microsoft_login_configured
@@ -48,9 +48,30 @@ from ..services.microsoft_auth import (
     microsoft_user_identity,
     validate_microsoft_access_token,
 )
+from ..services.notification_service import send_security_alert_email
 from ..web import render_template, settings
 
 router = APIRouter()
+
+
+def audit_failure(
+    db: Session,
+    request: Request,
+    action: str,
+    *,
+    user: User | None = None,
+    detail: str | None = None,
+    notify: bool = False,
+) -> None:
+    write_audit(db, request, action, user=user)
+    log_security_warning(action, detail=detail)
+    if notify:
+        send_security_alert_email(
+            db,
+            f"[OPNsense Hub] Security event: {action}",
+            detail or action,
+        )
+    db.commit()
 
 
 def render_login_template(
@@ -178,8 +199,33 @@ def complete_mfa_login(
         )
         clear_pending_mfa_cookie(response)
         return response
+    try:
+        apply_rate_limit(
+            request,
+            "mfa-login",
+            str(user.id),
+            settings.rate_limit_mfa_attempts,
+            settings.rate_limit_mfa_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.mfa.rate_limited",
+            user=user,
+            detail="too many MFA attempts",
+            notify=True,
+        )
+        raise exc
     secret = decrypt_secret(user.mfa_secret)
     if not secret or not verify_totp_code(secret, code):
+        audit_failure(
+            db,
+            request,
+            "auth.mfa.failed",
+            user=user,
+            detail="invalid authenticator code",
+        )
         return render_mfa_login_template(
             db,
             request,
@@ -298,15 +344,32 @@ def login(
     password: str = Form(...),
 ):
     normalized_email = email.lower().strip()
-    apply_rate_limit(
-        request,
-        "login",
-        normalized_email,
-        settings.rate_limit_login_attempts,
-        settings.rate_limit_login_window_seconds,
-    )
+    try:
+        apply_rate_limit(
+            request,
+            "login",
+            normalized_email,
+            settings.rate_limit_login_attempts,
+            settings.rate_limit_login_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.login.rate_limited",
+            detail=f"too many login attempts for {normalized_email}",
+            notify=True,
+        )
+        raise exc
     user = db.scalar(select(User).where(User.email == normalized_email))
     if not user or not verify_secret(password, user.password_hash):
+        audit_failure(
+            db,
+            request,
+            "auth.login.failed",
+            user=user,
+            detail=f"invalid password for {normalized_email}",
+        )
         return render_login_template(
             db, request, error="Invalid email or password", status_code=401
         )
@@ -349,13 +412,23 @@ def microsoft_login_start(
         )
     assert integration_settings is not None
     state = clean_optional(login_hint) or "start"
-    apply_rate_limit(
-        request,
-        "microsoft-login-start",
-        state,
-        settings.rate_limit_microsoft_login_attempts,
-        settings.rate_limit_microsoft_login_window_seconds,
-    )
+    try:
+        apply_rate_limit(
+            request,
+            "microsoft-login-start",
+            state,
+            settings.rate_limit_microsoft_login_attempts,
+            settings.rate_limit_microsoft_login_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.rate_limited",
+            detail="too many Microsoft login start attempts",
+            notify=True,
+        )
+        raise exc
     state = random_token(32)
     verifier = microsoft_pkce_verifier()
     response = RedirectResponse(
@@ -392,13 +465,23 @@ def microsoft_callback(
     error: str | None = None,
     error_description: str | None = None,
 ):
-    apply_rate_limit(
-        request,
-        "microsoft-callback",
-        "callback",
-        settings.rate_limit_microsoft_login_attempts,
-        settings.rate_limit_microsoft_login_window_seconds,
-    )
+    try:
+        apply_rate_limit(
+            request,
+            "microsoft-callback",
+            "callback",
+            settings.rate_limit_microsoft_login_attempts,
+            settings.rate_limit_microsoft_login_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.rate_limited",
+            detail="too many Microsoft callback attempts",
+            notify=True,
+        )
+        raise exc
     integration_settings = db.get(IntegrationSettings, 1)
     if not microsoft_login_configured(integration_settings):
         raise HTTPException(
@@ -411,6 +494,12 @@ def microsoft_callback(
             or clean_optional(error)
             or "Microsoft sign-in failed"
         )
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail=message,
+        )
         return render_login_template(db, request, error=message, status_code=401)
     expected_state = request.cookies.get("opnhub_ms_state")
     verifier = request.cookies.get("opnhub_ms_verifier")
@@ -421,6 +510,12 @@ def microsoft_callback(
         or state != expected_state
         or not verifier
     ):
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail="invalid or expired Microsoft sign-in state",
+        )
         response = render_login_template(
             db,
             request,
@@ -445,6 +540,13 @@ def microsoft_callback(
             raise RuntimeError("Microsoft sign-in did not return an access token")
         claims = validate_microsoft_access_token(integration_settings, access_token)
     except (RuntimeError, httpx.HTTPError, jwt.PyJWTError) as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail=f"Microsoft sign-in failed: {exc.__class__.__name__}",
+            notify=True,
+        )
         response = render_login_template(
             db, request, error=f"Microsoft sign-in failed: {exc}", status_code=401
         )
@@ -457,6 +559,12 @@ def microsoft_callback(
         integration_settings, groups, existing.role if existing else None
     )
     if not allowed:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail="Microsoft account is not mapped to an allowed Entra group",
+        )
         response = render_login_template(
             db,
             request,
@@ -488,13 +596,23 @@ def microsoft_callback(
 def microsoft_login(
     request: Request, db: Annotated[Session, Depends(get_db)], token: str = Form(...)
 ):
-    apply_rate_limit(
-        request,
-        "microsoft-login",
-        "token",
-        settings.rate_limit_microsoft_login_attempts,
-        settings.rate_limit_microsoft_login_window_seconds,
-    )
+    try:
+        apply_rate_limit(
+            request,
+            "microsoft-login",
+            "token",
+            settings.rate_limit_microsoft_login_attempts,
+            settings.rate_limit_microsoft_login_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.rate_limited",
+            detail="too many Microsoft token login attempts",
+            notify=True,
+        )
+        raise exc
     integration_settings = db.get(IntegrationSettings, 1)
     if not microsoft_login_configured(integration_settings):
         raise HTTPException(
@@ -508,6 +626,12 @@ def microsoft_login(
         integration_settings, groups, existing.role if existing else None
     )
     if not allowed:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail="Microsoft account is not mapped to an allowed Entra group",
+        )
         raise HTTPException(
             status_code=403,
             detail="Microsoft account is not mapped to an allowed Entra group",
@@ -536,13 +660,23 @@ def local_ad_login(
     password: str = Form(...),
 ):
     normalized_email = email.lower().strip()
-    apply_rate_limit(
-        request,
-        "local-ad-login",
-        normalized_email,
-        settings.rate_limit_local_ad_login_attempts,
-        settings.rate_limit_local_ad_login_window_seconds,
-    )
+    try:
+        apply_rate_limit(
+            request,
+            "local-ad-login",
+            normalized_email,
+            settings.rate_limit_local_ad_login_attempts,
+            settings.rate_limit_local_ad_login_window_seconds,
+        )
+    except HTTPException as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.local_ad.rate_limited",
+            detail=f"too many Local AD login attempts for {normalized_email}",
+            notify=True,
+        )
+        raise exc
     integration_settings = db.get(IntegrationSettings, 1)
     if not local_ad_login_configured(integration_settings):
         raise HTTPException(
@@ -554,6 +688,12 @@ def local_ad_login(
             integration_settings, email, password
         )
     except RuntimeError as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.local_ad.failed",
+            detail=f"Local AD authentication failed for {normalized_email}: {exc}",
+        )
         return render_login_template(db, request, error=str(exc), status_code=401)
     existing = db.scalar(select(User).where(User.email == resolved_email.lower()))
     role = existing.role if existing else "user"

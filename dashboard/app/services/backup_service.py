@@ -44,6 +44,7 @@ from ..wireguard import WireGuardError, bootstrap_wireguard, remove_peer
 
 BACKUP_FORMAT_VERSION: Final = 1
 ENCRYPTED_BACKUP_FORMAT: Final = "opnhub-encrypted-backup-v1"
+REQUIRED_BACKUP_MEMBERS: Final = {"manifest.json", "data.json"}
 BACKUP_TABLE_MODELS = (
     ("users", User),
     ("integration_settings", IntegrationSettings),
@@ -161,6 +162,34 @@ def encrypt_backup_payload(content: bytes, passphrase: str) -> bytes:
     return json.dumps(envelope, indent=2, sort_keys=True).encode("utf-8")
 
 
+def validate_backup_archive_members(archive: zipfile.ZipFile) -> None:
+    infos = archive.infolist()
+    if len(infos) > settings.max_backup_restore_entries:
+        raise HTTPException(
+            status_code=400, detail="backup archive contains too many files"
+        )
+    total_uncompressed = 0
+    names = {info.filename for info in infos}
+    if not REQUIRED_BACKUP_MEMBERS.issubset(names):
+        raise HTTPException(
+            status_code=400, detail="backup archive is missing required files"
+        )
+    for info in infos:
+        if info.is_dir():
+            continue
+        if info.file_size > settings.max_backup_restore_file_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"backup archive member '{info.filename}' exceeds the allowed size",
+            )
+        total_uncompressed += info.file_size
+        if total_uncompressed > settings.max_backup_restore_total_uncompressed_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="backup archive is too large after decompression",
+            )
+
+
 def decrypt_backup_payload(content: bytes, passphrase: str | None) -> bytes:
     try:
         envelope = json.loads(content.decode("utf-8"))
@@ -228,6 +257,10 @@ def parse_backup_bundle(
     tuple[str, bytes] | None,
     str | None,
 ]:
+    if len(content) > settings.max_backup_restore_bytes:
+        raise HTTPException(
+            status_code=400, detail="backup file exceeds the maximum allowed size"
+        )
     decrypted = decrypt_backup_payload(content, passphrase)
     try:
         archive = zipfile.ZipFile(io.BytesIO(decrypted))
@@ -236,6 +269,7 @@ def parse_backup_bundle(
             status_code=400, detail="backup file must be a valid zip archive"
         ) from exc
     with archive:
+        validate_backup_archive_members(archive)
         try:
             manifest = json.loads(archive.read("manifest.json"))
             data = json.loads(archive.read("data.json"))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ..models import IntegrationSettings
@@ -19,6 +20,25 @@ def is_valid_email_address(value: str | None) -> bool:
     if not value:
         return False
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
+
+
+async def read_upload_limited(
+    upload: UploadFile, limit_bytes: int, *, field_name: str = "upload"
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(min(1024 * 1024, max(limit_bytes - total + 1, 1)))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} exceeds the maximum allowed size of {limit_bytes} bytes",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def get_or_create_integration_settings(db: Session) -> IntegrationSettings:

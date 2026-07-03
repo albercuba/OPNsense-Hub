@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import re
 import uuid
 from http.cookies import SimpleCookie
@@ -10,7 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from ..audit import write_audit
+from ..audit import log_security_warning, write_audit
 from ..database import get_db
 from ..deps import current_user, has_company_access
 from ..models import Device, User
@@ -33,6 +32,18 @@ PROXY_REQUEST_HEADER_BLOCKLIST = {
     "transfer-encoding",
     "upgrade",
 }
+PROXY_RESPONSE_HEADER_BLOCKLIST = {
+    "content-encoding",
+    "content-length",
+    "connection",
+    "location",
+    "set-cookie",
+    "transfer-encoding",
+}
+
+
+class ProxyResponseTooLarge(RuntimeError):
+    pass
 
 
 def proxy_cookie_prefix(device_id: uuid.UUID) -> str:
@@ -77,6 +88,10 @@ def proxy_downstream_set_cookie_headers(
             morsel.set(prefix + name, morsel.value, morsel.coded_value)
             morsel["path"] = path_prefix
             morsel["domain"] = ""
+            morsel["httponly"] = True
+            morsel["samesite"] = "Lax"
+            if settings.session_secure:
+                morsel["secure"] = True
             rewritten.append(morsel.OutputString())
     return rewritten
 
@@ -113,12 +128,12 @@ def proxy_rewrite_body(
         return content
     path_prefix = proxy_path_prefix(device_id)
     text = re.sub(
-        r'(?P<prefix>\b(?:href|src|action)=(["\']))/(?P<path>[^"\']*)',
+        r'(?P<prefix>\b(?:href|src|action)=(?:["\']))/(?P<path>[^"\']*)',
         lambda match: proxy_rewrite_absolute_path(match, path_prefix),
         text,
     )
     text = re.sub(
-        r'(?P<prefix>url\((["\']?))/(?P<path>[^)"\']*)',
+        r'(?P<prefix>url\((?:["\']?))/(?P<path>[^)"\']*)',
         lambda match: proxy_rewrite_absolute_path(match, path_prefix),
         text,
     )
@@ -128,6 +143,43 @@ def proxy_rewrite_body(
         text,
     )
     return text.encode("utf-8")
+
+
+async def read_limited_request_body(request: Request, limit_bytes: int) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > limit_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail="proxied request body exceeds the configured size limit",
+                )
+        except ValueError:
+            pass
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="proxied request body exceeds the configured size limit",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def read_limited_proxy_response(
+    proxied: httpx.Response, limit_bytes: int
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in proxied.aiter_bytes():
+        total += len(chunk)
+        if total > limit_bytes:
+            raise ProxyResponseTooLarge
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.api_route(
@@ -163,54 +215,92 @@ async def proxy_device(
         if request.url.query:
             url += "?" + request.url.query
     except ValueError as exc:
+        write_audit(
+            db,
+            request,
+            "device.proxy.failed",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
         raise HTTPException(
             status_code=500,
             detail=f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}",
         ) from exc
+    body = await read_limited_request_body(request, settings.max_proxy_request_bytes)
     try:
         async with httpx.AsyncClient(
             verify=settings.proxy_verify_tls, follow_redirects=False, timeout=30
         ) as client:
-            proxied = await client.request(
+            async with client.stream(
                 request.method,
                 url,
                 headers=proxy_request_headers(request, device_id),
-                content=await request.body(),
-            )
+                content=body,
+            ) as proxied:
+                content = await read_limited_proxy_response(
+                    proxied, settings.max_proxy_response_bytes
+                )
+                response_headers = {
+                    k: v
+                    for k, v in proxied.headers.items()
+                    if k.lower() not in PROXY_RESPONSE_HEADER_BLOCKLIST
+                }
+                if location := proxied.headers.get("location"):
+                    response_headers["location"] = proxy_rewrite_location(
+                        location, device_id, device_webgui_url(device)
+                    )
+                response = Response(
+                    content=proxy_rewrite_body(
+                        content, proxied.headers.get("content-type", ""), device_id
+                    ),
+                    status_code=proxied.status_code,
+                    headers=response_headers,
+                )
+                for cookie in proxy_downstream_set_cookie_headers(
+                    proxied.headers.get_list("set-cookie"), device_id
+                ):
+                    response.headers.append("set-cookie", cookie)
+                return response
+    except ProxyResponseTooLarge as exc:
+        write_audit(
+            db,
+            request,
+            "device.proxy.failed",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
+        log_security_warning(
+            "device.proxy.failed",
+            detail=f"upstream response exceeded {settings.max_proxy_response_bytes} bytes",
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="The proxied OPNsense UI response exceeded the configured size limit",
+        ) from exc
     except httpx.RequestError as exc:
         error_detail = str(exc) or repr(exc)
+        write_audit(
+            db,
+            request,
+            "device.proxy.failed",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
+        log_security_warning(
+            "device.proxy.failed",
+            detail=f"{exc.__class__.__name__}: {error_detail}",
+        )
         raise HTTPException(
             status_code=502,
             detail=(
-                f"Could not reach OPNsense UI at {url}: {exc.__class__.__name__}: {error_detail}. Verify WireGuard has a recent handshake, the firewall allows Hub tunnel traffic to the WebGUI port, and the WebGUI listens on the tunnel interface."
+                f"Could not reach OPNsense UI at {url}: {exc.__class__.__name__}: {error_detail}. "
+                "Verify WireGuard has a recent handshake, the firewall allows Hub tunnel traffic to the "
+                "WebGUI port, and the WebGUI listens on the tunnel interface."
             ),
         ) from exc
-    response_headers = {
-        k: v
-        for k, v in proxied.headers.items()
-        if k.lower()
-        not in {
-            "content-encoding",
-            "content-length",
-            "connection",
-            "location",
-            "set-cookie",
-            "transfer-encoding",
-        }
-    }
-    if location := proxied.headers.get("location"):
-        response_headers["location"] = proxy_rewrite_location(
-            location, device_id, device_webgui_url(device)
-        )
-    response = Response(
-        content=proxy_rewrite_body(
-            proxied.content, proxied.headers.get("content-type", ""), device_id
-        ),
-        status_code=proxied.status_code,
-        headers=response_headers,
-    )
-    for cookie in proxy_downstream_set_cookie_headers(
-        proxied.headers.get_list("set-cookie"), device_id
-    ):
-        response.headers.append("set-cookie", cookie)
-    return response

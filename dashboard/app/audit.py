@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from fastapi import Request
@@ -7,8 +8,15 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .models import AuditLog, User
 from .security import utc_now
+from .security.request_context import client_ip
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def log_security_warning(action: str, *, detail: str | None = None) -> None:
+    message = action if not detail else f"{action}: {detail}"
+    logger.warning("Security event: %s", message)
 
 
 def should_write_audit(
@@ -54,7 +62,7 @@ def write_audit(
     ip_address = None
     user_agent = None
     if request is not None:
-        ip_address = request.client.host if request.client else None
+        ip_address = client_ip(request)
         user_agent = request.headers.get("user-agent")
     db.add(
         AuditLog(

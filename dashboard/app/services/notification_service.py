@@ -9,6 +9,7 @@ from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..integration import (
     email_settings_configured,
     graph_email_configured,
@@ -19,7 +20,23 @@ from ..security.secrets import decrypt_secret
 from ..services.common import clean_optional, get_or_create_integration_settings
 from ..web import format_datetime
 
+settings = get_settings()
+
 logger = logging.getLogger(__name__)
+
+
+def send_security_alert_email(db: Session, subject: str, body: str) -> bool:
+    if not settings.security_alert_email_enabled:
+        return False
+    target = clean_optional(settings.initial_admin_email)
+    if not target:
+        return False
+    try:
+        send_notification_email(db, target, subject, body)
+    except Exception as exc:
+        logger.warning("Security alert email failed: %s", exc.__class__.__name__)
+        return False
+    return True
 
 
 def send_smtp_email(

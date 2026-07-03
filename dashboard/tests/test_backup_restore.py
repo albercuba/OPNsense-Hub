@@ -21,6 +21,7 @@ from app.models import (
     User,
 )
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
+from app.services.backup_service import parse_backup_bundle
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import INET
@@ -344,6 +345,37 @@ def test_legacy_external_users_without_auth_provider_are_still_locked(
     )
 
 
+def test_parse_backup_bundle_rejects_archives_with_too_many_members(monkeypatch):
+    monkeypatch.setattr(settings, "max_backup_restore_entries", 2)
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr("manifest.json", json.dumps({"format_version": 1}))
+        bundle.writestr(
+            "data.json",
+            json.dumps(
+                {
+                    "users": [],
+                    "integration_settings": [],
+                    "companies": [],
+                    "company_users": [],
+                    "enrollment_codes": [],
+                    "devices": [],
+                    "device_backups": [],
+                    "device_events": [],
+                    "audit_logs": [],
+                }
+            ),
+        )
+        bundle.writestr("extra.txt", "unexpected")
+
+    try:
+        parse_backup_bundle(archive.getvalue())
+        assert False, "expected parse_backup_bundle to reject oversized member count"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "too many files" in str(getattr(exc, "detail", exc))
+
+
 def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "admin_manage_user_mfa") as session:
         admin = seed_backup_source(session)
@@ -418,11 +450,13 @@ def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_
         app.dependency_overrides.clear()
 
 
-def test_non_admin_user_can_view_existing_companies_and_firewalls(
+def test_non_admin_user_can_view_assigned_companies_and_firewalls(
     monkeypatch, tmp_path
 ):
     with sqlite_session(tmp_path, "non_admin_company_visibility") as session:
         seed_backup_source(session)
+        company = session.scalar(select(Company).where(Company.name == "Acme"))
+        assert company is not None
         member = User(
             id=uuid4(),
             email="member@example.com",
@@ -430,6 +464,10 @@ def test_non_admin_user_can_view_existing_companies_and_firewalls(
             role="user",
         )
         session.add(member)
+        session.flush()
+        session.add(
+            CompanyUser(company_id=company.id, user_id=member.id, role="viewer")
+        )
         session.commit()
         configure_test_client(monkeypatch, session, member)
         with TestClient(app) as client:

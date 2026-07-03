@@ -30,6 +30,4 @@ def has_company_role(
 def has_company_access(
     db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
 ) -> bool:
-    if minimum == "viewer":
-        return True
     return is_global_admin(user) or has_company_role(db, user, company_id, minimum)

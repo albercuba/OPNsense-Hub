@@ -2,14 +2,17 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
-
-from app.dashboard import build_dashboard_context, dashboard_backup_status, dashboard_license_status
+from app.dashboard import (
+    build_dashboard_context,
+    dashboard_backup_status,
+    dashboard_license_status,
+)
 from app.database import get_db
 from app.integration import email_settings_configured
 from app.main import app, current_user
 from app.models import Company, Device, DeviceEvent, IntegrationSettings, User
 from app.security import hash_secret
+from fastapi.testclient import TestClient
 
 
 class FakeScalarResult:
@@ -49,12 +52,23 @@ class FakeDb:
             if not allowed_device_ids or event.device_id in allowed_device_ids
         ]
         if "email_notification_failed" in statement_text:
-            items = [event for event in items if event.event_type == "email_notification_failed"]
+            items = [
+                event
+                for event in items
+                if event.event_type == "email_notification_failed"
+            ]
         if "email_notification_sent" in statement_text:
-            items = [event for event in items if event.event_type == "email_notification_sent"]
+            items = [
+                event
+                for event in items
+                if event.event_type == "email_notification_sent"
+            ]
         items.sort(key=lambda event: event.created_at, reverse=True)
         limit_clause = getattr(statement, "_limit_clause", None)
-        if limit_clause is not None and getattr(limit_clause, "value", None) is not None:
+        if (
+            limit_clause is not None
+            and getattr(limit_clause, "value", None) is not None
+        ):
             items = items[: int(limit_clause.value)]
         return FakeScalarResult(items)
 
@@ -118,7 +132,13 @@ def make_device(
         backup_interval_hours=max(
             1,
             backup_interval_value
-            * (24 if backup_interval_unit == "days" else 24 * 30 if backup_interval_unit == "months" else 1),
+            * (
+                24
+                if backup_interval_unit == "days"
+                else 24 * 30
+                if backup_interval_unit == "months"
+                else 1
+            ),
         ),
         backup_last_requested_at=backup_last_requested_at,
         backup_last_uploaded_at=backup_last_uploaded_at,
@@ -332,14 +352,16 @@ def test_dashboard_requires_login(monkeypatch):
     assert response.headers["location"] == "/login"
 
 
-def test_dashboard_only_includes_accessible_companies_and_devices(monkeypatch, fixed_now):
+def test_dashboard_only_includes_accessible_companies_and_devices(
+    monkeypatch, fixed_now
+):
     seeded = seed_dashboard_data(fixed_now)
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
 
     context = build_dashboard_context(db, seeded["member"], {})
 
-    assert context["summary"]["total_firewalls"] == 3
+    assert context["summary"]["total_firewalls"] == 4
     assert [row["company"].name for row in context["company_overview"]] == ["Alpha Co"]
     assert all(row["company"].name == "Alpha Co" for row in context["recent_events"])
 
@@ -352,7 +374,10 @@ def test_dashboard_admin_sees_all_devices(monkeypatch, fixed_now):
     context = build_dashboard_context(db, seeded["admin"], {})
 
     assert context["summary"]["total_firewalls"] == 6
-    assert {row["company"].name for row in context["company_overview"]} == {"Alpha Co", "Beta Co"}
+    assert {row["company"].name for row in context["company_overview"]} == {
+        "Alpha Co",
+        "Beta Co",
+    }
 
 
 def test_dashboard_summary_counts_are_correct(monkeypatch, fixed_now):
@@ -449,7 +474,9 @@ def test_dashboard_license_logic_handles_business_community_and_expiry(fixed_now
     assert dashboard_license_status(community, fixed_now)["days_left"] is None
 
 
-def test_dashboard_recent_events_only_include_accessible_devices(monkeypatch, fixed_now):
+def test_dashboard_recent_events_only_include_accessible_devices(
+    monkeypatch, fixed_now
+):
     seeded = seed_dashboard_data(fixed_now)
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
@@ -459,7 +486,9 @@ def test_dashboard_recent_events_only_include_accessible_devices(monkeypatch, fi
     assert all(row["company"].name == "Alpha Co" for row in context["recent_events"])
 
 
-def test_dashboard_company_filter_does_not_leak_inaccessible_company(monkeypatch, fixed_now):
+def test_dashboard_company_filter_does_not_leak_inaccessible_company(
+    monkeypatch, fixed_now
+):
     seeded = seed_dashboard_data(fixed_now)
     configure_dashboard_access(monkeypatch, seeded)
     db = FakeDb(seeded["integration_settings"], seeded["events"])
@@ -508,7 +537,9 @@ def test_dashboard_renders_when_zero_devices(monkeypatch, fixed_now):
     monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
     monkeypatch.setattr("app.main.device_health_check_loop", noop)
     monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
-    monkeypatch.setattr("app.dashboard.accessible_companies_for_user", lambda *_args: [])
+    monkeypatch.setattr(
+        "app.dashboard.accessible_companies_for_user", lambda *_args: []
+    )
     monkeypatch.setattr("app.dashboard.accessible_devices_for_user", lambda *_args: [])
 
     def override_get_db():
@@ -533,7 +564,9 @@ def test_dashboard_notification_health_renders_with_and_without_per_firewall_sup
     db = FakeDb(seeded["integration_settings"], seeded["events"])
 
     supported = build_dashboard_context(db, seeded["admin"], {})
-    monkeypatch.setattr("app.dashboard.device_supports_email_notifications", lambda: False)
+    monkeypatch.setattr(
+        "app.dashboard.device_supports_email_notifications", lambda: False
+    )
     unsupported = build_dashboard_context(db, seeded["admin"], {})
 
     assert supported["notification_health"]["supported"] is True

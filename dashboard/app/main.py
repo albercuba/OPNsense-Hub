@@ -26,6 +26,7 @@ from .security.csrf import (
     validate_csrf_request,
 )
 from .security.rate_limit import rate_limiter
+from .security.request_context import ensure_allowed_host
 from .services import firmware_scheduler as firmware_scheduler_service
 from .services import notification_service as notification_service_module
 from .services.auth_service import session_from_request
@@ -56,7 +57,12 @@ app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="stati
 
 
 @app.middleware("http")
-async def csrf_middleware(request: Request, call_next):
+async def security_middleware(request: Request, call_next):
+    try:
+        ensure_allowed_host(request)
+    except HTTPException as exc:
+        detail = exc.detail if exc.detail is not None else "Bad Request"
+        return JSONResponse(status_code=exc.status_code, content={"detail": detail})
     if should_enforce_csrf(request):
         try:
             await validate_csrf_request(request)
@@ -72,6 +78,18 @@ async def csrf_middleware(request: Request, call_next):
             secure=settings.session_secure,
             samesite="lax",
         )
+    if settings.security_headers_enabled:
+        response.headers.setdefault(
+            "Content-Security-Policy", settings.content_security_policy
+        )
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", settings.referrer_policy)
+        response.headers.setdefault("Permissions-Policy", settings.permissions_policy)
+        if settings.session_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
     return response
 
 

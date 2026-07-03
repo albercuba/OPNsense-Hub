@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from .backups import backup_due, backup_request_pending
 from .integration import email_settings_configured
-from .models import Company, Device, DeviceEvent, IntegrationSettings, User
+from .models import Company, CompanyUser, Device, DeviceEvent, IntegrationSettings, User
+from .rbac import is_global_admin
 from .security import utc_now
 
 DASHBOARD_EVENT_LIMIT = 25
@@ -24,6 +25,8 @@ STATUS_COLORS = {
 
 def accessible_companies_for_user(db: Session, user: User) -> list[Company]:
     statement = select(Company).order_by(Company.name)
+    if not is_global_admin(user):
+        statement = statement.join(CompanyUser).where(CompanyUser.user_id == user.id)
     return list(db.scalars(statement).all())
 
 
@@ -34,6 +37,10 @@ def accessible_devices_for_user(db: Session, user: User) -> list[Device]:
         .join(Company)
         .order_by(Company.name, Device.hostname)
     )
+    if not is_global_admin(user):
+        statement = statement.join(
+            CompanyUser, CompanyUser.company_id == Device.company_id
+        ).where(CompanyUser.user_id == user.id)
     return list(db.scalars(statement).all())
 
 
@@ -622,6 +629,11 @@ def build_dashboard_context(
     }
 
     chart_style, chart_legend = build_status_chart(status_counts)
+    device_filter_options = {
+        "hostnames": sorted({device.hostname for device in devices}),
+        "companies": [company.name for company in companies],
+        "statuses": ["online", "warning", "critical", "revoked", "other"],
+    }
     return {
         "filters": {
             "company_id": selected_company_id,
@@ -667,4 +679,5 @@ def build_dashboard_context(
         "notification_health": notification_health,
         "email_settings_configured": email_ready,
         "visible_device_count": len(filtered_devices),
+        "device_filter_options": device_filter_options,
     }

@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import shutil
 import subprocess
@@ -26,6 +27,33 @@ class CommandResult:
 
 def is_production(settings: Settings) -> bool:
     return settings.app_env.strip().lower() == "production"
+
+
+def _configured_allowed_hosts(settings: Settings) -> set[str]:
+    configured = {
+        item.strip().lower()
+        for item in settings.allowed_hosts.split(",")
+        if item.strip()
+    }
+    public_host = (urlparse(settings.public_url).hostname or "").strip().lower()
+    if public_host:
+        configured.add(public_host)
+    return configured
+
+
+def _trusted_proxy_networks(
+    settings: Settings,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for item in settings.trusted_proxy_cidrs.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            return ()
+    return tuple(networks)
 
 
 def runtime_validation_errors(settings: Settings) -> list[str]:
@@ -61,6 +89,24 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append(
             "Set PROXY_VERIFY_TLS=true in production or explicitly set ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true"
         )
+    if settings.rate_limit_backend.strip().lower() not in {"memory", "redis", "edge"}:
+        errors.append("Set RATE_LIMIT_BACKEND to memory, redis, or edge")
+    if settings.network_control_mode.strip().lower() not in {"inline", "external"}:
+        errors.append("Set NETWORK_CONTROL_MODE to inline or external")
+    if settings.rate_limit_backend.strip().lower() == "memory":
+        errors.append("Set RATE_LIMIT_BACKEND to redis or edge in production")
+    if (
+        settings.rate_limit_backend.strip().lower() == "redis"
+        and not settings.rate_limit_redis_url
+    ):
+        errors.append("Set RATE_LIMIT_REDIS_URL when RATE_LIMIT_BACKEND=redis")
+    if (
+        public_url.hostname
+        and public_url.hostname.lower() not in _configured_allowed_hosts(settings)
+    ):
+        errors.append("Add the PUBLIC_URL host to ALLOWED_HOSTS")
+    if settings.trusted_proxy_cidrs.strip() and not _trusted_proxy_networks(settings):
+        errors.append("TRUSTED_PROXY_CIDRS contains no valid proxy networks")
     if settings.log_retention_sweep_interval_hours <= 0:
         errors.append("Set LOG_RETENTION_SWEEP_INTERVAL_HOURS to a positive value")
     elif (
@@ -134,6 +180,11 @@ def ensure_command_ok(result: CommandResult, args: list[str]) -> None:
 
 
 def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
+    if settings.network_control_mode.strip().lower() == "external":
+        logger.info(
+            "Skipping IP forwarding changes because NETWORK_CONTROL_MODE=external"
+        )
+        return
     if settings.hub_enable_ip_forwarding:
         logger.warning(
             "HUB_ENABLE_IP_FORWARDING=true: routing between tunnel peers must be controlled externally"
@@ -237,6 +288,9 @@ def install_firewall_rules(
     runner=run_command,
     which=shutil.which,
 ) -> None:
+    if settings.network_control_mode.strip().lower() == "external":
+        logger.info("Skipping Hub firewall rules because NETWORK_CONTROL_MODE=external")
+        return
     if not settings.hub_manage_firewall_rules:
         logger.info(
             "Skipping Hub firewall rules because HUB_MANAGE_FIREWALL_RULES=false"

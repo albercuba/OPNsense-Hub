@@ -21,6 +21,8 @@ def production_settings(**overrides):
         "session_secure": True,
         "proxy_verify_tls": True,
         "wg_dry_run": False,
+        "allowed_hosts": "hub.example.com",
+        "rate_limit_backend": "edge",
     }
     values.update(overrides)
     return Settings(**values)
@@ -34,6 +36,7 @@ def test_runtime_validation_errors_include_insecure_defaults():
         session_secure=False,
         public_url="http://localhost:8083",
         proxy_verify_tls=False,
+        rate_limit_backend="memory",
     )
     errors = runtime_validation_errors(settings)
     assert any("SECRET_KEY" in error for error in errors)
@@ -42,6 +45,7 @@ def test_runtime_validation_errors_include_insecure_defaults():
     assert any("SESSION_SECURE" in error for error in errors)
     assert any("PUBLIC_URL" in error for error in errors)
     assert any("PROXY_VERIFY_TLS" in error for error in errors)
+    assert any("RATE_LIMIT_BACKEND" in error for error in errors)
 
 
 def test_validate_runtime_settings_rejects_insecure_production_defaults():
@@ -72,6 +76,19 @@ def test_configure_ip_forwarding_fails_closed_in_production():
 def test_install_firewall_rules_skips_when_disabled():
     settings = production_settings(hub_manage_firewall_rules=False)
     install_firewall_rules(settings, runner=lambda _args: CommandResult(returncode=0))
+
+
+def test_network_control_mode_external_skips_runtime_network_changes():
+    settings = production_settings(network_control_mode="external")
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        return CommandResult(returncode=0)
+
+    configure_ip_forwarding(settings, runner=runner)
+    install_firewall_rules(settings, runner=runner)
+    assert calls == []
 
 
 def test_install_firewall_rules_uses_iptables_idempotently():

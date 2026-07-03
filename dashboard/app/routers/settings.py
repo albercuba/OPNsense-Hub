@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..audit import write_audit
+from ..audit import log_security_warning, write_audit
 from ..branding import (
     BrandingError,
     clear_uploaded_logo,
@@ -36,7 +36,11 @@ from ..services.backup_service import (
     parse_backup_bundle,
     restore_backup_bundle,
 )
-from ..services.common import clean_optional, get_or_create_integration_settings
+from ..services.common import (
+    clean_optional,
+    get_or_create_integration_settings,
+    read_upload_limited,
+)
 from ..services.log_retention import (
     create_log_archive_selection,
     export_log_archive,
@@ -47,6 +51,7 @@ from ..services.mfa_service import (
     local_user_supports_hub_mfa,
     totp_qr_code_data_url,
 )
+from ..services.notification_service import send_security_alert_email
 from ..web import render_template, settings
 
 router = APIRouter()
@@ -597,20 +602,55 @@ async def restore_settings_backup(
     backup_passphrase: str = Form(""),
 ):
     require_admin(user)
-    apply_rate_limit(
-        request,
-        "backup-restore",
-        str(user.id),
-        settings.rate_limit_backup_restore_attempts,
-        settings.rate_limit_backup_restore_window_seconds,
+    try:
+        apply_rate_limit(
+            request,
+            "backup-restore",
+            str(user.id),
+            settings.rate_limit_backup_restore_attempts,
+            settings.rate_limit_backup_restore_window_seconds,
+        )
+    except HTTPException as exc:
+        write_audit(db, request, "settings.backup.restore.rate_limited", user=user)
+        db.commit()
+        log_security_warning(
+            "settings.backup.restore.rate_limited",
+            detail=f"too many restore attempts by {user.email}",
+        )
+        send_security_alert_email(
+            db,
+            "[OPNsense Hub] Security event: backup restore rate limited",
+            f"Backup restore requests were rate limited for {user.email}.",
+        )
+        raise exc
+    content = await read_upload_limited(
+        backup_file,
+        settings.max_backup_restore_bytes,
+        field_name="backup file",
     )
-    content = await backup_file.read()
     if not content:
+        write_audit(db, request, "settings.backup.restore.failed", user=user)
+        db.commit()
         raise HTTPException(status_code=400, detail="backup file is required")
-    _manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(
-        content, clean_optional(backup_passphrase)
-    )
-    restore_backup_bundle(db, data, logo_file, wireguard_private_key)
+    try:
+        _manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(
+            content, clean_optional(backup_passphrase)
+        )
+        restore_backup_bundle(db, data, logo_file, wireguard_private_key)
+    except HTTPException as exc:
+        write_audit(db, request, "settings.backup.restore.failed", user=user)
+        db.commit()
+        log_security_warning(
+            "settings.backup.restore.failed",
+            detail=str(exc.detail),
+        )
+        send_security_alert_email(
+            db,
+            "[OPNsense Hub] Security event: backup restore failed",
+            f"Backup restore failed for {user.email}: {exc.detail}",
+        )
+        raise exc
+    write_audit(db, request, "settings.backup.restore", user=user)
     db.execute(delete(SessionToken))
     db.commit()
     response = RedirectResponse("/login", status_code=303)
