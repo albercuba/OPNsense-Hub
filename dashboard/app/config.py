@@ -24,9 +24,11 @@ class Settings(BaseSettings):
     trusted_proxy_cidrs: str = ""
     security_headers_enabled: bool = True
     content_security_policy: str = (
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; "
-        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        "script-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     )
     referrer_policy: str = "strict-origin-when-cross-origin"
     permissions_policy: str = "geolocation=(), microphone=(), camera=()"
