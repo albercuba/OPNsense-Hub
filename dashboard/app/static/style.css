@@ -165,7 +165,7 @@ a {
     height: var(--toggle-height);
     border: 1px solid var(--line);
     border-radius: var(--toggle-height);
-    background: var(--toggle-night-bg);
+    background: var(--toggle-day-bg);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     transition:
         background 500ms ease-in-out,
@@ -177,34 +177,12 @@ a {
     display: block;
     border-radius: 50%;
     transition: all 400ms ease-in-out;
-    top: 0.32rem;
-    left: 0.34rem;
-    transform: rotate(-75deg);
-    width: var(--toggle-btn-radius);
-    height: var(--toggle-btn-radius);
-    background: var(--toggle-night-bg);
-    box-shadow:
-        0.38rem 0.32rem 0 0 var(--toggle-moon-color) inset,
-        rgba(255, 255, 255, 0.1) 0 -0.82rem 0 -0.52rem,
-        rgba(255, 255, 255, 0.1) 0.36rem 0.82rem 0 -0.52rem,
-        rgba(255, 255, 255, 0.1) 0.26rem 1.44rem 0 -0.5rem,
-        rgba(255, 255, 255, 0.1) 0.72rem 0.24rem 0 -0.5rem,
-        rgba(255, 255, 255, 0.1) 0.96rem 0.96rem 0 -0.52rem,
-        rgba(255, 255, 255, 0.1) 0.74rem 1.46rem 0 -0.52rem,
-        rgba(255, 255, 255, 0.1) -0.48rem 0.82rem 0 -0.52rem,
-        rgba(255, 255, 255, 0.1) -0.12rem 1.1rem 0 -0.52rem;
-}
-.theme-toggle-input:checked + .tdnn {
-    background: var(--toggle-day-bg);
-}
-.theme-toggle-input:checked + .tdnn .moon {
     top: 0.44rem;
     left: 2.02rem;
     transform: rotate(0deg);
     width: 0.82rem;
     height: 0.82rem;
     background: #fff;
-    border-radius: 50%;
     box-shadow:
         0.36rem 0.36rem 0 0.52rem #fff inset,
         0 -0.6rem 0 -0.3rem #fff,
@@ -215,6 +193,28 @@ a {
         -0.44rem 0.44rem 0 -0.34rem #fff,
         -0.6rem 0 0 -0.3rem #fff,
         -0.44rem -0.44rem 0 -0.34rem #fff;
+}
+.theme-toggle-input:checked + .tdnn {
+    background: var(--toggle-night-bg);
+}
+.theme-toggle-input:checked + .tdnn .moon {
+    top: 0.32rem;
+    left: 0.34rem;
+    transform: rotate(-75deg);
+    width: var(--toggle-btn-radius);
+    height: var(--toggle-btn-radius);
+    background: var(--toggle-night-bg);
+    border-radius: 50%;
+    box-shadow:
+        0.38rem 0.32rem 0 0 var(--toggle-moon-color) inset,
+        rgba(255, 255, 255, 0.1) 0 -0.82rem 0 -0.52rem,
+        rgba(255, 255, 255, 0.1) 0.36rem 0.82rem 0 -0.52rem,
+        rgba(255, 255, 255, 0.1) 0.26rem 1.44rem 0 -0.5rem,
+        rgba(255, 255, 255, 0.1) 0.72rem 0.24rem 0 -0.5rem,
+        rgba(255, 255, 255, 0.1) 0.96rem 0.96rem 0 -0.52rem,
+        rgba(255, 255, 255, 0.1) 0.74rem 1.46rem 0 -0.52rem,
+        rgba(255, 255, 255, 0.1) -0.48rem 0.82rem 0 -0.52rem,
+        rgba(255, 255, 255, 0.1) -0.12rem 1.1rem 0 -0.52rem;
 }
 .theme-toggle-input:focus-visible + .tdnn {
     outline: 2px solid rgba(47, 125, 225, 0.28);
@@ -1053,8 +1053,11 @@ th {
         --toggle-width: 3.2rem;
         --toggle-btn-radius: 1.05rem;
     }
-    .theme-toggle-input:checked + .tdnn .moon {
+    .moon {
         left: 1.78rem;
+    }
+    .theme-toggle-input:checked + .tdnn .moon {
+        left: 0.3rem;
     }
     .app-layout {
         grid-template-columns: 1fr;
