@@ -339,7 +339,7 @@ Under `Settings > Retention`, administrators can:
 Log archive details:
 
 - archives are downloaded locally from the Hub UI
-- the ZIP layout uses `manifest.json`, `audit_logs.jsonl`, and `device_events.jsonl`
+- the ZIP layout uses `manifest.json`, `audit_logs.csv`, and `device_events.csv`
 - you can export audit logs only, device events only, or both
 - optional passphrase protection reuses the Hub backup encryption format
 - archives may contain sensitive metadata such as IP addresses, user agents, user IDs, device IDs, and operational event history
@@ -469,5 +469,4 @@ docker compose build
 
 - The FastAPI proxy is intentionally simple. For production, consider Caddy/Nginx with a signed internal auth check or a hardened streaming proxy.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.
-- MFA is implemented for local OPNsense Hub accounts with TOTP. Users authenticated through Microsoft 365 or Local AD must use MFA provided by their external identity provider.
-- Email and Microsoft Graph client secrets entered in the settings UI are not shown back in forms and are never logged, but they are currently stored in the database without application-level encryption. Use restrictive database access and backups until encrypted-at-rest integration secrets are implemented.
+
