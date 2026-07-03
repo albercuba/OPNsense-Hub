@@ -257,10 +257,13 @@ a {
 }
 .side-menu {
     position: sticky;
-    top: 7.25rem;
+    top: 5.5rem;
+    align-self: start;
+    max-height: calc(100vh - 6.5rem);
+    overflow: auto;
     display: grid;
     gap: 0.4rem;
-    margin-top: 2rem;
+    margin-top: 0;
     padding: 1rem;
     background: var(--panel-elevated);
     border: 1px solid var(--line);
