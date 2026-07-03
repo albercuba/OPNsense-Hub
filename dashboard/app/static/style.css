@@ -91,6 +91,7 @@
     box-sizing: border-box;
 }
 body {
+    min-height: 100vh;
     margin: 0;
     font-family: "JetBrains Mono", monospace;
     color: var(--text);
@@ -102,6 +103,10 @@ body {
     transition:
         background 0.2s ease,
         color 0.2s ease;
+}
+
+:root[data-theme="dark"] body {
+    background: var(--bg);
 }
 a {
     color: inherit;
