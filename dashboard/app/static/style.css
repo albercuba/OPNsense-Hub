@@ -4,6 +4,7 @@
     --bg: #f8fbff;
     --bg-accent: #eef8ff;
     --panel: #ffffff;
+    --sidebar-width: 220px;
     --panel-elevated: rgba(255, 255, 255, 0.9);
     --topbar-panel: rgba(255, 255, 255, 0.86);
     --text: #142033;
@@ -248,17 +249,16 @@ a {
     color: var(--accent);
 }
 .app-layout {
-    display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
-    gap: 1.5rem;
+    display: block;
     width: min(1440px, calc(100% - 2rem));
     margin: 0 auto;
-    align-items: start;
+    padding-left: calc(var(--sidebar-width) + 1.5rem);
 }
 .side-menu {
-    position: sticky;
+    position: fixed;
     top: 5.5rem;
-    align-self: start;
+    left: max(1rem, calc((100vw - min(1440px, calc(100% - 2rem))) / 2));
+    width: var(--sidebar-width);
     max-height: calc(100vh - 6.5rem);
     overflow: auto;
     display: grid;
@@ -1074,9 +1074,6 @@ th {
         top: 0.75rem;
         right: 0.75rem;
     }
-    .nav {
-        gap: 0.75rem;
-    }
     .tdnn {
         --toggle-height: 1.7rem;
         --toggle-width: 3.2rem;
@@ -1089,7 +1086,7 @@ th {
         left: 0.3rem;
     }
     .app-layout {
-        grid-template-columns: 1fr;
+        padding-left: 0;
     }
     .dual-settings-grid {
         grid-template-columns: 1fr;
@@ -1122,6 +1119,9 @@ th {
 body {
     font-size: 13px;
 }
+:root {
+    --sidebar-width: 220px;
+}
 .topbar {
     padding: 0.5rem 0.75rem;
 }
@@ -1132,17 +1132,17 @@ body {
     font-size: 1.2rem;
 }
 .app-layout {
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: 0.75rem;
     width: 100%;
-    padding: 0 0.75rem;
+    padding: 0 0.75rem 0 calc(var(--sidebar-width) + 1.5rem);
 }
 .side-menu {
-    top: auto;
+    top: 3.9rem;
+    left: 0.75rem;
+    width: var(--sidebar-width);
     gap: 0.25rem;
-    margin-top: 12px;
     padding: 0.5rem;
-    position: static;
+    position: fixed;
+    max-height: calc(100vh - 4.65rem);
 }
 .side-menu-link,
 .side-menu-sublink {
