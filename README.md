@@ -53,6 +53,7 @@ docker-compose.yml
 ## Features
 
 - Dashboard login with seeded initial admin.
+- Local TOTP multi-factor authentication for dashboard accounts, including MFA-protected login and admin-managed user MFA setup.
 - Random server-side dashboard session tokens stored hashed with expiration and revocation.
 - Company/group creation.
 - Company-scoped RBAC model in the database.
@@ -468,5 +469,5 @@ docker compose build
 
 - The FastAPI proxy is intentionally simple. For production, consider Caddy/Nginx with a signed internal auth check or a hardened streaming proxy.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.
-- MFA fields exist, but MFA is not implemented yet.
+- MFA is implemented for local OPNsense Hub accounts with TOTP. Users authenticated through Microsoft 365 or Local AD must use MFA provided by their external identity provider.
 - Email and Microsoft Graph client secrets entered in the settings UI are not shown back in forms and are never logged, but they are currently stored in the database without application-level encryption. Use restrictive database access and backups until encrypted-at-rest integration secrets are implemented.
