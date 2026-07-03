@@ -46,6 +46,13 @@ Never log or display these values:
 - `security: replace default secrets` — set a long random `SECRET_KEY`, admin password, and database password.
 - `security: replace the default admin address` — set `INITIAL_ADMIN_EMAIL` to a real admin mailbox.
 - `security: verify firewall TLS` — set `PROXY_VERIFY_TLS=true` in production unless you explicitly accept the risk with `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`.
+- `security: restrict incoming hostnames` — set `ALLOWED_HOSTS` to the real Hub hostname(s) used by browsers and reverse proxies.
+- `security: trust only known reverse proxies` — set `TRUSTED_PROXY_CIDRS` to the proxy IPs/subnets that are allowed to supply `X-Forwarded-For`.
+- `security: use a production rate-limit backend` — prefer `RATE_LIMIT_BACKEND=redis` with `RATE_LIMIT_REDIS_URL` configured, or enforce rate limits at the edge when using `RATE_LIMIT_BACKEND=edge`.
+- `security: keep MFA throttling enabled` — tune `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` conservatively for internet-facing deployments.
+- `security: bound proxy and restore payload sizes` — review `MAX_PROXY_REQUEST_BYTES`, `MAX_PROXY_RESPONSE_BYTES`, `MAX_BACKUP_RESTORE_BYTES`, `MAX_BACKUP_RESTORE_ENTRIES`, `MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES`, and `MAX_BACKUP_RESTORE_FILE_BYTES` for your deployment.
+- `security: minimize web-app privilege` — use `NETWORK_CONTROL_MODE=external` when WireGuard bootstrap and runtime firewall management are handled by a sidecar or host service.
+- `security: keep browser hardening headers enabled` — leave `SECURITY_HEADERS_ENABLED=true` and only relax `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, or `PERMISSIONS_POLICY` intentionally.
 - `security: keep management-only routing` — continue rejecting customer LAN routes in WireGuard `AllowedIPs` to avoid cross-company routing and overlapping subnet conflicts.
 - `security: keep IP forwarding disabled` — leave `HUB_ENABLE_IP_FORWARDING=false` unless you intentionally manage peer routing outside the app.
 - `security: keep Hub firewall isolation enabled` — leave `HUB_MANAGE_FIREWALL_RULES=true` so startup installs the `wg0 -> wg0` forward-drop rule.

@@ -132,6 +132,12 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    ```text
    APP_ENV=production
    PUBLIC_URL=https://hub.example.com
+   ALLOWED_HOSTS=hub.example.com
+   TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
+   RATE_LIMIT_BACKEND=redis
+   RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+   PROXY_VERIFY_TLS=true
+   NETWORK_CONTROL_MODE=external
    HUB_WG_ENDPOINT=hub.example.com:51820
    SECRET_KEY=<long-random-secret>
    SECRET_ENCRYPTION_KEY=<separate-long-random-secret>
@@ -147,6 +153,20 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    - Edit `deploy/Caddyfile` and replace `hub.example.com` plus the email address.
    - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service.
+
+   Production-focused security/runtime variables in `.env.example` now also include:
+
+   - `ALLOWED_HOSTS` — allowed incoming `Host` header values for the Hub UI.
+   - `TRUSTED_PROXY_CIDRS` — reverse proxy IPs/subnets whose `X-Forwarded-For` headers are trusted.
+   - `RATE_LIMIT_BACKEND` — `memory`, `redis`, or `edge`.
+   - `RATE_LIMIT_REDIS_URL` — required when `RATE_LIMIT_BACKEND=redis`.
+   - `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` — MFA login throttling.
+   - `PROXY_VERIFY_TLS` — verifies the firewall HTTPS certificate during Hub proxy access.
+   - `MAX_PROXY_REQUEST_BYTES` and `MAX_PROXY_RESPONSE_BYTES` — proxied request/response body limits.
+   - `MAX_BACKUP_RESTORE_BYTES`, `MAX_BACKUP_RESTORE_ENTRIES`, `MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES`, and `MAX_BACKUP_RESTORE_FILE_BYTES` — backup restore safety limits.
+   - `NETWORK_CONTROL_MODE` — `inline` to let the app manage WireGuard/runtime firewall state itself, or `external` to move those actions outside the web app process.
+   - `SECURITY_HEADERS_ENABLED`, `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, and `PERMISSIONS_POLICY` — browser security header controls.
+   - `SECURITY_ALERT_EMAIL_ENABLED` — enables email alerts for selected security events when email delivery is configured.
 
 4. Validate the Compose file:
 
@@ -198,7 +218,7 @@ After the stack is running, open `PUBLIC_URL`, sign in with the initial admin cr
 
 OPNsense Hub is a management overlay for opening each firewall's own web UI. It is not a site-to-site VPN router and does not route customer LANs.
 
-The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false`:
+The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false` and `NETWORK_CONTROL_MODE=inline`:
 
 1. Validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` before allocating peers.
 2. Generates `/etc/wireguard/server.key` if it does not exist.
@@ -226,7 +246,7 @@ Required inbound ports for a typical deployment:
 - TCP `443` to the Hub reverse proxy for browser access and firewall enrollment API calls. If running the development compose file directly, TCP `8083` reaches the FastAPI app instead.
 - UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
 
-`Open OPNsense UI` uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT` which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`.
+`Open OPNsense UI` uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT` which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`. In production, keep `PROXY_VERIFY_TLS=true` and provide certificate trust that matches how the Hub connects to the firewall.
 
 On connect, the OPNsense plugin provisions the firewall side for Hub access:
 
