@@ -1686,18 +1686,18 @@ thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: #f8fbff;
+    background: var(--bg);
     font-size: 12px;
     font-weight: 700;
     box-shadow: inset 0 -1px 0 var(--line);
 }
 
 tbody tr:nth-child(even) {
-    background: #fafcff;
+    background: var(--panel-elevated);
 }
 
 tbody tr:hover {
-    background: #f0f6ff;
+    background: var(--accent-soft);
 }
 
 th,
@@ -1724,7 +1724,7 @@ td {
 }
 
 .dashboard-sort-indicator {
-    color: #9aa6b6;
+    color: var(--muted);
     font-size: 11px;
 }
 
@@ -1803,7 +1803,7 @@ td {
 
 .table-empty-state i {
     font-size: 1.5rem;
-    color: #9aa6b6;
+    color: var(--muted);
 }
 
 .table-empty-state strong {
@@ -2036,7 +2036,7 @@ select option {
 }
 .company-row:hover,
 .company-row:focus {
-    background: #f0f6ff;
+    background: var(--accent-soft);
 }
 .row-toggle-icon {
     width: 1rem;
@@ -2052,7 +2052,7 @@ select option {
 }
 .nested-table-wrap {
     padding: 0.35rem 0.5rem 0.5rem 1.45rem;
-    background: rgba(248, 251, 255, 0.75);
+    background: var(--status-bg);
     border-left: 1px solid var(--line);
 }
 .nested-table th,
