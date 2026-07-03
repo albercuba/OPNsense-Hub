@@ -1136,7 +1136,7 @@ body {
     padding: 0 0.75rem 0 calc(var(--sidebar-width) + 1.5rem);
 }
 .side-menu {
-    top: 3.9rem;
+    top: 5.5rem;
     left: 0.75rem;
     width: var(--sidebar-width);
     gap: 0.25rem;
