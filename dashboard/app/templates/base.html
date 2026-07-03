@@ -39,7 +39,7 @@
                 {% endif %} OPNsense Hub
             </div>
             <nav class="nav">
-                <label class="theme-toggle" for="theme-toggle" aria-label="Toggle dark mode">
+                <div class="theme-toggle-wrap">
                     <input
                         class="theme-toggle-input"
                         id="theme-toggle"
@@ -47,10 +47,10 @@
                         role="switch"
                         aria-label="Toggle dark mode"
                     />
-                    <span class="theme-toggle-track" aria-hidden="true">
-                        <span class="theme-toggle-knob"></span>
-                    </span>
-                </label>
+                    <label class="theme-toggle tdnn" for="theme-toggle" aria-hidden="true">
+                        <span class="theme-toggle-knob moon"></span>
+                    </label>
+                </div>
                 {% if user %}
                 <span class="user-summary"
                     ><i class="fa-solid fa-user"></i> {{ user.email }}</span
