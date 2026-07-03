@@ -4,6 +4,22 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Verify sign in · OPNsense Hub</title>
+        <script>
+            (() => {
+                const storedTheme =
+                    window.localStorage.getItem("opnsense-hub-theme");
+                const preferredDark = window.matchMedia(
+                    "(prefers-color-scheme: dark)",
+                ).matches;
+                const theme =
+                    storedTheme === "dark" || storedTheme === "light"
+                        ? storedTheme
+                        : preferredDark
+                          ? "dark"
+                          : "light";
+                document.documentElement.dataset.theme = theme;
+            })();
+        </script>
         {% if brand_logo_url %}
         <link rel="icon" href="{{ brand_logo_url }}" />
         {% endif %}
@@ -14,6 +30,29 @@
         <link rel="stylesheet" href="/static/style.css" />
     </head>
     <body class="login">
+        <div class="login-theme-toggle-wrap">
+            <input
+                class="theme-toggle-input"
+                id="theme-toggle"
+                type="checkbox"
+                role="switch"
+                aria-label="Toggle dark mode"
+            />
+            <label class="login-theme-toggle-button" for="theme-toggle">
+                <span
+                    class="login-theme-icon login-theme-icon-sun"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-sun"></i>
+                </span>
+                <span
+                    class="login-theme-icon login-theme-icon-moon"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-moon"></i>
+                </span>
+            </label>
+        </div>
         <section class="card">
             <h1>
                 {% if brand_logo_url %}<img
@@ -23,12 +62,23 @@
                 />{% else %}<i class="fa-solid fa-shield-halved brand-mark"></i
                 >{% endif %} OPNsense Hub
             </h1>
-            <p class="muted">Enter the 6-digit code from your authenticator app for {{ pending_user.email }}.</p>
+            <p class="muted">
+                Enter the 6-digit code from your authenticator app for {{
+                pending_user.email }}.
+            </p>
             {% if error %}
             <div class="card warning">{{ error }}</div>
             {% endif %}
-            <form action="/auth/mfa" method="post" class="settings-form narrow-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <form
+                action="/auth/mfa"
+                method="post"
+                class="settings-form narrow-form"
+            >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token }}"
+                />
                 <label class="form-row"
                     >Authenticator code
                     <input
@@ -43,7 +93,8 @@
                 </label>
                 <div class="login-actions">
                     <button class="button" type="submit">
-                        <i class="fa-solid fa-shield-halved"></i> Verify and sign in
+                        <i class="fa-solid fa-shield-halved"></i> Verify and
+                        sign in
                     </button>
                     <a class="button secondary" href="/login">
                         <i class="fa-solid fa-arrow-left"></i> Back to sign in
@@ -51,5 +102,6 @@
                 </div>
             </form>
         </section>
+        <script src="/static/app.js"></script>
     </body>
 </html>

@@ -4,6 +4,22 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Sign in · OPNsense Hub</title>
+        <script>
+            (() => {
+                const storedTheme =
+                    window.localStorage.getItem("opnsense-hub-theme");
+                const preferredDark = window.matchMedia(
+                    "(prefers-color-scheme: dark)",
+                ).matches;
+                const theme =
+                    storedTheme === "dark" || storedTheme === "light"
+                        ? storedTheme
+                        : preferredDark
+                          ? "dark"
+                          : "light";
+                document.documentElement.dataset.theme = theme;
+            })();
+        </script>
         {% if brand_logo_url %}
         <link rel="icon" href="{{ brand_logo_url }}" />
         {% endif %}
@@ -14,6 +30,29 @@
         <link rel="stylesheet" href="/static/style.css" />
     </head>
     <body class="login">
+        <div class="login-theme-toggle-wrap">
+            <input
+                class="theme-toggle-input"
+                id="theme-toggle"
+                type="checkbox"
+                role="switch"
+                aria-label="Toggle dark mode"
+            />
+            <label class="login-theme-toggle-button" for="theme-toggle">
+                <span
+                    class="login-theme-icon login-theme-icon-sun"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-sun"></i>
+                </span>
+                <span
+                    class="login-theme-icon login-theme-icon-moon"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-moon"></i>
+                </span>
+            </label>
+        </div>
         <section class="card">
             <h1>
                 {% if brand_logo_url %}<img
@@ -99,5 +138,6 @@
             </script>
             {% endif %}
         </section>
+        <script src="/static/app.js"></script>
     </body>
 </html>
