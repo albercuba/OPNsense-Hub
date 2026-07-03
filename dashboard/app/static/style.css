@@ -23,6 +23,11 @@
     --status-warning-bg: #fff8e6;
     --status-warning-text: #9a6700;
     --status-danger-bg: #fff0f0;
+    --status-ok-border: #c9efd9;
+    --status-warning-border: #f0d494;
+    --status-danger-border: #f3c7c7;
+    --status-neutral-border: #d8e0ea;
+    --status-info-border: #cfe0fb;
     --warning-panel-bg: #fff7ed;
     --warning-panel-border: #fed7aa;
     --warning-panel-text: #9a3412;
@@ -35,7 +40,6 @@
     --button-outline-border: #bdd3f8;
     --button-outline-hover-bg: #eef5ff;
     --button-outline-hover-border: #93b8f1;
-    --status-ok-border: #c9efd9;
     --radius: 14px;
     --shadow: 0 18px 48px rgba(20, 32, 51, 0.1);
 }
@@ -63,6 +67,11 @@
     --status-warning-bg: #3a2c13;
     --status-warning-text: #ffd27d;
     --status-danger-bg: #3b1d23;
+    --status-ok-border: #245b44;
+    --status-warning-border: #6a4f20;
+    --status-danger-border: #70414a;
+    --status-neutral-border: #334862;
+    --status-info-border: #355786;
     --warning-panel-bg: #36230f;
     --warning-panel-border: #6f4a1f;
     --warning-panel-text: #ffd4a4;
@@ -75,7 +84,6 @@
     --button-outline-border: #3a5680;
     --button-outline-hover-bg: #1b2f4d;
     --button-outline-hover-border: #4a6da0;
-    --status-ok-border: #245b44;
     --shadow: 0 22px 60px rgba(3, 9, 19, 0.42);
 }
 
@@ -1489,7 +1497,7 @@ summary,
 
 .dashboard-summary-button[data-state="warning"] {
     border-left-color: var(--warning);
-    color: #9a6700;
+    color: var(--status-warning-text);
 }
 
 .dashboard-summary-button[data-state="critical"] {
@@ -1498,8 +1506,8 @@ summary,
 }
 
 .dashboard-summary-button[data-state="neutral"] {
-    border-left-color: #98a3b3;
-    color: #6c7a8e;
+    border-left-color: var(--status-neutral-border);
+    color: var(--muted);
 }
 
 .dashboard-summary-button[data-state="info"] {
@@ -1513,8 +1521,8 @@ summary,
 
 .dashboard-summary-button:hover,
 .dashboard-summary-button:focus-visible {
-    background: #f8fbff;
-    border-color: #cfe0fb;
+    background: var(--accent-soft);
+    border-color: var(--line);
     box-shadow: 0 14px 30px rgba(20, 32, 51, 0.1);
     transform: translateY(-2px);
 }
@@ -1563,7 +1571,7 @@ summary,
 }
 
 .dashboard-collapsible-card summary:hover {
-    background: #f4f8fe;
+    background: var(--accent-soft);
 }
 
 .dashboard-collapsible-card[open] summary {
@@ -1594,7 +1602,7 @@ summary,
 .dashboard-accordion-item {
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: #fbfdff;
+    background: var(--panel-elevated);
     overflow: hidden;
 }
 
@@ -1615,7 +1623,7 @@ summary,
 }
 
 .dashboard-accordion-item summary:hover {
-    background: #f4f8fe;
+    background: var(--accent-soft);
 }
 
 .dashboard-accordion-item[open] summary {
@@ -1742,17 +1750,17 @@ td {
 
 .status.online,
 .status.text-success {
-    background: #e9f8f0;
+    background: var(--status-ok-bg);
     color: var(--ok);
-    border-color: #ccefdc;
+    border-color: var(--status-ok-border);
 }
 
 .status.warning,
 .status.text-warning,
 .dashboard-severity.warning {
-    background: #fff7e6;
-    color: #9a6700;
-    border-color: #f0d494;
+    background: var(--status-warning-bg);
+    color: var(--status-warning-text);
+    border-color: var(--status-warning-border);
 }
 
 .status.revoked,
@@ -1761,9 +1769,9 @@ td {
 .status.critical,
 .status.text-danger,
 .dashboard-severity.critical {
-    background: #fff0f0;
+    background: var(--status-danger-bg);
     color: var(--danger);
-    border-color: #f3c7c7;
+    border-color: var(--status-danger-border);
 }
 
 .status.text-muted,
@@ -1772,15 +1780,15 @@ td {
 .status.pending,
 .status.info,
 .dashboard-severity.info {
-    background: #f1f4f8;
-    color: #6c7a8e;
-    border-color: #d8e0ea;
+    background: var(--status-bg);
+    color: var(--muted);
+    border-color: var(--status-neutral-border);
 }
 
 .status.text-info {
-    background: #eef5ff;
+    background: var(--accent-soft);
     color: var(--info);
-    border-color: #cfe0fb;
+    border-color: var(--status-info-border);
 }
 
 .table-empty-state {
@@ -1820,7 +1828,7 @@ td {
     padding: 1rem;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: #fbfdff;
+    background: var(--panel-elevated);
 }
 
 .dashboard-metric-icon {
@@ -1829,7 +1837,7 @@ td {
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: #eef5ff;
+    background: var(--accent-soft);
     color: var(--info);
 }
 
@@ -1844,7 +1852,7 @@ td {
 }
 
 .dashboard-metric-card[data-state="warning"] .dashboard-metric-value {
-    color: #9a6700;
+    color: var(--status-warning-text);
 }
 
 .dashboard-metric-card[data-state="critical"] .dashboard-metric-value {
@@ -1852,7 +1860,7 @@ td {
 }
 
 .dashboard-metric-card[data-state="neutral"] .dashboard-metric-value {
-    color: #6c7a8e;
+    color: var(--muted);
 }
 
 .dashboard-metric-card[data-state="info"] .dashboard-metric-value {
@@ -1867,7 +1875,7 @@ td {
     padding: 0.85rem 1rem;
     border: 1px dashed var(--line);
     border-radius: var(--radius);
-    background: #fbfdff;
+    background: var(--panel-elevated);
 }
 
 .dashboard-section-note {
@@ -1969,13 +1977,14 @@ select option {
 .dashboard-inline-filter select {
     min-height: 42px;
     padding: 0.78rem 2.75rem 0.78rem 0.95rem;
-    border: 1px solid #c9daf8;
+    border: 1px solid var(--line);
     border-radius: 10px;
-    background-color: #fff;
+    color: var(--text);
+    background-color: var(--input-bg);
     background-image:
-        linear-gradient(45deg, transparent 50%, #5f7ea7 50%),
-        linear-gradient(135deg, #5f7ea7 50%, transparent 50%),
-        linear-gradient(to bottom, #ffffff, #f7fbff);
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%),
+        linear-gradient(to bottom, var(--input-bg), var(--input-bg));
     background-position:
         calc(100% - 18px) calc(50% - 1px),
         calc(100% - 12px) calc(50% - 1px),
@@ -1999,17 +2008,17 @@ select option {
 .dashboard-text-filter:hover,
 .dashboard-filters-form select:hover,
 .dashboard-inline-filter select:hover {
-    border-color: #93b8f1;
+    border-color: var(--accent);
     background-image:
-        linear-gradient(45deg, transparent 50%, #2f7de1 50%),
-        linear-gradient(135deg, #2f7de1 50%, transparent 50%),
-        linear-gradient(to bottom, #ffffff, #f1f7ff);
+        linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+        linear-gradient(135deg, var(--accent) 50%, transparent 50%),
+        linear-gradient(to bottom, var(--input-bg), var(--input-bg));
 }
 .dashboard-select:focus,
 .dashboard-text-filter:focus,
 .dashboard-filters-form select:focus,
 .dashboard-inline-filter select:focus {
-    border-color: #6ea5ef;
+    border-color: var(--accent);
     box-shadow:
         0 0 0 3px rgba(47, 125, 225, 0.12),
         0 1px 2px rgba(20, 32, 51, 0.04);
