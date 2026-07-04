@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config: SettingsConfigDict = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+    )
+
     app_name: str = "OPNsense Hub"
     app_env: str = "development"
     app_timezone: str = "UTC"
@@ -94,10 +101,6 @@ class Settings(BaseSettings):
     firewall_health_critical_misses: int = 4
     firewall_health_warning_recovery_successes: int = 1
     firewall_health_critical_recovery_successes: int = 2
-
-    class Config:
-        env_file = ".env"
-        env_prefix = ""
 
 
 @lru_cache
