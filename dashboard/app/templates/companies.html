@@ -96,9 +96,12 @@
                     data-company-row
                     data-company-name="{{ company.name|lower }}"
                     aria-expanded="false"
-                    tabindex="0"
                 >
-                    <td>
+                    <td
+                        class="company-row-toggle"
+                        data-company-row-toggle
+                        tabindex="0"
+                    >
                         <i
                             class="fa-solid fa-chevron-right row-toggle-icon"
                         ></i>
