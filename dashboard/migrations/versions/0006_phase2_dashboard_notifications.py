@@ -1,6 +1,6 @@
 """Add phase 2 dashboard and notification fields
 
-Revision ID: 0006_phase2_dashboard_notifications
+Revision ID: 0006_phase2_dashboard_ops
 Revises: 0005_device_phase1_fields
 Create Date: 2026-07-04 00:00:02
 """
@@ -11,7 +11,7 @@ from importlib import import_module
 
 op = import_module("alembic.op")
 
-revision = "0006_phase2_dashboard_notifications"
+revision = "0006_phase2_dashboard_ops"
 down_revision = "0005_device_phase1_fields"
 branch_labels = None
 depends_on = None
