@@ -11,6 +11,7 @@ When I ask for a change, implement it directly in the codebase.
 - Make the smallest safe change.
 - Follow existing code style and patterns.
 - Do not add new dependencies unless necessary.
+- Do not introduce deprecated APIs, packages, configuration patterns, or framework hooks. Prefer current supported patterns and remove deprecated usage when making related changes.
 - Do not rewrite unrelated code.
 - Do not explain while working unless needed.
 
