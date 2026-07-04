@@ -7,7 +7,13 @@ Create Date: 2026-06-29 00:00:00
 
 from __future__ import annotations
 
+import sys
 from importlib import import_module
+from pathlib import Path
+
+DASHBOARD_DIR = Path(__file__).resolve().parents[2]
+if str(DASHBOARD_DIR) not in sys.path:
+    sys.path.insert(0, str(DASHBOARD_DIR))
 
 from app.database import Base
 from app.models import (  # noqa: F401
