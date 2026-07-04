@@ -14,6 +14,7 @@ This project uses third-party software, images, fonts, and web assets. This file
 | psycopg / psycopg-binary | 3.2.3 | LGPL-3.0-only with exceptions | PostgreSQL driver. Keep license text available when distributing container images. |
 | pydantic-settings | 2.7.1 | MIT | Environment settings. |
 | httpx | 0.28.1 | BSD-3-Clause | HTTP client/proxy requests. |
+| Alembic | 1.16.2 | MIT | Database migration tooling used for explicit and startup migrations. |
 | pytest | 8.3.4 | MIT | Test dependency. |
 
 Transitive dependencies are installed by `pip` when building the image. Generate a complete dependency notice for releases with a tool such as `pip-licenses` from inside the built image or virtual environment.

@@ -110,6 +110,16 @@ docker compose config
 docker compose up --build
 ```
 
+## Local Python setup
+
+For local dashboard work outside Docker, install the dashboard dependencies from the repository root so runtime and migration tooling stay aligned:
+
+```sh
+python -m pip install -r dashboard/requirements.txt
+```
+
+This installs FastAPI, SQLAlchemy, Alembic, pytest, and the other dependencies used by the dashboard and startup migration path.
+
 ## Docker Compose deployment
 
 These steps deploy the Hub with the included Compose stack, PostgreSQL, persistent WireGuard state, persistent branding uploads, and optional Caddy TLS reverse proxy.
@@ -370,12 +380,14 @@ Sensitive integration secrets are encrypted at the application layer before bein
 
 ## Database migrations
 
-Hub now supports explicit Alembic migrations. Existing deployments can still start through the legacy compatibility bootstrap path, but production should prefer running migrations explicitly:
+Hub supports explicit Alembic migrations. The dashboard container installs Alembic through `dashboard/requirements.txt`, and local Python environments should do the same before running migration commands:
 
 ```sh
-cd dashboard
-python -m alembic upgrade head
+python -m pip install -r dashboard/requirements.txt
+PYTHONPATH=dashboard python -m alembic -c dashboard/alembic.ini upgrade head
 ```
+
+Use the same `PYTHONPATH=dashboard` prefix for local test commands so the `app` package resolves consistently.
 
 On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` can still be bootstrapped and stamped when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`.
 
