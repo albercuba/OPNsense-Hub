@@ -2412,11 +2412,11 @@ select option {
     padding: 0.2rem 0.3rem;
 }
 
-.company-row-toggle {
+.company-row {
     cursor: pointer;
 }
-.company-row:hover .company-row-toggle,
-.company-row-toggle:focus {
+.company-row:hover,
+.company-row:focus {
     background: var(--accent-soft);
 }
 .row-toggle-icon {

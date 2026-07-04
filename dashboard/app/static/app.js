@@ -48,20 +48,15 @@ document.addEventListener("DOMContentLoaded", () => {
     firewallsRow.hidden = !expanded;
   };
 
-  document.querySelectorAll("[data-company-row-toggle]").forEach((toggle) => {
-    const row = toggle.closest("[data-company-row]");
-    if (!row) {
-      return;
-    }
-
-    toggle.addEventListener("click", (event) => {
+  document.querySelectorAll("[data-company-row]").forEach((row) => {
+    row.addEventListener("click", (event) => {
       if (event.target.closest("a, button, form")) {
         return;
       }
       const expanded = row.getAttribute("aria-expanded") === "true";
       setCompanyRowExpanded(row, !expanded);
     });
-    toggle.addEventListener("keydown", (event) => {
+    row.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         const expanded = row.getAttribute("aria-expanded") === "true";
