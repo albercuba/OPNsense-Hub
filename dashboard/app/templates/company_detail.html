@@ -1,19 +1,158 @@
 {% extends "base.html" %} {% block content %}
 <section class="card">
-    <h1>{{ company.name }}</h1>
-    <form
-        action="/api/v1/companies/{{ company.id }}/enrollment-codes"
-        method="post"
-        data-enrollment-form
-    >
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <button class="button" type="submit">
-            <i class="fa-solid fa-key"></i> Generate enrollment OTP
-        </button>
-    </form>
+    <div class="admin-card-header company-overview-header">
+        <div>
+            <p class="eyebrow">Company overview</p>
+            <h1>{{ company.name }}</h1>
+            <p class="muted">Roll-up of firewall count, current</div> risks, last contact, recent events, and quick access to device detail pages.</p>
+        </div>
+        {% if can_manage_company %}
+        <form
+            action="/api/v1/companies/{{ company.id }}/enrollment-codes"
+            method="post"
+            data-enrollment-form
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button class="button" type="submit">
+                <i class="fa-solid fa-key"></i> Generate enrollment OTP
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="dashboard-summary-grid company-overview-summary-grid">
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="info">
+            <span class="muted">Total firewalls</span>
+            <strong>{{ summary.firewalls }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="success">
+            <span class="muted">Online</span>
+            <strong>{{ summary.online }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="warning">
+            <span class="muted">Warning</span>
+            <strong>{{ summary.warning }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="critical">
+            <span class="muted">Critical</span>
+            <strong>{{ summary.critical }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="warning">
+            <span class="muted">Backups overdue</span>
+            <strong>{{ summary.backups_overdue }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="warning">
+            <span class="muted">Firmware attention</span>
+            <strong>{{ summary.firmware_attention }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="warning">
+            <span class="muted">Licenses expiring</span>
+            <strong>{{ summary.licenses_expiring }}</strong>
+        </article>
+        <article class="card dashboard-summary-tile company-summary-tile" data-state="info">
+            <span class="muted">Last contact</span>
+            <strong>{{ format_datetime(summary.last_contact) if summary.last_contact else 'Never' }}</strong>
+        </article>
+    </div>
 </section>
+
+<section class="dashboard-top-grid company-overview-grid">
+    <article class="card">
+        <div class="admin-card-header">
+            <div>
+                <h2>Risky firewalls</h2>
+                <p class="muted">Firewalls with one or more active risk signals across health, backups, firmware, or licensing.</p>
+            </div>
+        </div>
+        <div class="device-events-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Firewall</th>
+                        <th>Risks</th>
+                        <th>Status</th>
+                        <th>Backup</th>
+                        <th>Firmware</th>
+                        <th>License</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in risky_devices %}
+                    <tr>
+                        <td><a href="/devices/{{ row.device.id }}">{{ row.device.hostname }}</a></td>
+                        <td>{{ row.risk_count }}</td>
+                        <td><span class="status {{ row.device.status }}">{{ row.status }}</span></td>
+                        <td>{{ row.backup_status.label }}</td>
+                        <td>{{ row.firmware_status.label }}</td>
+                        <td>
+                            {% if row.license_status.days_left is none %}
+                            {{ row.license_status.label }}
+                            {% elif row.license_status.expired %}
+                            Expired
+                            {% else %}
+                            {{ row.license_status.days_left }} days
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6">
+                            <div class="table-empty-state">
+                                <i class="fa-regular fa-circle-check"></i>
+                                <div>
+                                    <strong>No risky firewalls right now</strong>
+                                    <p class="muted">This company currently has no devices flagged for health, backup, firmware, or license attention.</p>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="admin-card-header">
+            <div>
+                <h2>Recent company activity</h2>
+                <p class="muted">Latest firewall events and admin actions for this company.</p>
+            </div>
+        </div>
+        {% if timeline %}
+        <ol class="activity-timeline compact-timeline">
+            {% for item in timeline %}
+            <li class="activity-timeline-item" data-state="info">
+                <div class="activity-timeline-marker"></div>
+                <div class="activity-timeline-content">
+                    <div class="activity-timeline-meta">
+                        <strong>{{ item.title }}</strong>
+                        <span class="muted">{{ format_datetime(item.timestamp) }}</span>
+                    </div>
+                    <p>{{ item.detail }}</p>
+                    <span class="muted">{{ item.source|title }} · {{ item.actor }}</span>
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <div class="table-empty-state">
+            <i class="fa-solid fa-timeline"></i>
+            <div>
+                <strong>No recent company activity</strong>
+                <p class="muted">Activity will appear here after firewall heartbeats, backups, enrollment, or operator changes.</p>
+            </div>
+        </div>
+        {% endif %}
+    </article>
+</section>
+
 <section class="card">
-    <h2>Firewalls</h2>
+    <div class="admin-card-header">
+        <div>
+            <h2>Firewalls</h2>
+            <p class="muted">Quick links to detailed device pages and current state for every firewall in this company.</p>
+        </div>
+    </div>
     <table>
         <thead>
             <tr>
@@ -31,68 +170,35 @@
         <tbody>
             {% for device in devices %}
             <tr>
-                <td>{{ device.hostname }}</td>
+                <td><a href="/devices/{{ device.id }}">{{ device.hostname }}</a></td>
                 <td>{{ device.opnsense_version or 'Unknown' }}</td>
                 <td>{{ device.plugin_version or 'Unknown' }}</td>
                 <td>{{ device_license_label(device) }}</td>
                 <td>{{ device_license_expiration(device) }}</td>
                 <td>{{ device.wg_tunnel_ip }}</td>
-                <td>
-                    <span class="status {{ device.status }}"
-                        >{{ device.status }}</span
-                    >
-                </td>
-                <td>
-                    {{ format_datetime(device.last_seen_at) if
-                    device.last_seen_at else 'Never' }}
-                </td>
+                <td><span class="status {{ device.status }}">{{ device.status }}</span></td>
+                <td>{{ format_datetime(device.last_seen_at) if device.last_seen_at else 'Never' }}</td>
                 <td class="actions">
                     {% set fw = firmware_status_ui(device) %}
-                    <span
-                        class="icon-button {{ fw['class'] }}"
-                        title="{{ fw['tooltip'] }}"
-                        aria-label="{{ fw['label'] }}"
-                    >
+                    <span class="icon-button {{ fw['class'] }}" title="{{ fw['tooltip'] }}" aria-label="{{ fw['label'] }}">
                         <i class="{{ fw['icon'] }}"></i>
                     </span>
-                    <a
-                        class="icon-button"
-                        href="/devices/{{ device.id }}"
-                        title="Firewall settings"
-                        aria-label="Firewall settings"
-                        ><i class="fa-solid fa-gear"></i
-                    ></a>
-                    <a
-                        class="icon-button"
-                        href="/devices/{{ device.id }}"
-                        title="Details"
-                        ><i class="fa-solid fa-circle-info"></i
-                    ></a>
+                    <a class="icon-button" href="/devices/{{ device.id }}" title="Firewall settings" aria-label="Firewall settings"><i class="fa-solid fa-gear"></i></a>
                     {% if device.revoked_at %}
+                    {% if can_manage_company %}
                     <form
                         action="/api/v1/devices/{{ device.id }}/delete"
                         method="post"
                         class="inline-action-form"
-                        onsubmit="
-                            return confirm(
-                                'Remove this revoked firewall? This cannot be undone.',
-                            );
-                        "
+                        onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.');"
                     >
-                        <input
-                            type="hidden"
-                            name="csrf_token"
-                            value="{{ csrf_token }}"
-                        />
-                        <input
-                            type="hidden"
-                            name="redirect_to"
-                            value="/companies/{{ company.id }}"
-                        />
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                        <input type="hidden" name="redirect_to" value="/companies/{{ company.id }}" />
                         <button class="icon-button danger-text" title="Remove">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </form>
+                    {% endif %}
                     {% else %}
                     <a
                         class="icon-button"
@@ -102,32 +208,39 @@
                         rel="noopener noreferrer"
                         ><i class="fa-solid fa-up-right-from-square"></i
                     ></a>
+                    {% if can_manage_company %}
                     <form
                         action="/api/v1/devices/{{ device.id }}/revoke"
                         method="post"
                         class="inline-action-form"
                         onsubmit="return confirm('Revoke this firewall?');"
                     >
-                        <input
-                            type="hidden"
-                            name="csrf_token"
-                            value="{{ csrf_token }}"
-                        />
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                         <button class="icon-button" title="Revoke">
                             <i class="fa-solid fa-ban"></i>
                         </button>
                     </form>
                     {% endif %}
+                    {% endif %}
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="9" class="muted">No firewalls enrolled yet.</td>
+                <td colspan="9">
+                    <div class="table-empty-state">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <div>
+                            <strong>No firewalls enrolled yet</strong>
+                            <p class="muted">Generate an enrollment OTP to add the first firewall to this company.</p>
+                        </div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </section>
+
 <section class="card">
     <h2>Recent enrollment codes</h2>
     <table>
@@ -143,14 +256,19 @@
             <tr>
                 <td>{{ format_datetime(code.created_at) }}</td>
                 <td>{{ format_datetime(code.expires_at) }}</td>
-                <td>
-                    {{ format_datetime(code.used_at) if code.used_at else 'No'
-                    }}
-                </td>
+                <td>{{ format_datetime(code.used_at) if code.used_at else 'No' }}</td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="3" class="muted">No codes generated.</td>
+                <td colspan="3">
+                    <div class="table-empty-state">
+                        <i class="fa-solid fa-key"></i>
+                        <div>
+                            <strong>No codes generated yet</strong>
+                            <p class="muted">Enrollment codes are single-use and will appear here after you create one.</p>
+                        </div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

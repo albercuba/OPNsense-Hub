@@ -51,6 +51,12 @@ def format_datetime(value: datetime | None, include_tz: bool = False) -> str:
     return to_app_timezone(value).strftime(fmt)
 
 
+def format_datetime_local_input(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return to_app_timezone(value).strftime("%Y-%m-%dT%H:%M")
+
+
 def current_brand_logo_url(db: Session | None = None) -> str | None:
     if uploaded_logo_path(settings.branding_upload_dir):
         return "/branding/logo"
@@ -85,6 +91,7 @@ def render_template(
     payload.setdefault("device_license_expiration", device_license_expiration)
     payload.setdefault("firmware_status_ui", firmware_status_ui)
     payload.setdefault("format_datetime", format_datetime)
+    payload.setdefault("format_datetime_local_input", format_datetime_local_input)
     payload.setdefault("app_timezone_name", app_timezone_info().key)
     return templates.TemplateResponse(
         request, template_name, payload, status_code=status_code

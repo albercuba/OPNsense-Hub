@@ -1,75 +1,242 @@
-{% extends "base.html" %} {% block content %} {% if status %}
-<div id="device-status-card" class="card status-card device-status-card">
-    <i class="fa-solid fa-circle-check"></i> {% if status == 'backup-requested'
-    %}Backup request queued.{% elif status == 'backup-deleted' %}Stored backup
-    deleted.{% elif status == 'email-notification-settings-saved' %}Email
-    notification settings saved.{% else %}Backup settings saved.{% endif %}
-</div>
-{% endif %}
+{% extends "base.html" %} {% block content %}
 <section id="device-summary-card" class="card device-summary-card">
-    <h1>{{ device.hostname }}</h1>
-    <p><span class="status {{ device.status }}">{{ device.status }}</span></p>
+    <div class="device-page-header">
+        <div>
+            <p class="eyebrow">Firewall</p>
+            <h1>{{ device.hostname }}</h1>
+            <p>
+                <span class="status {{ device.status }}">{{ device.status }}</span>
+                {% if maintenance_active %}
+                <span class="status warning">maintenance active</span>
+                {% endif %}
+                {% if device.health_acknowledged_at %}
+               </div> <span class="status">acknowledged</span>
+                {% endif %}
+            </p>
+        </div>
+        <div class="device-page-actions">
+            {% if company %}
+            <a class="button secondary" href="/companies/{{ company.id }}">
+                <i class="fa-solid fa-building"></i> Company overview
+            </a>
+            {% endif %} {% if device.revoked_at %}
+            <form
+                action="/api/v1/devices/{{ device.id }}/delete"
+                method="post"
+                class="inline-action-form"
+                onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.');"
+            >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <input type="hidden" name="redirect_to" value="/companies" />
+                <button class="button danger-text" type="submit">
+                    <i class="fa-solid fa-trash"></i> Remove revoked firewall
+                </button>
+            </form>
+            {% else %}
+            <a
+                class="button"
+                href="/proxy/devices/{{ device.id }}/"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                <i class="fa-solid fa-up-right-from-square"></i> Open OPNsense UI
+            </a>
+            {% endif %}
+        </div>
+    </div>
     <div class="grid">
         <div>
-            <strong>Company</strong><br />{{ company.name if company else
-            'Unknown' }}
+            <strong>Company</strong><br />{{ company.name if company else 'Unknown' }}
         </div>
         <div>
-            <strong>OPNsense</strong><br />{{ device.opnsense_version or
-            'Unknown' }}
+            <strong>OPNsense</strong><br />{{ device.opnsense_version or 'Unknown' }}
         </div>
         <div>
-            <strong>Plugin</strong><br />{{ device.plugin_version or 'Unknown'
-            }}
+            <strong>Plugin</strong><br />{{ device.plugin_version or 'Unknown' }}
         </div>
         <div>
             <strong>License</strong><br />{{ device_license_label(device) }}
         </div>
         <div>
-            <strong>Expiration</strong><br />{{
-            device_license_expiration(device) }}
+            <strong>Expiration</strong><br />{{ device_license_expiration(device) }}
         </div>
         <div><strong>Tunnel IP</strong><br />{{ device.wg_tunnel_ip }}</div>
         <div>
-            <strong>Last seen</strong><br />{{
-            format_datetime(device.last_seen_at) if device.last_seen_at else
-            'Never' }}
+            <strong>Last seen</strong><br />{{ format_datetime(device.last_seen_at) if device.last_seen_at else 'Never' }}
+        </div>
+        <div>
+            <strong>Last backup</strong><br />{{ format_datetime(device.backup_last_uploaded_at) if device.backup_last_uploaded_at else 'Never' }}
         </div>
     </div>
-    {% if device.revoked_at %}
+</section>
+
+<section class="card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Health drill-down</h2>
+            <p class="muted">Explicit checks for heartbeat, backup freshness, firmware, licensing, notifications, maintenance, and acknowledgement state.</p>
+        </div>
+    </div>
+    {% if device.health_acknowledged_at %}
+    <div class="inline-note-card">
+        <strong>Current acknowledgement</strong>
+        <p>
+            Recorded {{ format_datetime(device.health_acknowledged_at) }}{% if health_acknowledged_by %} by {{ health_acknowledged_by.email }}{% endif %}.
+            {% if device.health_acknowledged_note %}{{ device.health_acknowledged_note }}{% endif %}
+        </p>
+    </div>
+    {% endif %}
+    <div class="health-detail-grid">
+        {% for item in health_details %}
+        <article class="health-detail-card" data-state="{{ item.state }}">
+            <div class="health-detail-head">
+                <span class="muted">{{ item.title }}</span>
+                <span class="status health-status health-status-{{ item.state }}">{{ item.label }}</span>
+            </div>
+            <strong>{{ item.detail }}</strong>
+            <span class="muted">
+                {% if item.timestamp %}Updated {{ format_datetime(item.timestamp) }}{% else %}No timestamp reported yet.{% endif %}
+            </span>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Runbook and internal notes</h2>
+            <p class="muted">Track site context, contacts, contract timing, maintenance windows, and escalation notes for this firewall.</p>
+        </div>
+    </div>
+    {% if not can_manage_device %}
+    <p class="warning">Company admin access is required to update runbook details.</p>
+    {% endif %}
     <form
-        action="/api/v1/devices/{{ device.id }}/delete"
+        action="/devices/{{ device.id }}/runbook"
         method="post"
-        class="inline-action-form"
-        onsubmit="
-            return confirm(
-                'Remove this revoked firewall? This cannot be undone.',
-            );
-        "
+        class="settings-grid-form runbook-form"
     >
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <input type="hidden" name="redirect_to" value="/companies" />
-        <button class="button danger-text" type="submit">
-            <i class="fa-solid fa-trash"></i> Remove revoked firewall
-        </button>
+        <label class="form-row">
+            Owner
+            <input
+                type="text"
+                name="runbook_owner"
+                value="{{ device.runbook_owner or '' }}"
+                {% if not can_manage_device %}disabled{% endif %}
+            />
+        </label>
+        <label class="form-row">
+            Contact
+            <input
+                type="text"
+                name="runbook_contact"
+                value="{{ device.runbook_contact or '' }}"
+                {% if not can_manage_device %}disabled{% endif %}
+            />
+        </label>
+        <label class="form-row">
+            Site
+            <input
+                type="text"
+                name="runbook_site"
+                value="{{ device.runbook_site or '' }}"
+                {% if not can_manage_device %}disabled{% endif %}
+            />
+        </label>
+        <label class="form-row">
+            Support contract expires ({{ app_timezone_name }})
+            <input
+                type="datetime-local"
+                name="support_contract_expires_at"
+                value="{{ format_datetime_local_input(device.support_contract_expires_at) if format_datetime_local_input is defined else '' }}"
+                {% if not can_manage_device %}disabled{% endif %}
+            />
+        </label>
+        <label class="form-row">
+            Maintenance until ({{ app_timezone_name }})
+            <input
+                type="datetime-local"
+                name="maintenance_until"
+                value="{{ format_datetime_local_input(device.maintenance_until) if format_datetime_local_input is defined else '' }}"
+                {% if not can_manage_device %}disabled{% endif %}
+            />
+        </label>
+        <label class="form-row full-row">
+            Escalation hint
+            <textarea name="escalation_hint" rows="3" {% if not can_manage_device %}disabled{% endif %}>{{ device.escalation_hint or '' }}</textarea>
+        </label>
+        <label class="form-row full-row">
+            Internal notes
+            <textarea name="runbook_notes" rows="5" {% if not can_manage_device %}disabled{% endif %}>{{ device.runbook_notes or '' }}</textarea>
+        </label>
+        {% if can_manage_device %}
+        <div class="form-row submit-row sticky-card-actions full-row">
+            <button class="button" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i> Save runbook details
+            </button>
+        </div>
+        {% endif %}
     </form>
-    {% else %}
-    <p>
-        <a
-            class="button"
-            href="/proxy/devices/{{ device.id }}/"
-            target="_blank"
-            rel="noopener noreferrer"
-            ><i class="fa-solid fa-up-right-from-square"></i> Open OPNsense
-            UI</a
-        >
-    </p>
-    {% endif %}
 </section>
-<section
-    id="device-settings-grid"
-    class="dual-settings-grid device-settings-grid"
->
+
+<section class="card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Health acknowledgement</h2>
+            <p class="muted">Let operators mark a warning or critical state as already being handled and leave a short handoff note.</p>
+        </div>
+    </div>
+    {% if not can_manage_device %}
+    <p class="warning">Company admin access is required to acknowledge or clear health issues.</p>
+    {% endif %}
+    <div class="acknowledgement-grid">
+        <form
+            action="/devices/{{ device.id }}/acknowledge-health"
+            method="post"
+            class="settings-grid-form"
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <label class="form-row full-row">
+                Acknowledgement note
+                <textarea name="acknowledgement_note" rows="3" placeholder="Example: ticket INC-1024 opened; waiting for on-site hands" {% if not can_manage_device %}disabled{% endif %}>{{ device.health_acknowledged_note or '' }}</textarea>
+            </label>
+            {% if can_manage_device %}
+            <div class="form-row submit-row sticky-card-actions full-row">
+                <button class="button secondary" type="submit">
+                    <i class="fa-solid fa-clipboard-check"></i> Acknowledge issue
+                </button>
+            </div>
+            {% endif %}
+        </form>
+        <div class="inline-note-card">
+            <strong>Current state</strong>
+            <p>
+                {% if device.health_acknowledged_at %}
+                Acknowledged {{ format_datetime(device.health_acknowledged_at) }}{% if health_acknowledged_by %} by {{ health_acknowledged_by.email }}{% endif %}.
+                {% if device.health_acknowledged_note %}{{ device.health_acknowledged_note }}{% endif %}
+                {% else %}
+                No acknowledgement has been recorded for this firewall yet.
+                {% endif %}
+            </p>
+            {% if can_manage_device and device.health_acknowledged_at %}
+            <form
+                action="/devices/{{ device.id }}/clear-acknowledgement"
+                method="post"
+                class="inline-action-form"
+            >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button class="button outline" type="submit">
+                    <i class="fa-solid fa-eraser"></i> Clear acknowledgement
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<section id="device-settings-grid" class="dual-settings-grid device-settings-grid">
     <section id="device-backup-card" class="card device-backup-card">
         <div class="admin-card-header">
             <h2>Configuration backups</h2>
@@ -84,12 +251,7 @@
                 ><input
                     type="checkbox"
                     name="backup_enabled"
-                    {%
-                    if
-                    device.backup_enabled
-                    %}checked{%
-                    endif
-                    %}
+                    {% if device.backup_enabled %}checked{% endif %}
                 />
                 Enable configuration backups</label
             >
@@ -118,36 +280,16 @@
                             value="{{ device.backup_interval_value }}"
                             required
                         />
-                        <select
-                            class="backup-interval-field"
-                            name="backup_interval_unit"
-                        >
-                            <option
-                                value="hours"
-                                {% if device.backup_interval_unit == 'hours' %}selected{% endif %}
-                            >
-                                Hours
-                            </option>
-                            <option
-                                value="days"
-                                {% if device.backup_interval_unit == 'days' %}selected{% endif %}
-                            >
-                                Days
-                            </option>
-                            <option
-                                value="months"
-                                {% if device.backup_interval_unit == 'months' %}selected{% endif %}
-                            >
-                                Months
-                            </option>
+                        <select class="backup-interval-field" name="backup_interval_unit">
+                            <option value="hours" {% if device.backup_interval_unit == 'hours' %}selected{% endif %}>Hours</option>
+                            <option value="days" {% if device.backup_interval_unit == 'days' %}selected{% endif %}>Days</option>
+                            <option value="months" {% if device.backup_interval_unit == 'months' %}selected{% endif %}>Months</option>
                         </select>
                     </div>
                 </label>
             </div>
             <div class="form-row">
-                <strong>Last uploaded</strong><br />{{
-                format_datetime(device.backup_last_uploaded_at) if
-                device.backup_last_uploaded_at else 'Never' }}
+                <strong>Last uploaded</strong><br />{{ format_datetime(device.backup_last_uploaded_at) if device.backup_last_uploaded_at else 'Never' }}
             </div>
             <div class="backup-card-actions full-row">
                 <button
@@ -159,17 +301,14 @@
                     <i class="fa-solid fa-box-archive"></i> Backup now
                 </button>
             </div>
-            <div class="form-row submit-row backup-save-row">
+            <div class="form-row submit-row backup-save-row sticky-card-actions">
                 <button class="button" type="submit">
                     <i class="fa-solid fa-floppy-disk"></i> Save backup settings
                 </button>
             </div>
         </form>
     </section>
-    <section
-        id="device-backup-history-card"
-        class="card device-backup-history-card"
-    >
+    <section id="device-backup-history-card" class="card device-backup-history-card">
         <h2>Stored backups</h2>
         <table>
             <thead>
@@ -196,15 +335,9 @@
                             action="/devices/{{ device.id }}/backups/{{ backup.id }}/delete"
                             method="post"
                             class="inline-action-form"
-                            onsubmit="
-                                return confirm('Delete this stored backup?');
-                            "
+                            onsubmit="return confirm('Delete this stored backup?');"
                         >
-                            <input
-                                type="hidden"
-                                name="csrf_token"
-                                value="{{ csrf_token }}"
-                            />
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                             <button
                                 class="icon-button danger-text"
                                 type="submit"
@@ -218,29 +351,31 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="3" class="muted">No backups stored yet.</td>
+                    <td colspan="3">
+                        <div class="table-empty-state">
+                            <i class="fa-solid fa-box-open"></i>
+                            <div>
+                                <strong>No backups stored yet</strong>
+                                <p class="muted">Enable scheduled backups or request one now to start building restore points for this firewall.</p>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </section>
-    <section
-        id="device-email-notifications-card"
-        class="card device-email-notifications-card"
-    >
+    <section id="device-email-notifications-card" class="card device-email-notifications-card">
         <div class="admin-card-header">
             <h2>Email notifications</h2>
         </div>
         {% if not email_settings_configured %}
         <p class="warning">
-            Email settings are not configured. Configure SMTP or Microsoft Graph
-            email settings in Hub Settings before enabling firewall
-            notifications.
+            Email settings are not configured. Configure SMTP or Microsoft Graph email settings in Hub Settings before enabling firewall notifications.
         </p>
         {% endif %} {% if not can_edit_notification_settings %}
         <p class="warning">
-            Company admin access is required to edit firewall notification
-            settings.
+            Company admin access is required to edit firewall notification settings.
         </p>
         {% endif %}
         <form
@@ -253,22 +388,8 @@
                 ><input
                     type="checkbox"
                     name="email_notifications_enabled"
-                    {%
-                    if
-                    device.email_notifications_enabled
-                    %}checked{%
-                    endif
-                    %}
-                    {%
-                    if
-                    not
-                    email_settings_configured
-                    or
-                    not
-                    can_edit_notification_settings
-                    %}disabled{%
-                    endif
-                    %}
+                    {% if device.email_notifications_enabled %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
                 />
                 Enable email notifications</label
             >
@@ -278,38 +399,15 @@
                     type="email"
                     name="email_notification_recipient"
                     value="{{ device.email_notification_recipient or '' }}"
-                    {%
-                    if
-                    not
-                    email_settings_configured
-                    or
-                    not
-                    can_edit_notification_settings
-                    %}disabled{%
-                    endif
-                    %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
                 />
             </label>
             <label class="checkbox-label"
                 ><input
                     type="checkbox"
                     name="email_notify_on_warning"
-                    {%
-                    if
-                    device.email_notify_on_warning
-                    %}checked{%
-                    endif
-                    %}
-                    {%
-                    if
-                    not
-                    email_settings_configured
-                    or
-                    not
-                    can_edit_notification_settings
-                    %}disabled{%
-                    endif
-                    %}
+                    {% if device.email_notify_on_warning %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
                 />
                 When status becomes warning</label
             >
@@ -317,67 +415,56 @@
                 ><input
                     type="checkbox"
                     name="email_notify_on_critical"
-                    {%
-                    if
-                    device.email_notify_on_critical
-                    %}checked{%
-                    endif
-                    %}
-                    {%
-                    if
-                    not
-                    email_settings_configured
-                    or
-                    not
-                    can_edit_notification_settings
-                    %}disabled{%
-                    endif
-                    %}
+                    {% if device.email_notify_on_critical %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
                 />
                 When status becomes critical</label
             >
             <div class="form-row">
-                <strong>Last notified</strong><br />{{
-                format_datetime(device.email_last_notified_at) if
-                device.email_last_notified_at else 'Never' }}
+                <strong>Last notified</strong><br />{{ format_datetime(device.email_last_notified_at) if device.email_last_notified_at else 'Never' }}
             </div>
-            {% if email_settings_configured and can_edit_notification_settings
-            %}
-            <div class="form-row submit-row">
+            {% if email_settings_configured and can_edit_notification_settings %}
+            <div class="form-row submit-row sticky-card-actions">
                 <button class="button" type="submit">
-                    <i class="fa-solid fa-floppy-disk"></i> Save email
-                    notifications
+                    <i class="fa-solid fa-floppy-disk"></i> Save email notifications
                 </button>
             </div>
             {% endif %}
         </form>
     </section>
 </section>
+
 <section id="device-events-card" class="card device-events-card">
-    <h2>Device events</h2>
-    <div class="device-events-table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Message</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for event in events %}
-                <tr>
-                    <td>{{ format_datetime(event.created_at) }}</td>
-                    <td>{{ event.event_type }}</td>
-                    <td>{{ event.message or '' }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="3" class="muted">No events yet.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="admin-card-header">
+        <div>
+            <h2>Activity timeline</h2>
+            <p class="muted">Combined firewall events and administrative audit actions in reverse chronological order.</p>
+        </div>
     </div>
+    {% if timeline %}
+    <ol class="activity-timeline">
+        {% for item in timeline %}
+        <li class="activity-timeline-item" data-state="{{ item.state }}">
+            <div class="activity-timeline-marker"></div>
+            <div class="activity-timeline-content">
+                <div class="activity-timeline-meta">
+                    <strong>{{ item.title }}</strong>
+                    <span class="muted">{{ format_datetime(item.timestamp) }}</span>
+                </div>
+                <p>{{ item.detail }}</p>
+                <span class="muted">{{ item.source|title }} · {{ item.actor }}</span>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <div class="table-empty-state">
+        <i class="fa-solid fa-timeline"></i>
+        <div>
+            <strong>No activity yet</strong>
+            <p class="muted">Once this firewall checks in, uploads backups, or receives operator actions, activity will appear here.</p>
+        </div>
+    </div>
+    {% endif %}
 </section>
 {% endblock %}

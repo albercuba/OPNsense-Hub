@@ -66,8 +66,8 @@
                 tabindex="0"
             >
                 <td>
-                    <i class="fa-solid fa-chevron-right row-toggle-icon"></i> {{
-                    company.name }}
+                    <i class="fa-solid fa-chevron-right row-toggle-icon"></i>
+                    <a class="company-row-link" href="/companies/{{ company.id }}">{{ company.name }}</a>
                 </td>
                 <td class="actions">
                     {% if can_manage_company %}
@@ -236,8 +236,14 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="9" class="muted">
-                                        No firewalls enrolled yet.
+                                    <td colspan="9">
+</td>                                        <div class="table-empty-state">
+                                            <i class="fa-solid fa-shield-halved"></i>
+                                            <div>
+                                                <strong>No firewalls enrolled yet</strong>
+                                                <p class="muted">Generate an enrollment OTP to add the first firewall for {{ company.name }}.</p>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -248,7 +254,15 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="2" class="muted">No companies yet.</td>
+                <td colspan="2">
+                    <div class="table-empty-state">
+                        <i class="fa-solid fa-building"></i>
+                        <div>
+                            <strong>No companies yet</strong>
+                            <p class="muted">Create or restore a company first, then enroll firewalls to manage them here.</p>
+                        </div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

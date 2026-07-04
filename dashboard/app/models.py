@@ -270,6 +270,24 @@ class Device(Base):
     email_last_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    runbook_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runbook_owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    runbook_contact: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    runbook_site: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    support_contract_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    escalation_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maintenance_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    health_acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    health_acknowledged_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    health_acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

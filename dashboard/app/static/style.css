@@ -1066,6 +1066,334 @@ th {
     max-height: 90px;
     display: block;
 }
+.device-page-header,
+.company-overview-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.device-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.health-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.85rem;
+}
+
+.health-detail-card,
+.inline-note-card {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-elevated);
+}
+
+.health-detail-card[data-state="success"] {
+    border-color: var(--status-ok-border);
+}
+
+.health-detail-card[data-state="warning"] {
+    border-color: var(--status-warning-border);
+}
+
+.health-detail-card[data-state="critical"] {
+    border-color: var(--status-danger-border);
+}
+
+.health-detail-card[data-state="info"] {
+    border-color: var(--status-info-border);
+}
+
+.health-detail-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.health-status.health-status-success {
+    background: var(--status-ok-bg);
+    color: var(--ok);
+    border-color: var(--status-ok-border);
+}
+
+.health-status.health-status-warning {
+    background: var(--status-warning-bg);
+    color: var(--status-warning-text);
+    border-color: var(--status-warning-border);
+}
+
+.health-status.health-status-critical {
+    background: var(--status-danger-bg);
+    color: var(--danger);
+    border-color: var(--status-danger-border);
+}
+
+.health-status.health-status-info {
+    background: var(--accent-soft);
+    color: var(--info);
+    border-color: var(--status-info-border);
+}
+
+.health-status.health-status-neutral {
+    background: var(--status-bg);
+    color: var(--muted);
+    border-color: var(--status-neutral-border);
+}
+
+.acknowledgement-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+    gap: 1rem;
+}
+
+.sticky-card-actions {
+    position: sticky;
+    bottom: 0;
+    padding-top: 0.6rem;
+    background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0),
+        var(--panel) 35%
+    );
+}
+
+:root[data-theme="dark"] .sticky-card-actions {
+    background: linear-gradient(180deg, rgba(15, 23, 36, 0), var(--panel) 35%);
+}
+
+.activity-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 0.25rem;
+    display: grid;
+    gap: 0.9rem;
+}
+
+.activity-timeline-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 0.9rem;
+}
+
+.activity-timeline-item::after {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 18px;
+    bottom: -0.95rem;
+    width: 2px;
+    background: var(--line);
+}
+
+.activity-timeline-item:last-child::after {
+    display: none;
+}
+
+.activity-timeline-marker {
+    width: 16px;
+    height: 16px;
+    margin-top: 0.18rem;
+    border-radius: 999px;
+    border: 2px solid var(--line);
+    background: var(--panel);
+}
+
+.activity-timeline-item[data-state="success"] .activity-timeline-marker {
+    border-color: var(--ok);
+    background: var(--status-ok-bg);
+}
+
+.activity-timeline-item[data-state="warning"] .activity-timeline-marker {
+    border-color: var(--warning);
+    background: var(--status-warning-bg);
+}
+
+.activity-timeline-item[data-state="critical"] .activity-timeline-marker {
+    border-color: var(--danger);
+    background: var(--status-danger-bg);
+}
+
+.activity-timeline-item[data-state="info"] .activity-timeline-marker {
+    border-color: var(--info);
+    background: var(--accent-soft);
+}
+
+.activity-timeline-content {
+    display: grid;
+    gap: 0.25rem;
+    padding-bottom: 0.2rem;
+}
+
+.activity-timeline-content p {
+    margin: 0;
+}
+
+.activity-timeline-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: baseline;
+}
+
+.compact-timeline {
+    gap: 0.75rem;
+}
+
+.toast-stack {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 60;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    min-width: min(380px, calc(100vw - 2rem));
+    max-width: 420px;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--status-ok-border);
+    border-radius: var(--radius);
+    background: var(--panel-elevated);
+    box-shadow: var(--shadow);
+    animation: toast-in 0.18s ease-out;
+}
+
+.toast.is-closing {
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
+}
+
+.toast-success {
+    border-color: var(--status-ok-border);
+}
+
+.toast-info {
+    border-color: var(--status-info-border);
+}
+
+.toast-body {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.toast-body i {
+    color: var(--ok);
+}
+
+.toast-info .toast-body i {
+    color: var(--info);
+}
+
+.toast-close {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.company-row-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.company-row-link:hover {
+    color: var(--info);
+    text-decoration: underline;
+}
+
+.dashboard-status-legend-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.75rem 1rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.dashboard-status-legend-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.company-overview-grid {
+    align-items: start;
+}
+
+.company-summary-tile {
+    border-left: 4px solid var(--line);
+}
+
+.company-summary-tile[data-state="success"] {
+    border-left-color: var(--ok);
+}
+
+.company-summary-tile[data-state="warning"] {
+    border-left-color: var(--warning);
+}
+
+.company-summary-tile[data-state="critical"] {
+    border-left-color: var(--danger);
+}
+
+.company-summary-tile[data-state="info"] {
+    border-left-color: var(--info);
+}
+
+.status.other {
+    background: var(--accent-soft);
+    color: var(--info);
+    border-color: var(--status-info-border);
+}
+
+.button.outline {
+    background: transparent;
+    color: var(--info);
+    border: 1px solid var(--button-outline-border);
+    box-shadow: none;
+}
+
+.button.outline:hover,
+.button.outline:focus-visible {
+    background: var(--button-outline-hover-bg);
+    color: var(--button-secondary-hover-text);
+    border-color: var(--button-outline-hover-border);
+}
+
 @media (max-width: 900px) {
     .topbar {
         padding: 1rem;
@@ -1271,6 +1599,24 @@ td {
 @media (max-width: 900px) {
     .app-layout {
         padding: 0 0.5rem;
+    }
+    .acknowledgement-grid {
+        grid-template-columns: 1fr;
+    }
+    .device-page-header,
+    .company-overview-header,
+    .activity-timeline-meta,
+    .health-detail-head {
+        grid-template-columns: 1fr;
+    }
+    .toast-stack {
+        right: 0.5rem;
+        left: 0.5rem;
+        bottom: 0.5rem;
+    }
+    .toast {
+        min-width: 0;
+        max-width: none;
     }
     .shell {
         padding-left: 0;

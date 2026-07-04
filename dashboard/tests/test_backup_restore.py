@@ -345,6 +345,177 @@ def test_legacy_external_users_without_auth_provider_are_still_locked(
     )
 
 
+def test_device_page_renders_phase_one_sections(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_phase_one_page") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        device.runbook_notes = "Primary edge firewall"
+        device.runbook_owner = "Ops Team"
+        device.health_acknowledged_at = utc_now()
+        device.health_acknowledged_note = "Tracked in INC-42"
+        device.health_acknowledged_by = admin.id
+        session.add(
+            AuditLog(
+                id=uuid4(),
+                user_id=admin.id,
+                company_id=device.company_id,
+                device_id=device.id,
+                action="device.runbook.update",
+                ip_address="127.0.0.1",
+                user_agent="pytest",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/devices/{device.id}")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Health drill-down" in response.text
+    assert "Runbook and internal notes" in response.text
+    assert "Health acknowledgement" in response.text
+    assert "Activity timeline" in response.text
+    assert "Tracked in INC-42" in response.text
+    assert "Runbook updated" in response.text
+
+
+def test_device_runbook_update_persists_fields(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_runbook_update") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client, f"/devices/{device.id}")
+            response = client.post(
+                f"/devices/{device.id}/runbook",
+                data={
+                    "csrf_token": csrf_token,
+                    "runbook_owner": "Ops Team",
+                    "runbook_contact": "ops@example.com",
+                    "runbook_site": "HQ",
+                    "support_contract_expires_at": "2030-01-01T09:30",
+                    "maintenance_until": "2030-01-01T10:30",
+                    "escalation_hint": "Escalate to MSP after 15 minutes",
+                    "runbook_notes": "Primary site firewall",
+                },
+                follow_redirects=False,
+            )
+        session.refresh(device)
+        audit_entry = session.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.device_id == device.id,
+                AuditLog.action == "device.runbook.update",
+            )
+            .order_by(AuditLog.created_at.desc())
+        )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith("status=runbook-saved")
+    assert device.runbook_owner == "Ops Team"
+    assert device.runbook_contact == "ops@example.com"
+    assert device.runbook_site == "HQ"
+    assert device.escalation_hint == "Escalate to MSP after 15 minutes"
+    assert device.runbook_notes == "Primary site firewall"
+    assert device.support_contract_expires_at is not None
+    assert device.maintenance_until is not None
+    assert audit_entry is not None
+
+
+def test_device_health_acknowledgement_can_be_saved_and_cleared(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_health_acknowledgement") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client, f"/devices/{device.id}")
+            acknowledge_response = client.post(
+                f"/devices/{device.id}/acknowledge-health",
+                data={
+                    "csrf_token": csrf_token,
+                    "acknowledgement_note": "Investigating upstream tunnel issue",
+                },
+                follow_redirects=False,
+            )
+            clear_response = client.post(
+                f"/devices/{device.id}/clear-acknowledgement",
+                data={"csrf_token": csrf_token},
+                follow_redirects=False,
+            )
+        audit_actions = {
+            row.action
+            for row in session.scalars(
+                select(AuditLog).where(AuditLog.device_id == device.id)
+            ).all()
+        }
+        session.refresh(device)
+        app.dependency_overrides.clear()
+
+    assert acknowledge_response.status_code == 303
+    assert acknowledge_response.headers["location"].endswith(
+        "status=health-acknowledged"
+    )
+    assert clear_response.status_code == 303
+    assert clear_response.headers["location"].endswith(
+        "status=health-acknowledgement-cleared"
+    )
+    assert device.health_acknowledged_at is None
+    assert device.health_acknowledged_note is None
+    assert device.health_acknowledged_by is None
+    assert "device.health_acknowledge" in audit_actions
+    assert "device.health_acknowledge.clear" in audit_actions
+
+
+def test_company_detail_shows_overview_timeline_and_risks(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "company_detail_overview") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        device.status = "warning"
+        device.health_missed_checks = 2
+        device.backup_enabled = True
+        device.backup_last_uploaded_at = utc_now() - timedelta(days=3)
+        session.add(
+            DeviceEvent(
+                id=uuid4(),
+                device_id=device.id,
+                event_type="health_check",
+                message="WebGUI unreachable",
+                created_at=utc_now(),
+            )
+        )
+        session.add(
+            AuditLog(
+                id=uuid4(),
+                user_id=admin.id,
+                company_id=device.company_id,
+                device_id=device.id,
+                action="device.health_acknowledge",
+                ip_address="127.0.0.1",
+                user_agent="pytest",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/companies/{device.company_id}")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Company overview" in response.text
+    assert "Risky firewalls" in response.text
+    assert "Recent company activity" in response.text
+    assert "Health issue acknowledged" in response.text
+    assert "fw-acme-1" in response.text
+
+
 def test_parse_backup_bundle_rejects_archives_with_too_many_members(monkeypatch):
     monkeypatch.setattr(settings, "max_backup_restore_entries", 2)
     archive = io.BytesIO()

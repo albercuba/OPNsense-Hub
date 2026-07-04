@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
@@ -16,10 +17,16 @@ from ..backups import (
     backup_request_pending,
     mark_device_backup_requested,
 )
+from ..dashboard import (
+    dashboard_backup_status,
+    dashboard_firmware_status,
+    dashboard_license_status,
+    normalized_status,
+)
 from ..database import get_db
 from ..deps import current_user, device_from_token, has_company_access
 from ..integration import email_settings_configured
-from ..models import Company, Device, DeviceBackup, DeviceEvent, User
+from ..models import AuditLog, Company, Device, DeviceBackup, DeviceEvent, User
 from ..security import hash_secret, random_token, utc_now
 from ..security.rate_limit import apply_rate_limit
 from ..services.common import (
@@ -37,9 +44,251 @@ from ..services.firmware_scheduler import (
     parse_bounded_int,
     parse_uploaded_backup_created_at,
 )
-from ..web import render_template, settings
+from ..web import app_timezone_info, render_template, settings
 
 router = APIRouter()
+
+DEVICE_TIMELINE_LIMIT = 25
+DEVICE_ACTIVITY_ACTION_LABELS = {
+    "device.backup.request_now": "Backup requested",
+    "device.backup.delete": "Stored backup deleted",
+    "device.backup_settings.update": "Backup settings updated",
+    "device.email_notification_settings.update": "Email notifications updated",
+    "device.health_acknowledge": "Health issue acknowledged",
+    "device.health_acknowledge.clear": "Health acknowledgement cleared",
+    "device.revoke": "Firewall revoked",
+    "device.runbook.update": "Runbook updated",
+}
+DEVICE_EVENT_LABELS = {
+    "backup_uploaded": "Backup uploaded",
+    "firmware_check": "Firmware check",
+    "health_check": "Health check",
+    "heartbeat": "Heartbeat",
+    "notification_sent": "Notification sent",
+    "notification_failed": "Notification failed",
+    "email_notification_sent": "Email sent",
+    "email_notification_failed": "Email failed",
+    "revoked": "Firewall revoked",
+}
+
+
+def _redirect_with_status(device_id: uuid.UUID, status: str) -> RedirectResponse:
+    return RedirectResponse(f"/devices/{device_id}?status={status}", status_code=303)
+
+
+def _parse_optional_form_datetime(value: str, field_name: str) -> datetime | None:
+    normalized = clean_optional(value)
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid {field_name}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=app_timezone_info())
+    return parsed.astimezone(timezone.utc)
+
+
+def _device_health_check_state(device: Device, now: datetime) -> dict[str, str | None]:
+    if device.last_seen_at is None:
+        return {
+            "label": "No heartbeat yet",
+            "state": "warning",
+            "detail": "This firewall has not reported a heartbeat since enrollment.",
+            "timestamp": None,
+        }
+    age = now - device.last_seen_at.astimezone(timezone.utc)
+    if age <= timedelta(minutes=15):
+        state = "success"
+        label = "Healthy"
+    elif age <= timedelta(hours=1):
+        state = "warning"
+        label = "Delayed"
+    else:
+        state = "critical"
+        label = "Stale"
+    return {
+        "label": label,
+        "state": state,
+        "detail": f"Last heartbeat {age.seconds // 60 if age < timedelta(days=1) else age.days * 24 * 60} minutes ago.",
+        "timestamp": device.last_seen_at,
+    }
+
+
+def _device_health_details(device: Device, now: datetime) -> list[dict[str, object]]:
+    heartbeat = _device_health_check_state(device, now)
+    backup = dashboard_backup_status(device, now)
+    firmware = dashboard_firmware_status(device)
+    license_state = dashboard_license_status(device, now)
+    current_status = normalized_status(device)
+    tunnel_state = (
+        "success"
+        if current_status == "online"
+        else "warning"
+        if current_status == "warning"
+        else "critical"
+        if current_status == "critical"
+        else "neutral"
+    )
+    license_detail = license_state["label"]
+    if license_state["days_left"] is not None:
+        days_left = int(license_state["days_left"])
+        if license_state["expired"]:
+            license_detail = f"Expired {abs(days_left)} days ago."
+        else:
+            license_detail = f"Expires in {days_left} days."
+    maintenance_active = bool(
+        device.maintenance_until
+        and device.maintenance_until.astimezone(timezone.utc)
+        > now.astimezone(timezone.utc)
+    )
+    acknowledgement_active = bool(device.health_acknowledged_at)
+    return [
+        {
+            "title": "Heartbeat",
+            "label": heartbeat["label"],
+            "state": heartbeat["state"],
+            "detail": heartbeat["detail"],
+            "timestamp": heartbeat["timestamp"],
+        },
+        {
+            "title": "Tunnel status",
+            "label": current_status.replace("critical", "offline").capitalize()
+            if current_status == "critical"
+            else current_status.capitalize(),
+            "state": tunnel_state,
+            "detail": "Derived from the latest firewall status reported to Hub.",
+            "timestamp": device.last_seen_at,
+        },
+        {
+            "title": "Backup freshness",
+            "label": str(backup["label"]),
+            "state": "success"
+            if backup["label"] == "OK"
+            else "warning"
+            if backup["label"] in {"Pending", "Disabled"}
+            else "critical",
+            "detail": "Last upload: "
+            + (
+                device.backup_last_uploaded_at.isoformat()
+                if device.backup_last_uploaded_at
+                else "none recorded"
+            ),
+            "timestamp": device.backup_last_uploaded_at,
+        },
+        {
+            "title": "Firmware check",
+            "label": str(firmware["label"]),
+            "state": "success"
+            if firmware["label"] == "Up to date"
+            else "warning"
+            if firmware["label"] in {"Updates available", "Upgrade available"}
+            else "critical"
+            if firmware["label"] == "Check failed"
+            else "neutral",
+            "detail": device.firmware_status_message
+            or (
+                f"Last checked at {device.firmware_checked_at.isoformat()}."
+                if device.firmware_checked_at
+                else "No firmware check has been reported yet."
+            ),
+            "timestamp": device.firmware_checked_at,
+        },
+        {
+            "title": "License",
+            "label": str(license_state["label"]),
+            "state": "critical"
+            if license_state["expired"]
+            else "warning"
+            if license_state["expiring_soon"]
+            else "success",
+            "detail": license_detail,
+            "timestamp": device.license_expires_at,
+        },
+        {
+            "title": "Last notification",
+            "label": "Sent" if device.email_last_notified_at else "Not sent",
+            "state": "success" if device.email_last_notified_at else "neutral",
+            "detail": (
+                f"Last notification status: {device.email_last_notified_status or 'unknown'}."
+                if device.email_last_notified_at
+                else "No email notification has been sent for this firewall yet."
+            ),
+            "timestamp": device.email_last_notified_at,
+        },
+        {
+            "title": "Maintenance window",
+            "label": "Active" if maintenance_active else "Not active",
+            "state": "warning" if maintenance_active else "neutral",
+            "detail": (
+                "Health alerts are temporarily muted for this firewall."
+                if maintenance_active
+                else "No maintenance window is currently scheduled."
+            ),
+            "timestamp": device.maintenance_until,
+        },
+        {
+            "title": "Acknowledgement",
+            "label": "Acknowledged" if acknowledgement_active else "Open",
+            "state": "info" if acknowledgement_active else "warning",
+            "detail": (
+                device.health_acknowledged_note
+                or "The current health issue has been acknowledged."
+                if acknowledgement_active
+                else "No acknowledgement note has been recorded."
+            ),
+            "timestamp": device.health_acknowledged_at,
+        },
+    ]
+
+
+def _build_device_timeline(
+    device: Device,
+    events: list[DeviceEvent],
+    audit_entries: list[AuditLog],
+    users_by_id: dict[uuid.UUID, User],
+) -> list[dict[str, object]]:
+    timeline = []
+    for event in events:
+        timeline.append(
+            {
+                "source": "event",
+                "title": DEVICE_EVENT_LABELS.get(
+                    event.event_type, event.event_type.replace("_", " ").title()
+                ),
+                "detail": event.message or "Firewall activity recorded.",
+                "timestamp": event.created_at,
+                "actor": "Firewall",
+                "state": "warning"
+                if event.event_type in {"health_check", "email_notification_failed"}
+                else "critical"
+                if event.event_type in {"notification_failed"}
+                else "success"
+                if event.event_type in {"backup_uploaded", "email_notification_sent"}
+                else "neutral",
+            }
+        )
+    for entry in audit_entries:
+        actor = (
+            users_by_id.get(entry.user_id).email
+            if entry.user_id in users_by_id
+            else "Hub user"
+        )
+        timeline.append(
+            {
+                "source": "audit",
+                "title": DEVICE_ACTIVITY_ACTION_LABELS.get(
+                    entry.action,
+                    entry.action.replace(".", " ").replace("_", " ").title(),
+                ),
+                "detail": "Administrative action recorded in the audit log.",
+                "timestamp": entry.created_at,
+                "actor": actor,
+                "state": "info",
+            }
+        )
+    timeline.sort(key=lambda item: item["timestamp"], reverse=True)
+    return timeline[:DEVICE_TIMELINE_LIMIT]
 
 
 @router.post("/api/v1/devices/{device_id}/heartbeat")
@@ -229,6 +478,7 @@ def device_page(
     )
     integration_settings = get_or_create_integration_settings(db)
     company = db.get(Company, device.company_id)
+    now = utc_now()
     backups = db.scalars(
         select(DeviceBackup)
         .where(DeviceBackup.device_id == device.id)
@@ -238,8 +488,41 @@ def device_page(
         select(DeviceEvent)
         .where(DeviceEvent.device_id == device.id)
         .order_by(DeviceEvent.created_at.desc())
-        .limit(10)
+        .limit(DEVICE_TIMELINE_LIMIT)
     ).all()
+    audit_entries = db.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.device_id == device.id,
+            AuditLog.action != "device.view",
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(DEVICE_TIMELINE_LIMIT)
+    ).all()
+    user_ids = {entry.user_id for entry in audit_entries if entry.user_id is not None}
+    users_by_id = {
+        row.id: row
+        for row in (
+            db.scalars(select(User).where(User.id.in_(user_ids))).all()
+            if user_ids
+            else []
+        )
+    }
+    toast_messages = {
+        "backup-requested": "Backup request queued.",
+        "backup-deleted": "Stored backup deleted.",
+        "backup-settings-saved": "Backup settings saved.",
+        "email-notification-settings-saved": "Email notification settings saved.",
+        "health-acknowledged": "Health acknowledgement saved.",
+        "health-acknowledgement-cleared": "Health acknowledgement cleared.",
+        "runbook-saved": "Runbook details saved.",
+    }
+    status = request.query_params.get("status")
+    health_acknowledged_by = (
+        users_by_id.get(device.health_acknowledged_by)
+        if device.health_acknowledged_by is not None
+        else None
+    )
     return render_template(
         db,
         "device.html",
@@ -250,14 +533,125 @@ def device_page(
             "device": device,
             "backups": backups,
             "can_edit_notification_settings": can_edit_notification_settings,
+            "can_manage_device": has_company_access(
+                db, user, device.company_id, "admin"
+            ),
             "email_settings_configured": email_settings_configured(
                 integration_settings
             ),
             "events": events,
+            "timeline": _build_device_timeline(
+                device, events, audit_entries, users_by_id
+            ),
+            "health_details": _device_health_details(device, now),
+            "health_acknowledged_by": health_acknowledged_by,
+            "maintenance_active": bool(
+                device.maintenance_until
+                and device.maintenance_until.astimezone(timezone.utc)
+                > now.astimezone(timezone.utc)
+            ),
             "active_page": "companies",
-            "status": request.query_params.get("status"),
+            "status": status,
+            "toast": (
+                {"message": toast_messages[status], "level": "success"}
+                if status in toast_messages
+                else None
+            ),
         },
     )
+
+
+@router.post("/devices/{device_id}/runbook")
+def update_device_runbook(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    runbook_owner: str = Form(""),
+    runbook_contact: str = Form(""),
+    runbook_site: str = Form(""),
+    support_contract_expires_at: str = Form(""),
+    maintenance_until: str = Form(""),
+    escalation_hint: str = Form(""),
+    runbook_notes: str = Form(""),
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    device.runbook_owner = clean_optional(runbook_owner)
+    device.runbook_contact = clean_optional(runbook_contact)
+    device.runbook_site = clean_optional(runbook_site)
+    device.support_contract_expires_at = _parse_optional_form_datetime(
+        support_contract_expires_at,
+        "support contract expiration",
+    )
+    device.maintenance_until = _parse_optional_form_datetime(
+        maintenance_until,
+        "maintenance window",
+    )
+    device.escalation_hint = clean_optional(escalation_hint)
+    device.runbook_notes = clean_optional(runbook_notes)
+    write_audit(
+        db,
+        request,
+        "device.runbook.update",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return _redirect_with_status(device.id, "runbook-saved")
+
+
+@router.post("/devices/{device_id}/acknowledge-health")
+def acknowledge_device_health(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    acknowledgement_note: str = Form(""),
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    device.health_acknowledged_at = utc_now()
+    device.health_acknowledged_note = clean_optional(acknowledgement_note)
+    device.health_acknowledged_by = user.id
+    write_audit(
+        db,
+        request,
+        "device.health_acknowledge",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return _redirect_with_status(device.id, "health-acknowledged")
+
+
+@router.post("/devices/{device_id}/clear-acknowledgement")
+def clear_device_health_acknowledgement(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    device = db.get(Device, device_id)
+    if not device or not has_company_access(db, user, device.company_id, "admin"):
+        raise HTTPException(status_code=404)
+    device.health_acknowledged_at = None
+    device.health_acknowledged_note = None
+    device.health_acknowledged_by = None
+    write_audit(
+        db,
+        request,
+        "device.health_acknowledge.clear",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+    return _redirect_with_status(device.id, "health-acknowledgement-cleared")
 
 
 @router.get("/api/v1/devices/{device_id}")

@@ -145,6 +145,19 @@
             </aside>
             <main class="shell">{% block content %}{% endblock %}</main>
         </div>
+        {% if toast %}
+        <div class="toast-stack" aria-live="polite" aria-atomic="true">
+            <div class="toast toast-{{ toast.level or 'info' }}" data-toast>
+</div>                <div class="toast-body">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>{{ toast.message }}</span>
+                </div>
+                <button class="toast-close" type="button" data-toast-close aria-label="Dismiss notification">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+        {% endif %}
         <footer class="footer">
             OPNsense Hub · secure firewall control plane
         </footer>

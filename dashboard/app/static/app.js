@@ -26,6 +26,19 @@ document.addEventListener("DOMContentLoaded", () => {
     applyTheme(themeToggle.checked ? "dark" : "light");
   });
 
+  document.querySelectorAll("[data-toast]").forEach((toast) => {
+    const dismiss = () => {
+      toast.classList.add("is-closing");
+      window.setTimeout(() => {
+        toast.closest(".toast-stack")?.remove();
+      }, 180);
+    };
+    toast
+      .querySelector("[data-toast-close]")
+      ?.addEventListener("click", dismiss);
+    window.setTimeout(dismiss, 4200);
+  });
+
   const setCompanyRowExpanded = (row, expanded) => {
     const firewallsRow = row.nextElementSibling;
     if (!firewallsRow || !firewallsRow.matches("[data-company-firewalls]")) {
