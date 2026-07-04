@@ -1,0 +1,12 @@
+{
+  "include": ["dashboard/app", "dashboard/tests"],
+  "executionEnvironments": [
+    {
+      "root": "OPNsense-Hub",
+      "extraPaths": ["dashboard"]
+    }
+  ],
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": "none"
+}
