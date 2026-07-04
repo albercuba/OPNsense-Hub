@@ -48,8 +48,12 @@
         </div>
     </form>
 
-    <form action="/companies/devices/bulk-action" method="post" data-bulk-device-form>
-        <input type="hidden" name="csrf_token" va</form>lue="{{ csrf_token }}" />
+    <form
+        action="/companies/devices/bulk-action"
+        method="post"
+        data-bulk-device-form
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="companies-bulk-toolbar">
             <div>
                 <strong>Bulk actions</strong>
@@ -63,251 +67,286 @@
                     <span>Action</span>
                     <select name="action" data-bulk-action-select>
                         <option value="request-backup">Request backup</option>
-                        <option value="request-firmware-check">Request firmware check</option>
+                        <option value="request-firmware-check">
+                            Request firmware check
+                        </option>
                     </select>
                 </label>
-                <button class="button button-small" type="submit" data-bulk-submit>
+                <button
+                    class="button button-small"
+                    type="submit"
+                    data-bulk-submit
+                >
                     <i class="fa-solid fa-play"></i> Apply
                 </button>
             </div>
         </div>
         <table class="firewalls-management-table">
-        <thead>
-            <tr>
-                <th>Company</th>
-                <th class="actions">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for company in companies %} {% set can_manage_company =
-            company_admin_access.get(company.id, false) %}
-            <tr
-                class="company-row"
-                data-company-row
-                data-company-name="{{ company.name|lower }}"
-                aria-expanded="false"
-                tabindex="0"
-            >
-                <td>
-                    <i class="fa-solid fa-chevron-right row-toggle-icon"></i>
-                    <a class="company-row-link" href="/companies/{{ company.id }}">{{ company.name }}</a>
-                </td>
-                <td class="actions">
-                    {% if can_manage_company %}
-                    <form
-                        action="/api/v1/companies/{{ company.id }}/enrollment-codes"
-                        method="post"
-                        class="inline-action-form"
-                        data-enrollment-form
-                    >
-                        <input
-                            type="hidden"
-                            name="csrf_token"
-                            value="{{ csrf_token }}"
-                        />
-                        <button
-                            class="icon-button"
-                            type="submit"
-                            title="Add Firewall"
-                            aria-label="Add Firewall"
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for company in companies %} {% set can_manage_company =
+                company_admin_access.get(company.id, false) %}
+                <tr
+                    class="company-row"
+                    data-company-row
+                    data-company-name="{{ company.name|lower }}"
+                    aria-expanded="false"
+                    tabindex="0"
+                >
+                    <td>
+                        <i
+                            class="fa-solid fa-chevron-right row-toggle-icon"
+                        ></i>
+                        <a
+                            class="company-row-link"
+                            href="/companies/{{ company.id }}"
+                            >{{ company.name }}</a
                         >
-                            <i class="fa-solid fa-plus"></i>
-                        </button>
-                    </form>
-                    {% else %}
-                    <span
-                        class="protected-user"
-                        title="You need company admin access to add firewalls"
-                        aria-label="Company admin access required"
-                        ><i class="fa-solid fa-lock"></i
-                    ></span>
-                    {% endif %}
-                </td>
-            </tr>
-            <tr class="company-firewalls-row" data-company-firewalls hidden>
-                <td colspan="2">
-                    <div class="nested-table-wrap">
-                        <table class="nested-table">
-                            <thead>
-                                <tr>
-                                    <th class="checkbox-column">
-                                        <input
-                                            type="checkbox"
-                                            data-select-all-devices
-                                            aria-label="Select all firewalls in this company"
-                                        />
-                                    </th>
-                                    <th>Hostname</th>
-                                    <th>OPNsense</th>
-                                    <th>Plugin</th>
-                                    <th>License</th>
-                                    <th>Expiration</th>
-                                    <th>Tunnel IP</th>
-                                    <th>Status</th>
-                                    <th>Last seen</th>
-                                    <th class="actions">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for device in company.devices %}
-                                <tr
-                                    data-device-row
-                                    data-company-name="{{ company.name|lower }}"
-                                    data-opnsense-version="{{ (device.opnsense_version or 'unknown')|lower }}"
-                                    data-plugin-version="{{ (device.plugin_version or 'unknown')|lower }}"
-                                    data-device-ip="{{ (device.wg_tunnel_ip or '')|lower }}"
-                                >
-                                    <td class="checkbox-column">
-                                        {% if can_manage_company and not device.revoked_at %}
-                                        <input
-                                            type="checkbox"
-                                            name="device_ids"
-                                            value="{{ device.id }}"
-                                            data-device-checkbox
-                                            aria-label="Select {{ device.hostname }}"
-                                        />
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ device.hostname }}</td>
-                                    <td>
-                                        {{ device.opnsense_version or 'Unknown'
-                                        }}
-                                    </td>
-                                    <td>
-                                        {{ device.plugin_version or 'Unknown' }}
-                                    </td>
-                                    <td>{{ device_license_label(device) }}</td>
-                                    <td>
-                                        {{ device_license_expiration(device) }}
-                                    </td>
-                                    <td>{{ device.wg_tunnel_ip }}</td>
-                                    <td>
-                                        <span class="status {{ device.status }}"
-                                            >{{ device.status }}</span
-                                        >
-                                    </td>
-                                    <td>
-                                        {{ format_datetime(device.last_seen_at)
-                                        if device.last_seen_at else 'Never' }}
-                                    </td>
-                                    <td class="actions">
-                                        {% set fw = firmware_status_ui(device)
-                                        %}
-                                        <span
-                                            class="icon-button {{ fw['class'] }}"
-                                            title="{{ fw['tooltip'] }}"
-                                            aria-label="{{ fw['label'] }}"
-                                        >
-                                            <i class="{{ fw['icon'] }}"></i>
-                                        </span>
-                                        <a
-                                            class="icon-button"
-                                            href="/devices/{{ device.id }}"
-                                            title="Firewall settings"
-                                            aria-label="Firewall settings"
-                                            ><i class="fa-solid fa-gear"></i
-                                        ></a>
-                                        {% if device.revoked_at %} {% if
-                                        can_manage_company %}
-                                        <form
-                                            action="/api/v1/devices/{{ device.id }}/delete"
-                                            method="post"
-                                            class="inline-action-form"
-                                            onsubmit="
-                                                return confirm(
-                                                    'Remove this revoked firewall? This cannot be undone.',
-                                                );
-                                            "
-                                        >
+                    </td>
+                    <td class="actions">
+                        {% if can_manage_company %}
+                        <form
+                            action="/api/v1/companies/{{ company.id }}/enrollment-codes"
+                            method="post"
+                            class="inline-action-form"
+                            data-enrollment-form
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
+                            <button
+                                class="icon-button"
+                                type="submit"
+                                title="Add Firewall"
+                                aria-label="Add Firewall"
+                            >
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                        </form>
+                        {% else %}
+                        <span
+                            class="protected-user"
+                            title="You need company admin access to add firewalls"
+                            aria-label="Company admin access required"
+                            ><i class="fa-solid fa-lock"></i
+                        ></span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr class="company-firewalls-row" data-company-firewalls hidden>
+                    <td colspan="2">
+                        <div class="nested-table-wrap">
+                            <table class="nested-table">
+                                <thead>
+                                    <tr>
+                                        <th class="checkbox-column">
                                             <input
-                                                type="hidden"
-                                                name="csrf_token"
-                                                value="{{ csrf_token }}"
+                                                type="checkbox"
+                                                data-select-all-devices
+                                                aria-label="Select all firewalls in this company"
                                             />
+                                        </th>
+                                        <th>Hostname</th>
+                                        <th>OPNsense</th>
+                                        <th>Plugin</th>
+                                        <th>License</th>
+                                        <th>Expiration</th>
+                                        <th>Tunnel IP</th>
+                                        <th>Status</th>
+                                        <th>Last seen</th>
+                                        <th class="actions">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for device in company.devices %}
+                                    <tr
+                                        data-device-row
+                                        data-company-name="{{ company.name|lower }}"
+                                        data-opnsense-version="{{ (device.opnsense_version or 'unknown')|lower }}"
+                                        data-plugin-version="{{ (device.plugin_version or 'unknown')|lower }}"
+                                        data-device-ip="{{ (device.wg_tunnel_ip or '')|lower }}"
+                                    >
+                                        <td class="checkbox-column">
+                                            {% if can_manage_company and not
+                                            device.revoked_at %}
                                             <input
-                                                type="hidden"
-                                                name="redirect_to"
-                                                value="/companies"
+                                                type="checkbox"
+                                                name="device_ids"
+                                                value="{{ device.id }}"
+                                                data-device-checkbox
+                                                aria-label="Select {{ device.hostname }}"
                                             />
-                                            <button
-                                                class="icon-button danger-text"
-                                                title="Remove"
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ device.hostname }}</td>
+                                        <td>
+                                            {{ device.opnsense_version or
+                                            'Unknown' }}
+                                        </td>
+                                        <td>
+                                            {{ device.plugin_version or
+                                            'Unknown' }}
+                                        </td>
+                                        <td>
+                                            {{ device_license_label(device) }}
+                                        </td>
+                                        <td>
+                                            {{ device_license_expiration(device)
+                                            }}
+                                        </td>
+                                        <td>{{ device.wg_tunnel_ip }}</td>
+                                        <td>
+                                            <span
+                                                class="status {{ device.status }}"
+                                                >{{ device.status }}</span
                                             >
-                                                <i
-                                                    class="fa-solid fa-trash"
-                                                ></i>
-                                            </button>
-                                        </form>
-                                        {% endif %} {% else %}
-                                        <a
-                                            class="icon-button"
-                                            href="/proxy/devices/{{ device.id }}/"
-                                            title="Open OPNsense UI"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            ><i
-                                                class="fa-solid fa-up-right-from-square"
-                                            ></i
-                                        ></a>
-                                        {% if can_manage_company %}
-                                        <form
-                                            action="/api/v1/devices/{{ device.id }}/revoke"
-                                            method="post"
-                                            class="inline-action-form"
-                                            onsubmit="
-                                                return confirm(
-                                                    'Revoke this firewall?',
-                                                );
-                                            "
-                                        >
-                                            <input
-                                                type="hidden"
-                                                name="csrf_token"
-                                                value="{{ csrf_token }}"
-                                            />
-                                            <button
+                                        </td>
+                                        <td>
+                                            {{
+                                            format_datetime(device.last_seen_at)
+                                            if device.last_seen_at else 'Never'
+                                            }}
+                                        </td>
+                                        <td class="actions">
+                                            {% set fw =
+                                            firmware_status_ui(device) %}
+                                            <span
+                                                class="icon-button {{ fw['class'] }}"
+                                                title="{{ fw['tooltip'] }}"
+                                                aria-label="{{ fw['label'] }}"
+                                            >
+                                                <i class="{{ fw['icon'] }}"></i>
+                                            </span>
+                                            <a
                                                 class="icon-button"
-                                                title="Revoke"
+                                                href="/devices/{{ device.id }}"
+                                                title="Firewall settings"
+                                                aria-label="Firewall settings"
+                                                ><i class="fa-solid fa-gear"></i
+                                            ></a>
+                                            {% if device.revoked_at %} {% if
+                                            can_manage_company %}
+                                            <form
+                                                action="/api/v1/devices/{{ device.id }}/delete"
+                                                method="post"
+                                                class="inline-action-form"
+                                                onsubmit="
+                                                    return confirm(
+                                                        'Remove this revoked firewall? This cannot be undone.',
+                                                    );
+                                                "
                                             >
-                                                <i class="fa-solid fa-ban"></i>
-                                            </button>
-                                        </form>
-                                        {% endif %} {% endif %}
-                                    </td>
-                                </tr>
-                                {% else %}
-                                <tr>
-                                    <td colspan="10">
-                                        <div class="table-empty-state">
-                                            <i class="fa-solid fa-shield-halved"></i>
-                                            <div>
-                                                <strong>No firewalls enrolled yet</strong>
-                                                <p class="muted">Generate an enrollment OTP to add the first firewall for {{ company.name }}.</p>
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf_token"
+                                                    value="{{ csrf_token }}"
+                                                />
+                                                <input
+                                                    type="hidden"
+                                                    name="redirect_to"
+                                                    value="/companies"
+                                                />
+                                                <button
+                                                    class="icon-button danger-text"
+                                                    title="Remove"
+                                                >
+                                                    <i
+                                                        class="fa-solid fa-trash"
+                                                    ></i>
+                                                </button>
+                                            </form>
+                                            {% endif %} {% else %}
+                                            <a
+                                                class="icon-button"
+                                                href="/proxy/devices/{{ device.id }}/"
+                                                title="Open OPNsense UI"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                ><i
+                                                    class="fa-solid fa-up-right-from-square"
+                                                ></i
+                                            ></a>
+                                            {% if can_manage_company %}
+                                            <form
+                                                action="/api/v1/devices/{{ device.id }}/revoke"
+                                                method="post"
+                                                class="inline-action-form"
+                                                onsubmit="
+                                                    return confirm(
+                                                        'Revoke this firewall?',
+                                                    );
+                                                "
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf_token"
+                                                    value="{{ csrf_token }}"
+                                                />
+                                                <button
+                                                    class="icon-button"
+                                                    title="Revoke"
+                                                >
+                                                    <i
+                                                        class="fa-solid fa-ban"
+                                                    ></i>
+                                                </button>
+                                            </form>
+                                            {% endif %} {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="10">
+                                            <div class="table-empty-state">
+                                                <i
+                                                    class="fa-solid fa-shield-halved"
+                                                ></i>
+                                                <div>
+                                                    <strong
+                                                        >No firewalls enrolled
+                                                        yet</strong
+                                                    >
+                                                    <p class="muted">
+                                                        Generate an enrollment
+                                                        OTP to add the first
+                                                        firewall for {{
+                                                        company.name }}.
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="2">
-                    <div class="table-empty-state">
-                        <i class="fa-solid fa-building"></i>
-                        <div>
-                            <strong>No companies yet</strong>
-                            <p class="muted">Create or restore a company first, then enroll firewalls to manage them here.</p>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
                         </div>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2">
+                        <div class="table-empty-state">
+                            <i class="fa-solid fa-building"></i>
+                            <div>
+                                <strong>No companies yet</strong>
+                                <p class="muted">
+                                    Create or restore a company first, then
+                                    enroll firewalls to manage them here.
+                                </p>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </form>
 </section>
 {% endblock %}
