@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -52,7 +53,38 @@ from .services.notification_service import (
 )
 from .web import APP_DIR, current_brand_logo_url, format_datetime, settings, templates
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    apply_startup_hardening(settings)
+    bootstrap()
+    app.state.health_check_task = asyncio.create_task(device_health_check_loop())
+    app.state.firmware_schedule_task = asyncio.create_task(
+        firmware_check_schedule_loop()
+    )
+    app.state.log_retention_task = (
+        asyncio.create_task(log_retention_loop())
+        if settings.log_retention_enabled
+        else None
+    )
+    try:
+        yield
+    finally:
+        for task_name in (
+            "health_check_task",
+            "firmware_schedule_task",
+            "log_retention_task",
+        ):
+            task = getattr(app.state, task_name, None)
+            if task is None:
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        rate_limiter.clear()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 
@@ -91,37 +123,6 @@ async def security_middleware(request: Request, call_next):
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
             )
     return response
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    apply_startup_hardening(settings)
-    bootstrap()
-    app.state.health_check_task = asyncio.create_task(device_health_check_loop())
-    app.state.firmware_schedule_task = asyncio.create_task(
-        firmware_check_schedule_loop()
-    )
-    app.state.log_retention_task = (
-        asyncio.create_task(log_retention_loop())
-        if settings.log_retention_enabled
-        else None
-    )
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    for task_name in (
-        "health_check_task",
-        "firmware_schedule_task",
-        "log_retention_task",
-    ):
-        task = getattr(app.state, task_name, None)
-        if task is None:
-            continue
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    rate_limiter.clear()
 
 
 @app.exception_handler(HTTPException)
