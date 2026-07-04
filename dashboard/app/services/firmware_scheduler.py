@@ -22,7 +22,11 @@ from ..health import HealthState, HealthThresholds, next_health_state
 from ..models import Company, Device, DeviceEvent
 from ..security import utc_now
 from ..web import app_now, format_datetime, settings, to_app_timezone
-from .notification_service import maybe_send_health_notification
+from .notification_service import (
+    maintenance_window_active,
+    maybe_send_health_notification,
+    maybe_send_phase2_device_notifications,
+)
 
 logger = logging.getLogger(__name__)
 FIRMWARE_STATUSES = {"unknown", "none", "update", "upgrade", "error"}
@@ -117,6 +121,36 @@ async def run_device_health_checks_once() -> None:
                     )
                 if healthy:
                     device.last_seen_at = now
+                if maintenance_window_active(device, now):
+                    continue
+                backup_overdue = (
+                    device.backup_enabled
+                    and device.backup_last_uploaded_at is not None
+                    and backup_due(device, now=now)
+                )
+                license_expiring = bool(
+                    device.license_type == "business"
+                    and device.license_expires_at
+                    and device.license_expires_at.astimezone(timezone.utc).date()
+                    >= now.date()
+                    and (
+                        device.license_expires_at.astimezone(timezone.utc).date()
+                        - now.date()
+                    ).days
+                    <= 30
+                )
+                firmware_available = (device.firmware_status or "").lower() in {
+                    "update",
+                    "upgrade",
+                }
+                maybe_send_phase2_device_notifications(
+                    db,
+                    device,
+                    backup_overdue=backup_overdue,
+                    license_expiring=license_expiring,
+                    firmware_available=firmware_available,
+                    current_time=now,
+                )
         db.commit()
 
 

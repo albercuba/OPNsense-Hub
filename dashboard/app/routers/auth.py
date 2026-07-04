@@ -48,7 +48,10 @@ from ..services.microsoft_auth import (
     microsoft_user_identity,
     validate_microsoft_access_token,
 )
-from ..services.notification_service import send_security_alert_email
+from ..services.notification_service import (
+    maybe_notify_for_repeated_auth_failures,
+    send_security_alert_email,
+)
 from ..web import render_template, settings
 
 router = APIRouter()
@@ -71,6 +74,8 @@ def audit_failure(
             f"[OPNsense Hub] Security event: {action}",
             detail or action,
         )
+    else:
+        maybe_notify_for_repeated_auth_failures(db, action, detail, utc_now())
     db.commit()
 
 

@@ -392,6 +392,11 @@ def update_email_settings(
     graph_client_id: str = Form(""),
     graph_client_secret: str = Form(""),
     graph_sender: str = Form(""),
+    notify_on_offline: str | None = Form(None),
+    notify_on_backup_overdue: str | None = Form(None),
+    notify_on_license_expiring: str | None = Form(None),
+    notify_on_firmware_available: str | None = Form(None),
+    notify_on_repeated_auth_failures: str | None = Form(None),
 ):
     require_admin(user)
     integration_settings = get_or_create_integration_settings(db)
@@ -406,6 +411,15 @@ def update_email_settings(
     integration_settings.graph_tenant_id = clean_optional(graph_tenant_id)
     integration_settings.graph_client_id = clean_optional(graph_client_id)
     integration_settings.graph_sender = clean_optional(graph_sender)
+    integration_settings.notify_on_offline = notify_on_offline == "on"
+    integration_settings.notify_on_backup_overdue = notify_on_backup_overdue == "on"
+    integration_settings.notify_on_license_expiring = notify_on_license_expiring == "on"
+    integration_settings.notify_on_firmware_available = (
+        notify_on_firmware_available == "on"
+    )
+    integration_settings.notify_on_repeated_auth_failures = (
+        notify_on_repeated_auth_failures == "on"
+    )
     integration_settings.smtp_password = store_secret(
         integration_settings.smtp_password, smtp_password
     )

@@ -245,7 +245,7 @@
                             data-edit-control
                             disabled
                         >
-                            <option value="user" {% if managed_user.role == "user" %}selected{% endif %}>
+                            <option value="user" {% if managed_user.role == "user" %}selected{% endif %}></option>
                                 User
                             </option>
                             <option value="administrator" {% if managed_user.role == "administrator" %}selected{% endif %}>
@@ -502,6 +502,79 @@
                 value="{{ settings.graph_sender or '' }}"
             />
         </label>
+        <div class="full-row settings-subsection divider-top">
+            <h3>Notification rules</h3>
+            <p class="</h3>muted">
+                Choose which operational events should send Hub email alerts.
+                Device-level email notifications still need to be enabled on
+                each firewall.
+            </p>
+        </div>
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="notify_on_offline"
+                {%
+                if
+                settings.notify_on_offline
+                %}checked{%
+                endif
+                %}
+            />
+            Send alerts when a firewall goes offline</label
+        >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="notify_on_backup_overdue"
+                {%
+                if
+                settings.notify_on_backup_overdue
+                %}checked{%
+                endif
+                %}
+            />
+            Send alerts when backups become overdue</label
+        >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="notify_on_license_expiring"
+                {%
+                if
+                settings.notify_on_license_expiring
+                %}checked{%
+                endif
+                %}
+            />
+            Send alerts when business licenses are expiring soon</label
+        >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="notify_on_firmware_available"
+                {%
+                if
+                settings.notify_on_firmware_available
+                %}checked{%
+                endif
+                %}
+            />
+            Send alerts when firmware updates or upgrades are available</label
+        >
+        <label class="checkbox-label full-row"
+            ><input
+                type="checkbox"
+                name="notify_on_repeated_auth_failures"
+                {%
+                if
+                settings.notify_on_repeated_auth_failures
+                %}checked{%
+                endif
+                %}
+            />
+            Send security alerts for repeated authentication failures</label
+        >
         <div class="form-row submit-row">
             <button class="button" type="submit">
                 <i class="fa-solid fa-floppy-disk"></i> Save email settings

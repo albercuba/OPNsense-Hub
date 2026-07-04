@@ -48,7 +48,30 @@
         </div>
     </form>
 
-    <table class="firewalls-management-table">
+    <form action="/companies/devices/bulk-action" method="post" data-bulk-device-form>
+        <input type="hidden" name="csrf_token" va</form>lue="{{ csrf_token }}" />
+        <div class="companies-bulk-toolbar">
+            <div>
+                <strong>Bulk actions</strong>
+                <p class="muted">
+                    Select firewalls below, then request backups or firmware
+                    checks in one step.
+                </p>
+            </div>
+            <div class="companies-bulk-controls">
+                <label class="form-row companies-bulk-select">
+                    <span>Action</span>
+                    <select name="action" data-bulk-action-select>
+                        <option value="request-backup">Request backup</option>
+                        <option value="request-firmware-check">Request firmware check</option>
+                    </select>
+                </label>
+                <button class="button button-small" type="submit" data-bulk-submit>
+                    <i class="fa-solid fa-play"></i> Apply
+                </button>
+            </div>
+        </div>
+        <table class="firewalls-management-table">
         <thead>
             <tr>
                 <th>Company</th>
@@ -107,6 +130,13 @@
                         <table class="nested-table">
                             <thead>
                                 <tr>
+                                    <th class="checkbox-column">
+                                        <input
+                                            type="checkbox"
+                                            data-select-all-devices
+                                            aria-label="Select all firewalls in this company"
+                                        />
+                                    </th>
                                     <th>Hostname</th>
                                     <th>OPNsense</th>
                                     <th>Plugin</th>
@@ -127,6 +157,17 @@
                                     data-plugin-version="{{ (device.plugin_version or 'unknown')|lower }}"
                                     data-device-ip="{{ (device.wg_tunnel_ip or '')|lower }}"
                                 >
+                                    <td class="checkbox-column">
+                                        {% if can_manage_company and not device.revoked_at %}
+                                        <input
+                                            type="checkbox"
+                                            name="device_ids"
+                                            value="{{ device.id }}"
+                                            data-device-checkbox
+                                            aria-label="Select {{ device.hostname }}"
+                                        />
+                                        {% endif %}
+                                    </td>
                                     <td>{{ device.hostname }}</td>
                                     <td>
                                         {{ device.opnsense_version or 'Unknown'
@@ -236,8 +277,8 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="9">
-</td>                                        <div class="table-empty-state">
+                                    <td colspan="10">
+                                        <div class="table-empty-state">
                                             <i class="fa-solid fa-shield-halved"></i>
                                             <div>
                                                 <strong>No firewalls enrolled yet</strong>
@@ -267,5 +308,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </form>
 </section>
 {% endblock %}

@@ -657,4 +657,60 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 0);
   });
   applyAuditLogFilters();
+
+  const bulkDeviceForm = document.querySelector("[data-bulk-device-form]");
+  const bulkSubmit = document.querySelector("[data-bulk-submit]");
+  const deviceCheckboxes = Array.from(
+    document.querySelectorAll("[data-device-checkbox]"),
+  );
+  const selectAllCheckboxes = Array.from(
+    document.querySelectorAll("[data-select-all-devices]"),
+  );
+
+  const syncBulkToolbarState = () => {
+    if (!bulkSubmit) {
+      return;
+    }
+    const selectedCount = deviceCheckboxes.filter(
+      (input) => input.checked,
+    ).length;
+    bulkSubmit.disabled = selectedCount === 0;
+    bulkSubmit.setAttribute("aria-disabled", String(selectedCount === 0));
+  };
+
+  selectAllCheckboxes.forEach((selectAll) => {
+    selectAll.addEventListener("change", () => {
+      const table = selectAll.closest("table");
+      if (!table) {
+        return;
+      }
+      table.querySelectorAll("[data-device-checkbox]").forEach((checkbox) => {
+        checkbox.checked = selectAll.checked;
+      });
+      syncBulkToolbarState();
+    });
+  });
+
+  deviceCheckboxes.forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const table = checkbox.closest("table");
+      const selectAll = table?.querySelector("[data-select-all-devices]");
+      const scopedCheckboxes = Array.from(
+        table?.querySelectorAll("[data-device-checkbox]") || [],
+      );
+      if (selectAll) {
+        selectAll.checked =
+          scopedCheckboxes.length > 0 &&
+          scopedCheckboxes.every((input) => input.checked);
+      }
+      syncBulkToolbarState();
+    });
+  });
+
+  bulkDeviceForm?.addEventListener("submit", (event) => {
+    if (deviceCheckboxes.every((input) => !input.checked)) {
+      event.preventDefault();
+    }
+  });
+  syncBulkToolbarState();
 });

@@ -43,6 +43,9 @@ class User(Base):
     )
 
     companies: Mapped[list["CompanyUser"]] = relationship(back_populates="user")
+    saved_dashboard_filters: Mapped[list["UserDashboardFilter"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class SessionToken(Base):
@@ -108,6 +111,21 @@ class IntegrationSettings(Base):
     ad_base_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ad_bind_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
     branding_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notify_on_offline: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    notify_on_backup_overdue: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    notify_on_license_expiring: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    notify_on_firmware_available: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    notify_on_repeated_auth_failures: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, nullable=False
     )
@@ -151,6 +169,30 @@ class CompanyUser(Base):
 
     company: Mapped[Company] = relationship(back_populates="users")
     user: Mapped[User] = relationship(back_populates="companies")
+
+
+class UserDashboardFilter(Base):
+    __tablename__ = "user_dashboard_filters"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="saved_dashboard_filters")
+    company: Mapped[Company | None] = relationship()
 
 
 class EnrollmentCode(Base):
@@ -268,6 +310,15 @@ class Device(Base):
         String(30), nullable=True
     )
     email_last_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    backup_overdue_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    license_expiring_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firmware_available_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     runbook_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

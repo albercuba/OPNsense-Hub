@@ -8,11 +8,18 @@
             <h1>Dashboard</h1>
         </div>
         <div class="dashboard-header-actions">
-            <div class="dashboard-last-updated" aria-live="polite">
-                <span class="muted">Last updated:</span>
-                <strong data-dashboard-last-updated>just now</strong>
+            <div class="dashboard-header-meta">
+                {% if maintenance_device_count %}
+                <span class="status text-warning"
+                    >{{ maintenance_device_count }} maintenance {{ 'window' if maintenance_device_count == 1 else 'windows' }} active</span
+                >
+                {% endif %}
+                <div class="dashboard-last-updated" aria-live="polite">
+                    <span class="muted">Last updated:</span>
+                    <strong data-dashboard-last-updated>just now</strong>
+                </div>
             </div>
-            <button
+            <div>button
                 class="button secondary icon-only-button"
                 type="button"
                 data-dashboard-refresh
@@ -88,8 +95,68 @@
             <a class="button secondary" href="/dashboard">
                 <i class="fa-solid fa-rotate-left"></i> Reset
             </a>
+            <a
+                class="button button-outline"
+                href="/dashboard/export/devices.csv{% if filters.company_id or filters.status %}?{% endif %}{% if filters.company_id %}company_id={{ filters.company_id|urlencode }}{% endif %}{% if filters.company_id and filters.status %}&{% endif %}{% if filters.status %}status={{ filters.status|urlencode }}{% endif %}"
+            >
+                <i class="fa-solid fa-file-csv"></i> Export CSV
+            </a>
         </div>
     </form>
+    <div class="dashboard-phase-two-tools">
+        <form
+            action="/dashboard/filters"
+            method="post"
+            class="dashboard-save-filter-form"
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="company_id" value="{{ filters.company_id }}" />
+            <input type="hidden" name="status" value="{{ filters.status }}" />
+            <label class="form-row dashboard-save-filter-name">
+                <span>Save current view</span>
+                <input
+                    type="text"
+                    name="name"
+                    maxlength="120"
+                    placeholder="e.g. Backup overdue"
+                    required
+                />
+            </label>
+            <button class="button secondary button-small" type="submit">
+                <i class="fa-solid fa-bookmark"></i> Save filter
+            </button>
+        </form>
+        {% if saved_filters %}
+        <div class="dashboard-saved-filters">
+            <span class="muted">Saved filters</span>
+            <div class="dashboard-saved-filter-list">
+                {% for saved_filter in saved_filters %}
+                <div class="dashboard-saved-filter-pill">
+                    <a
+                        href="/dashboard{% if saved_filter.company_id or saved_filter.status %}?{% endif %}{% if saved_filter.company_id %}company_id={{ saved_filter.company_id|string|urlencode }}{% endif %}{% if saved_filter.company_id and saved_filter.status %}&{% endif %}{% if saved_filter.status %}status={{ saved_filter.status|urlencode }}{% endif %}"
+                    >
+                        {{ saved_filter.name }}
+                    </a>
+                    <form
+                        action="/dashboard/filters/{{ saved_filter.id }}/delete"
+                        method="post"
+                    >
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                        <button
+                            class="icon-button"
+                            type="submit"
+                            title="Delete saved filter"
+                            aria-label="Delete saved filter"
+                        >
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
 </section>
 
 <section id="dashboard-summary-card" class="dashboard-summary-grid">
@@ -230,7 +297,7 @@
     <div class="admin-card-header">
         <div>
             <h2>Status legend</h2>
-            <p class</div>="muted">Quick reference for the dashboard status colors and badges.</p>
+            <p class="muted">Quick reference for the dashboard status colors and badges.</p>
         </div>
     </div>
     <ul class="dashboard-status-legend-list">

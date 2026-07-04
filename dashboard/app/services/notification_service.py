@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import smtplib
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from urllib.parse import quote
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -15,7 +16,7 @@ from ..integration import (
     graph_email_configured,
     smtp_email_configured,
 )
-from ..models import Company, Device, DeviceEvent, IntegrationSettings
+from ..models import AuditLog, Company, Device, DeviceEvent, IntegrationSettings
 from ..security.secrets import decrypt_secret
 from ..services.common import clean_optional, get_or_create_integration_settings
 from ..web import format_datetime
@@ -108,15 +109,36 @@ def send_notification_email(
     raise RuntimeError("email settings are not configured")
 
 
+def maintenance_window_active(
+    device: Device, current_time: datetime | None = None
+) -> bool:
+    if not device.maintenance_until:
+        return False
+    now = current_time or datetime.now(timezone.utc)
+    maintenance_until = device.maintenance_until
+    if maintenance_until.tzinfo is None:
+        maintenance_until = maintenance_until.replace(tzinfo=timezone.utc)
+    return maintenance_until.astimezone(timezone.utc) > now.astimezone(timezone.utc)
+
+
+def _rule_enabled(value: bool | None) -> bool:
+    return value is not False
+
+
 def health_notification_status_label(status: str) -> str:
     return "critical" if status == "offline" else status
 
 
-def should_notify_for_health_status(device: Device, new_status: str) -> bool:
+def should_notify_for_health_status(
+    integration_settings: IntegrationSettings, device: Device, new_status: str
+) -> bool:
     if new_status == "warning":
         return device.email_notify_on_warning
     if new_status == "offline":
-        return device.email_notify_on_critical
+        return (
+            _rule_enabled(integration_settings.notify_on_offline)
+            and device.email_notify_on_critical
+        )
     return False
 
 
@@ -162,13 +184,15 @@ def maybe_send_health_notification(
         return False
     if not device.email_notifications_enabled:
         return False
-    if not should_notify_for_health_status(device, new_status):
+    if maintenance_window_active(device, current_time):
         return False
     recipient = clean_optional(device.email_notification_recipient)
     if not recipient:
         return False
     integration_settings = get_or_create_integration_settings(db)
     if not email_settings_configured(integration_settings):
+        return False
+    if not should_notify_for_health_status(integration_settings, device, new_status):
         return False
     company = db.get(Company, device.company_id)
     subject, body = build_health_notification_email(
@@ -206,3 +230,211 @@ def maybe_send_health_notification(
         )
     )
     return True
+
+
+def _device_rule_recipient(
+    db: Session, device: Device, integration_settings: IntegrationSettings
+) -> str | None:
+    if not device.email_notifications_enabled:
+        return None
+    if not email_settings_configured(integration_settings):
+        return None
+    return clean_optional(device.email_notification_recipient)
+
+
+def _send_device_rule_notification(
+    db: Session,
+    device: Device,
+    current_time: datetime,
+    *,
+    subject: str,
+    body: str,
+    event_message: str,
+) -> bool:
+    recipient = clean_optional(device.email_notification_recipient)
+    if not recipient:
+        return False
+    try:
+        send_notification_email(db, recipient, subject, body)
+    except Exception as exc:
+        db.add(
+            DeviceEvent(
+                device_id=device.id,
+                event_type="email_notification_failed",
+                message=(
+                    f"Could not send rule notification: {exc.__class__.__name__}: {event_message}"
+                )[:1000],
+            )
+        )
+        logger.warning(
+            "Rule notification failed for device %s: %s",
+            device.id,
+            exc.__class__.__name__,
+        )
+        return False
+    device.email_last_notified_status = event_message[:30]
+    device.email_last_notified_at = current_time
+    db.add(
+        DeviceEvent(
+            device_id=device.id,
+            event_type="email_notification_sent",
+            message=event_message[:1000],
+        )
+    )
+    return True
+
+
+def maybe_send_phase2_device_notifications(
+    db: Session,
+    device: Device,
+    *,
+    backup_overdue: bool,
+    license_expiring: bool,
+    firmware_available: bool,
+    current_time: datetime,
+) -> None:
+    if device.revoked_at or maintenance_window_active(device, current_time):
+        return
+    integration_settings = get_or_create_integration_settings(db)
+    recipient = _device_rule_recipient(db, device, integration_settings)
+    if not recipient:
+        return
+    company = db.get(Company, device.company_id)
+    if backup_overdue:
+        if (
+            _rule_enabled(integration_settings.notify_on_backup_overdue)
+            and device.backup_overdue_notified_at is None
+        ):
+            subject = f"[OPNsense Hub] Backup overdue: {device.hostname}"
+            body = "\n".join(
+                [
+                    f"Firewall: {device.hostname}",
+                    f"Company: {company.name if company else 'Unknown'}",
+                    "Backup status: overdue",
+                    "Last backup: "
+                    + (
+                        format_datetime(device.backup_last_uploaded_at, include_tz=True)
+                        if device.backup_last_uploaded_at
+                        else "Never"
+                    ),
+                    f"Time: {format_datetime(current_time, include_tz=True)}",
+                ]
+            )
+            if _send_device_rule_notification(
+                db,
+                device,
+                current_time,
+                subject=subject,
+                body=body,
+                event_message="Backup overdue notification sent",
+            ):
+                device.backup_overdue_notified_at = current_time
+    else:
+        device.backup_overdue_notified_at = None
+
+    if license_expiring:
+        should_send_license = _rule_enabled(
+            integration_settings.notify_on_license_expiring
+        ) and (
+            device.license_expiring_notified_at is None
+            or (
+                device.license_expires_at
+                and device.license_expiring_notified_at < device.license_expires_at
+            )
+        )
+        if should_send_license:
+            subject = f"[OPNsense Hub] License expiring: {device.hostname}"
+            body = "\n".join(
+                [
+                    f"Firewall: {device.hostname}",
+                    f"Company: {company.name if company else 'Unknown'}",
+                    "License expiration: "
+                    + (
+                        format_datetime(device.license_expires_at, include_tz=True)
+                        if device.license_expires_at
+                        else "Unknown"
+                    ),
+                    f"Time: {format_datetime(current_time, include_tz=True)}",
+                ]
+            )
+            if _send_device_rule_notification(
+                db,
+                device,
+                current_time,
+                subject=subject,
+                body=body,
+                event_message="License expiring notification sent",
+            ):
+                device.license_expiring_notified_at = current_time
+    else:
+        device.license_expiring_notified_at = None
+
+    if firmware_available:
+        should_send_firmware = _rule_enabled(
+            integration_settings.notify_on_firmware_available
+        ) and (
+            device.firmware_available_notified_at is None
+            or (
+                device.firmware_checked_at
+                and device.firmware_available_notified_at < device.firmware_checked_at
+            )
+        )
+        if should_send_firmware:
+            subject = f"[OPNsense Hub] Firmware available: {device.hostname}"
+            body = "\n".join(
+                [
+                    f"Firewall: {device.hostname}",
+                    f"Company: {company.name if company else 'Unknown'}",
+                    f"Firmware status: {device.firmware_status}",
+                    f"Current version: {device.firmware_current_version or 'Unknown'}",
+                    f"Available version: {device.firmware_available_version or 'Unknown'}",
+                    f"Time: {format_datetime(current_time, include_tz=True)}",
+                ]
+            )
+            if _send_device_rule_notification(
+                db,
+                device,
+                current_time,
+                subject=subject,
+                body=body,
+                event_message="Firmware available notification sent",
+            ):
+                device.firmware_available_notified_at = current_time
+    else:
+        device.firmware_available_notified_at = None
+
+
+def maybe_notify_for_repeated_auth_failures(
+    db: Session,
+    action: str,
+    detail: str | None,
+    current_time: datetime | None = None,
+) -> bool:
+    integration_settings = get_or_create_integration_settings(db)
+    if not _rule_enabled(integration_settings.notify_on_repeated_auth_failures):
+        return False
+    if not action.startswith("auth.") or not action.endswith(".failed"):
+        return False
+    now = current_time or datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=15)
+    recent_failures = db.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.action == action,
+            AuditLog.created_at >= cutoff,
+        )
+        .order_by(AuditLog.created_at.desc())
+    ).all()
+    count = len(recent_failures)
+    if count < 5 or count % 5 != 0:
+        return False
+    subject = f"[OPNsense Hub] Repeated auth failures: {action}"
+    body = "\n".join(
+        [
+            f"Action: {action}",
+            f"Recent failures in the last 15 minutes: {count}",
+            f"Latest detail: {detail or action}",
+            f"Time: {format_datetime(now, include_tz=True)}",
+        ]
+    )
+    return send_security_alert_email(db, subject, body)

@@ -19,9 +19,11 @@ from app.models import (
     IntegrationSettings,
     SessionToken,
     User,
+    UserDashboardFilter,
 )
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
 from app.services.backup_service import parse_backup_bundle
+from app.services.notification_service import maybe_notify_for_repeated_auth_failures
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import INET
@@ -838,3 +840,185 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     assert restored_settings.smtp_host == "smtp.example.com"
     assert (target_branding_dir / "logo.png").read_bytes() == PNG_BYTES
     assert target_wg_key_path.read_text().strip() == "restored-private-key"
+
+
+def test_email_settings_persist_phase_two_notification_rules(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "email_phase_two_rules") as session:
+        admin = seed_backup_source(session)
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client, "/settings/email-settings")
+            response = client.post(
+                "/settings/email",
+                data={
+                    "csrf_token": csrf_token,
+                    "smtp_enabled": "on",
+                    "smtp_host": "smtp.example.com",
+                    "smtp_port": "2525",
+                    "smtp_from": "hub@example.com",
+                    "notify_on_offline": "on",
+                    "notify_on_backup_overdue": "on",
+                    "notify_on_license_expiring": "",
+                    "notify_on_firmware_available": "on",
+                    "notify_on_repeated_auth_failures": "",
+                },
+                follow_redirects=False,
+            )
+        settings_row = session.get(IntegrationSettings, 1)
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings/email-settings?status=email-saved"
+    assert settings_row is not None
+    assert settings_row.notify_on_offline is True
+    assert settings_row.notify_on_backup_overdue is True
+    assert settings_row.notify_on_license_expiring is False
+    assert settings_row.notify_on_firmware_available is True
+    assert settings_row.notify_on_repeated_auth_failures is False
+
+
+def test_dashboard_saved_filters_can_be_created_deleted_and_exported(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "dashboard_filters_export") as session:
+        admin = seed_backup_source(session)
+        company = session.scalars(select(Company)).first()
+        device = session.scalars(select(Device)).first()
+        assert company is not None
+        assert device is not None
+        company_name = company.name
+        device_hostname = device.hostname
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client, "/dashboard")
+            create_response = client.post(
+                "/dashboard/filters",
+                data={
+                    "csrf_token": csrf_token,
+                    "name": "Alpha online",
+                    "company_id": str(company.id),
+                    "status": "online",
+                },
+                follow_redirects=False,
+            )
+            saved_filter = session.scalars(select(UserDashboardFilter)).first()
+            assert saved_filter is not None
+            export_response = client.get(
+                f"/dashboard/export/devices.csv?company_id={company.id}&status=online"
+            )
+            delete_response = client.post(
+                f"/dashboard/filters/{saved_filter.id}/delete",
+                data={"csrf_token": csrf_token},
+                follow_redirects=False,
+            )
+        remaining_filters = session.scalars(select(UserDashboardFilter)).all()
+        app.dependency_overrides.clear()
+
+    assert create_response.status_code == 303
+    assert "result=filter-saved" in create_response.headers["location"]
+    assert "company_id=" in create_response.headers["location"]
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"].startswith("text/csv")
+    csv_text = export_response.text
+    assert "company,hostname,status,backup_status,firmware_status,license" in csv_text
+    assert company_name in csv_text
+    assert device_hostname in csv_text
+    assert delete_response.status_code == 303
+    assert "result=filter-deleted" in delete_response.headers["location"]
+    assert remaining_filters == []
+
+
+def test_companies_bulk_actions_update_selected_devices(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "companies_bulk_actions") as session:
+        admin = seed_backup_source(session)
+        company = session.scalars(select(Company)).first()
+        assert company is not None
+        second_device = Device(
+            id=uuid4(),
+            company_id=company.id,
+            hostname="fw-acme-2",
+            wg_public_key="C" * 43 + "=",
+            wg_tunnel_ip="100.96.0.11",
+            device_token_hash=hash_secret("device-token-2"),
+            status="online",
+            created_at=utc_now(),
+        )
+        session.add(second_device)
+        session.commit()
+        devices = session.scalars(select(Device).order_by(Device.hostname)).all()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client, "/companies")
+            backup_response = client.post(
+                "/companies/devices/bulk-action",
+                data={
+                    "csrf_token": csrf_token,
+                    "action": "request-backup",
+                    "device_ids": [str(device.id) for device in devices],
+                },
+                follow_redirects=False,
+            )
+            firmware_response = client.post(
+                "/companies/devices/bulk-action",
+                data={
+                    "csrf_token": csrf_token,
+                    "action": "request-firmware-check",
+                    "device_ids": [str(device.id) for device in devices],
+                },
+                follow_redirects=False,
+            )
+        for device in devices:
+            session.refresh(device)
+        app.dependency_overrides.clear()
+
+    assert backup_response.status_code == 303
+    assert (
+        backup_response.headers["location"] == "/companies?result=bulk-backup-requested"
+    )
+    assert firmware_response.status_code == 303
+    assert (
+        firmware_response.headers["location"]
+        == "/companies?result=bulk-firmware-requested"
+    )
+    assert all(device.backup_last_requested_at is not None for device in devices)
+    assert all(device.firmware_check_requested_at is not None for device in devices)
+    assert all(device.firmware_check_request_reason == "manual" for device in devices)
+
+
+def test_repeated_auth_failures_notify_on_fifth_attempt(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "repeated_auth_failures") as session:
+        seed_backup_source(session)
+        now = utc_now()
+        sent_messages: list[tuple[str, str]] = []
+
+        def fake_send_security_alert_email(_db, subject: str, body: str) -> bool:
+            sent_messages.append((subject, body))
+            return True
+
+        monkeypatch.setattr(
+            "app.services.notification_service.send_security_alert_email",
+            fake_send_security_alert_email,
+        )
+        for index in range(5):
+            session.add(
+                AuditLog(
+                    id=uuid4(),
+                    action="auth.local.failed",
+                    ip_address="127.0.0.1",
+                    user_agent="pytest",
+                    created_at=now - timedelta(minutes=1) + timedelta(seconds=index),
+                )
+            )
+        session.commit()
+
+        notified = maybe_notify_for_repeated_auth_failures(
+            session,
+            "auth.local.failed",
+            "bad password",
+            current_time=now,
+        )
+
+    assert notified is True
+    assert len(sent_messages) == 1
+    assert "Repeated auth failures" in sent_messages[0][0]
+    assert "Recent failures in the last 15 minutes: 5" in sent_messages[0][1]

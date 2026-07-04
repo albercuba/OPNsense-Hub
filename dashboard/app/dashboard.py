@@ -7,9 +7,17 @@ from sqlalchemy.orm import Session, selectinload
 
 from .backups import backup_due, backup_request_pending
 from .integration import email_settings_configured
-from .models import Company, CompanyUser, Device, DeviceEvent, IntegrationSettings, User
+from .models import (
+    Company,
+    CompanyUser,
+    Device,
+    DeviceEvent,
+    IntegrationSettings,
+    User,
+)
 from .rbac import is_global_admin
 from .security import utc_now
+from .services.notification_service import maintenance_window_active
 
 DASHBOARD_EVENT_LIMIT = 25
 HEALTH_LIST_LIMIT = 5
@@ -243,10 +251,14 @@ def build_dashboard_context(
         status_counts[normalized_status(device)] += 1
 
     active_devices = [device for device in filtered_devices if active_device(device)]
+    maintenance_devices = [
+        device for device in active_devices if maintenance_window_active(device, now)
+    ]
     warning_critical_devices = [
         device
         for device in active_devices
         if normalized_status(device) in {"warning", "critical"}
+        and not maintenance_window_active(device, now)
     ]
     warning_critical_devices.sort(key=_status_sort_key)
 
@@ -419,14 +431,23 @@ def build_dashboard_context(
         if item["event"].created_at < twenty_four_hours_ago:
             continue
         message = (item["event"].message or "").lower()
-        if "unreachable" in message and active_device(item["device"]):
+        if (
+            "unreachable" in message
+            and active_device(item["device"])
+            and not maintenance_window_active(item["device"], now)
+        ):
             recently_offline.append(item)
         if "reachable" in message and normalized_status(item["device"]) == "online":
             recovered_recently.append(item)
     recently_offline = recently_offline[:HEALTH_LIST_LIMIT]
     recovered_recently = recovered_recently[:HEALTH_LIST_LIMIT]
     missed_checks = sorted(
-        [device for device in active_devices if device.health_missed_checks > 0],
+        [
+            device
+            for device in active_devices
+            if device.health_missed_checks > 0
+            and not maintenance_window_active(device, now)
+        ],
         key=lambda device: (-device.health_missed_checks, device.hostname.lower()),
     )[:HEALTH_LIST_LIMIT]
 
@@ -679,5 +700,7 @@ def build_dashboard_context(
         "notification_health": notification_health,
         "email_settings_configured": email_ready,
         "visible_device_count": len(filtered_devices),
+        "filtered_devices": filtered_devices,
+        "maintenance_device_count": len(maintenance_devices),
         "device_filter_options": device_filter_options,
     }

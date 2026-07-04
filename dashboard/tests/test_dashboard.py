@@ -515,6 +515,35 @@ def test_dashboard_status_filter_works(monkeypatch, fixed_now):
     assert context["summary"]["critical"] == 1
 
 
+def test_dashboard_excludes_maintenance_devices_from_health_attention(
+    monkeypatch, fixed_now
+):
+    seeded = seed_dashboard_data(fixed_now)
+    alpha_warning = next(
+        device
+        for device in seeded["devices"][seeded["admin"].id]
+        if device.hostname == "alpha-warning"
+    )
+    alpha_critical = next(
+        device
+        for device in seeded["devices"][seeded["admin"].id]
+        if device.hostname == "alpha-critical"
+    )
+    alpha_warning.maintenance_until = fixed_now + timedelta(hours=2)
+    alpha_critical.maintenance_until = fixed_now + timedelta(hours=2)
+    configure_dashboard_access(monkeypatch, seeded)
+    db = FakeDb(seeded["integration_settings"], seeded["events"])
+
+    context = build_dashboard_context(db, seeded["admin"], {})
+    health_names = {
+        device.hostname for device in context["health_overview"]["warning_critical"]
+    }
+
+    assert "alpha-warning" not in health_names
+    assert "alpha-critical" not in health_names
+    assert context["maintenance_device_count"] >= 2
+
+
 def test_dashboard_includes_revoked_firewalls(monkeypatch, fixed_now):
     seeded = seed_dashboard_data(fixed_now)
     configure_dashboard_access(monkeypatch, seeded)
