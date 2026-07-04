@@ -10,15 +10,19 @@ if str(DASHBOARD_DIR) not in sys.path:
     sys.path.insert(0, str(DASHBOARD_DIR))
 
 from app import models  # noqa: F401
+from app.config import get_settings
 from app.database import Base
 from sqlalchemy import engine_from_config, pool
 
 context = import_module("alembic.context")
 
 config = context.config
+settings = get_settings()
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
