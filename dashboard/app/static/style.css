@@ -904,23 +904,23 @@ th {
     margin-bottom: 0.75rem;
 }
 .dashboard-filters-card {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(420px, 1fr) auto;
     align-items: end;
-    gap: 1rem;
+    gap: 1.25rem;
 }
 
 .dashboard-filters-card > .admin-card-header {
     margin-bottom: 0;
-    flex: 0 0 auto;
+    min-width: max-content;
 }
 
 .dashboard-filters-form {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) auto;
     gap: 1rem;
     align-items: end;
-    flex: 1 1 auto;
+    min-width: 0;
 }
 .audit-log-filters-form {
     display: grid;
@@ -1821,6 +1821,7 @@ summary,
 .dashboard-filters-card .dashboard-header-actions {
     flex: 1 1 auto;
     justify-content: flex-end;
+    min-width: max-content;
 }
 
 .dashboard-last-updated {
@@ -2310,6 +2311,7 @@ td {
 
 .dashboard-header-meta {
     flex: 1 1 auto;
+    min-width: max-content;
 }
 
 .dashboard-filters-card .form-row {
@@ -2322,8 +2324,10 @@ td {
 
 .dashboard-filters-card .dashboard-phase-two-tools {
     margin-bottom: 0;
-    margin-left: auto;
+    margin-left: 0;
     align-items: end;
+    justify-content: flex-end;
+    min-width: max-content;
 }
 .companies-bulk-select,
 .dashboard-save-filter-name {
@@ -2369,9 +2373,20 @@ td {
     display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
     .dashboard-filters-card {
-        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-filters-card > .admin-card-header,
+    .dashboard-filters-card .dashboard-phase-two-tools {
+        min-width: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    .dashboard-filters-form {
+        grid-template-columns: 1fr;
     }
 
     .dashboard-page-header,
@@ -2399,7 +2414,8 @@ td {
     .companies-bulk-toolbar,
     .dashboard-phase-two-tools,
     .companies-bulk-controls,
-    .dashboard-save-filter-form {
+    .dashboard-save-filter-form,
+    .dashboard-saved-filter-controls {
         flex-direction: column;
         align-items: stretch;
     }
