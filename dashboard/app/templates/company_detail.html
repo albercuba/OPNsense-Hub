@@ -154,7 +154,6 @@
             </table>
         </div>
     </article>
-
 </section>
 
 <section class="card">
@@ -339,7 +338,7 @@
             </p>
         </div>
     </div>
-    </div></h2>{% if timeline %}
+    {% if timeline %}
     <div class="timeline-scroll-panel">
         <ol class="activity-timeline compact-timeline">
             {% for item in timeline %}
@@ -367,8 +366,8 @@
         <div>
             <strong>No recent company activity</strong>
             <p class="muted">
-                Activity will appear here after firewall heartbeats,
-                backups, enrollment, or operator changes.
+                Activity will appear here after firewall heartbeats, backups,
+                enrollment, or operator changes.
             </p>
         </div>
     </div>
