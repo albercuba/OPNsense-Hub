@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..config import Settings
 from ..hardening import runtime_validation_errors
 from ..models import IntegrationSettings, SessionToken, User
+from ..security import utc_now
 from ..security.request_context import client_ip
 
 
@@ -88,12 +89,14 @@ def secret_health_checks(settings: Settings) -> list[dict[str, str]]:
 
 
 def active_sessions_for_user(db: Session, user_id) -> list[SessionToken]:
+    now = utc_now()
     return list(
         db.scalars(
             select(SessionToken)
             .where(
                 SessionToken.user_id == user_id,
                 SessionToken.revoked_at.is_(None),
+                SessionToken.expires_at > now,
             )
             .order_by(SessionToken.created_at.desc())
         ).all()
@@ -101,11 +104,15 @@ def active_sessions_for_user(db: Session, user_id) -> list[SessionToken]:
 
 
 def active_sessions_for_admin(db: Session) -> list[SessionToken]:
+    now = utc_now()
     return list(
         db.scalars(
             select(SessionToken)
             .options(selectinload(SessionToken.user))
-            .where(SessionToken.revoked_at.is_(None))
+            .where(
+                SessionToken.revoked_at.is_(None),
+                SessionToken.expires_at > now,
+            )
             .order_by(SessionToken.created_at.desc())
         ).all()
     )

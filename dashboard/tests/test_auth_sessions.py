@@ -169,6 +169,46 @@ def test_logout_revokes_session_and_clears_cookie():
     assert settings.session_cookie_name in response.headers.get("set-cookie", "")
 
 
+def test_active_sessions_helpers_exclude_expired_sessions():
+    from app.services.admin_security import (
+        active_sessions_for_admin,
+        active_sessions_for_user,
+    )
+
+    with sqlite_session(Path(".")) as session:
+        user = User(
+            id=uuid4(),
+            email="user@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+        )
+        session.add(user)
+        session.flush()
+        session.add_all(
+            [
+                SessionToken(
+                    user_id=user.id,
+                    token_hash="active-session",
+                    expires_at=utc_now() + timedelta(hours=1),
+                ),
+                SessionToken(
+                    user_id=user.id,
+                    token_hash="expired-session",
+                    expires_at=utc_now() - timedelta(minutes=1),
+                ),
+            ]
+        )
+        session.commit()
+
+        user_sessions = active_sessions_for_user(session, user.id)
+        admin_sessions = active_sessions_for_admin(session)
+
+    assert len(user_sessions) == 1
+    assert user_sessions[0].token_hash == "active-session"
+    assert len(admin_sessions) == 1
+    assert admin_sessions[0].token_hash == "active-session"
+
+
 def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monkeypatch):
     async def noop():
         return None
