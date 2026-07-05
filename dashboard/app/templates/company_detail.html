@@ -165,25 +165,27 @@
             </div>
         </div>
         {% if timeline %}
-        <ol class="activity-timeline compact-timeline">
-            {% for item in timeline %}
-            <li class="activity-timeline-item" data-state="info">
-                <div class="activity-timeline-marker"></div>
-                <div class="activity-timeline-content">
-                    <div class="activity-timeline-meta">
-                        <strong>{{ item.title }}</strong>
+        <div class="timeline-scroll-panel">
+            <ol class="activity-timeline compact-timeline">
+                {% for item in timeline %}
+                <li class="activity-timeline-item" data-state="info">
+                    <div class="activity-timeline-marker"></div>
+                    <div class="activity-timeline-content">
+                        <div class="activity-timeline-meta">
+                            <strong>{{ item.title }}</strong>
+                            <span class="muted"
+                                >{{ format_datetime(item.timestamp) }}</span
+                            >
+                        </div>
+                        <p>{{ item.detail }}</p>
                         <span class="muted"
-                            >{{ format_datetime(item.timestamp) }}</span
+                            >{{ item.source|title }} · {{ item.actor }}</span
                         >
                     </div>
-                    <p>{{ item.detail }}</p>
-                    <span class="muted"
-                        >{{ item.source|title }} · {{ item.actor }}</span
-                    >
-                </div>
-            </li>
-            {% endfor %}
-        </ol>
+                </li>
+                {% endfor %}
+            </ol>
+        </div>
         {% else %}
         <div class="table-empty-state">
             <i class="fa-solid fa-timeline"></i>

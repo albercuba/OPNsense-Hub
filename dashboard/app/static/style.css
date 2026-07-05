@@ -1172,6 +1172,12 @@ th {
     background: linear-gradient(180deg, rgba(15, 23, 36, 0), var(--panel) 35%);
 }
 
+.timeline-scroll-panel {
+    max-height: 24rem;
+    overflow-y: auto;
+    padding-right: 0.35rem;
+}
+
 .activity-timeline {
     list-style: none;
     margin: 0;
@@ -1250,6 +1256,11 @@ th {
 
 .compact-timeline {
     gap: 0.75rem;
+}
+
+.company-overview-grid {
+    grid-template-columns: 1fr;
+    align-items: start;
 }
 
 .toast-stack {

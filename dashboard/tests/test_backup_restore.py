@@ -380,6 +380,10 @@ def test_device_page_renders_phase_one_sections(monkeypatch, tmp_path):
     assert "Runbook and internal notes" in response.text
     assert "Health acknowledgement" in response.text
     assert "Activity timeline" in response.text
+    assert "timeline-scroll-panel" in response.text
+    assert "<span>Escalation hint</span>" in response.text
+    assert "<span>Acknowledgement note</span>" in response.text
+    assert "<span>Internal notes</span>" in response.text
     assert "Tracked in INC-42" in response.text
     assert "Runbook updated" in response.text
 
@@ -514,6 +518,8 @@ def test_company_detail_shows_overview_timeline_and_risks(monkeypatch, tmp_path)
     assert "Company overview" in response.text
     assert "Risky firewalls" in response.text
     assert "Recent company activity" in response.text
+    assert "company-overview-grid" in response.text
+    assert "timeline-scroll-panel" in response.text
     assert "Health issue acknowledged" in response.text
     assert "fw-acme-1" in response.text
 
