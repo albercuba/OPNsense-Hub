@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from ..wireguard import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 EXPECTED_ENROLLMENT_FAILURE_ACTIONS = {
     "enrollment.invalid_payload",
     "enrollment.invalid_otp",
@@ -163,101 +165,138 @@ def _policy_summary(
 
 
 def build_device_network_diagnostics(db: Session, device: Device) -> dict[str, Any]:
-    now = utc_now()
-    snapshot = runtime_peer_snapshot()
-    runtime_peer = snapshot.peers.get(device.wg_public_key)
-    expected_device_route = peer_allowed_ips(str(device.wg_tunnel_ip))
-    actual_allowed_ips = runtime_peer.allowed_ips if runtime_peer else []
-    policy_summary, policy_warnings = _policy_summary(
-        actual_allowed_ips,
-        expected_device_route,
-    )
-    plugin_expected = expected_plugin_version()
-    plugin_actual = (device.plugin_version or "").strip() or None
-    plugin_ok = (
-        plugin_expected is None
-        or plugin_actual is None
-        or plugin_actual == plugin_expected
-    )
-    handshake_state, handshake_label = summarize_handshake_age(
-        runtime_peer.last_handshake_at if runtime_peer else None,
-        now,
-    )
-    if snapshot.status == "error":
-        tunnel_state = "warning"
-        tunnel_label = snapshot.error or "WireGuard runtime unavailable"
-    elif snapshot.status == "dry-run":
-        tunnel_state = "warning"
-        tunnel_label = "WireGuard runtime checks are disabled in dry run mode"
-    elif runtime_peer is None:
-        tunnel_state = "critical"
-        tunnel_label = "Peer missing from the Hub WireGuard runtime"
-    else:
-        tunnel_state = "success"
-        tunnel_label = "Peer present in the Hub WireGuard runtime"
+    try:
+        now = utc_now()
+        snapshot = runtime_peer_snapshot()
+        runtime_peer = snapshot.peers.get(device.wg_public_key)
+        expected_device_route = peer_allowed_ips(str(device.wg_tunnel_ip))
+        actual_allowed_ips = runtime_peer.allowed_ips if runtime_peer else []
+        policy_summary, policy_warnings = _policy_summary(
+            actual_allowed_ips,
+            expected_device_route,
+        )
+        plugin_expected = expected_plugin_version()
+        plugin_actual = (device.plugin_version or "").strip() or None
+        plugin_ok = (
+            plugin_expected is None
+            or plugin_actual is None
+            or plugin_actual == plugin_expected
+        )
+        handshake_state, handshake_label = summarize_handshake_age(
+            runtime_peer.last_handshake_at if runtime_peer else None,
+            now,
+        )
+        if snapshot.status == "error":
+            tunnel_state = "warning"
+            tunnel_label = snapshot.error or "WireGuard runtime unavailable"
+        elif snapshot.status == "dry-run":
+            tunnel_state = "warning"
+            tunnel_label = "WireGuard runtime checks are disabled in dry run mode"
+        elif runtime_peer is None:
+            tunnel_state = "critical"
+            tunnel_label = "Peer missing from the Hub WireGuard runtime"
+        else:
+            tunnel_state = "success"
+            tunnel_label = "Peer present in the Hub WireGuard runtime"
 
-    recent_enrollment_logs = list(
-        db.scalars(
-            select(AuditLog)
-            .where(
-                AuditLog.company_id == device.company_id,
-                AuditLog.action.in_(EXPECTED_ENROLLMENT_FAILURE_ACTIONS),
-            )
-            .order_by(AuditLog.created_at.desc())
-            .limit(10)
-        ).all()
-    )
-    enrollment_diagnostics = [
-        {
-            "created_at": entry.created_at,
-            "action": entry.action,
-            "summary": enrollment_failure_summary(entry.action),
-            "ip_address": entry.ip_address,
+        recent_enrollment_logs = list(
+            db.scalars(
+                select(AuditLog)
+                .where(
+                    AuditLog.company_id == device.company_id,
+                    AuditLog.action.in_(EXPECTED_ENROLLMENT_FAILURE_ACTIONS),
+                )
+                .order_by(AuditLog.created_at.desc())
+                .limit(10)
+            ).all()
+        )
+        enrollment_diagnostics = [
+            {
+                "created_at": entry.created_at,
+                "action": entry.action,
+                "summary": enrollment_failure_summary(entry.action),
+                "ip_address": entry.ip_address,
+            }
+            for entry in recent_enrollment_logs
+        ]
+        reachability_hint = None
+        if (
+            runtime_peer
+            and runtime_peer.last_handshake_at is None
+            and device.last_seen_at
+        ):
+            reachability_hint = "Heartbeat exists but no recent WireGuard handshake was observed; confirm endpoint reachability and peer state."
+        elif not device.last_seen_at:
+            reachability_hint = "This firewall has not reported a heartbeat yet. Verify enrollment, endpoint DNS, and tunnel reachability."
+
+        return {
+            "tunnel": {
+                "state": tunnel_state,
+                "label": tunnel_label,
+                "runtime_status": snapshot.status,
+                "interface": snapshot.interface,
+                "endpoint": runtime_peer.endpoint if runtime_peer else None,
+                "last_handshake_at": runtime_peer.last_handshake_at
+                if runtime_peer
+                else None,
+                "handshake_state": handshake_state,
+                "handshake_label": handshake_label,
+                "rx_bytes": runtime_peer.rx_bytes if runtime_peer else None,
+                "tx_bytes": runtime_peer.tx_bytes if runtime_peer else None,
+            },
+            "policy": {
+                "summary": policy_summary,
+                "expected_device_route": expected_device_route,
+                "expected_firewall_route": client_allowed_ips(),
+                "actual_allowed_ips": actual_allowed_ips,
+                "warnings": policy_warnings,
+                "state": "critical" if policy_warnings else "success",
+            },
+            "plugin": {
+                "expected": plugin_expected,
+                "actual": plugin_actual,
+                "state": "success" if plugin_ok else "warning",
+                "label": (
+                    "Plugin version matches"
+                    if plugin_ok
+                    else f"Plugin version mismatch: device={plugin_actual or 'unknown'}, expected={plugin_expected or 'unknown'}"
+                ),
+            },
+            "enrollment_diagnostics": enrollment_diagnostics,
+            "reachability_hint": reachability_hint,
         }
-        for entry in recent_enrollment_logs
-    ]
-    reachability_hint = None
-    if runtime_peer and runtime_peer.last_handshake_at is None and device.last_seen_at:
-        reachability_hint = "Heartbeat exists but no recent WireGuard handshake was observed; confirm endpoint reachability and peer state."
-    elif not device.last_seen_at:
-        reachability_hint = "This firewall has not reported a heartbeat yet. Verify enrollment, endpoint DNS, and tunnel reachability."
-
-    return {
-        "tunnel": {
-            "state": tunnel_state,
-            "label": tunnel_label,
-            "runtime_status": snapshot.status,
-            "interface": snapshot.interface,
-            "endpoint": runtime_peer.endpoint if runtime_peer else None,
-            "last_handshake_at": runtime_peer.last_handshake_at
-            if runtime_peer
-            else None,
-            "handshake_state": handshake_state,
-            "handshake_label": handshake_label,
-            "rx_bytes": runtime_peer.rx_bytes if runtime_peer else None,
-            "tx_bytes": runtime_peer.tx_bytes if runtime_peer else None,
-        },
-        "policy": {
-            "summary": policy_summary,
-            "expected_device_route": expected_device_route,
-            "expected_firewall_route": client_allowed_ips(),
-            "actual_allowed_ips": actual_allowed_ips,
-            "warnings": policy_warnings,
-            "state": "critical" if policy_warnings else "success",
-        },
-        "plugin": {
-            "expected": plugin_expected,
-            "actual": plugin_actual,
-            "state": "success" if plugin_ok else "warning",
-            "label": (
-                "Plugin version matches"
-                if plugin_ok
-                else f"Plugin version mismatch: device={plugin_actual or 'unknown'}, expected={plugin_expected or 'unknown'}"
-            ),
-        },
-        "enrollment_diagnostics": enrollment_diagnostics,
-        "reachability_hint": reachability_hint,
-    }
+    except Exception as exc:  # pragma: no cover - runtime safety net
+        logger.exception("Failed to build device network diagnostics")
+        return {
+            "tunnel": {
+                "state": "warning",
+                "label": "Network diagnostics unavailable",
+                "runtime_status": "error",
+                "interface": settings.wg_interface,
+                "endpoint": None,
+                "last_handshake_at": None,
+                "handshake_state": "warning",
+                "handshake_label": str(exc),
+                "rx_bytes": None,
+                "tx_bytes": None,
+            },
+            "policy": {
+                "summary": "Network policy simulation is temporarily unavailable.",
+                "expected_device_route": str(device.wg_tunnel_ip),
+                "expected_firewall_route": "Unavailable",
+                "actual_allowed_ips": [],
+                "warnings": [str(exc)],
+                "state": "warning",
+            },
+            "plugin": {
+                "expected": expected_plugin_version(),
+                "actual": (device.plugin_version or "").strip() or None,
+                "state": "warning",
+                "label": "Network diagnostics could not be computed",
+            },
+            "enrollment_diagnostics": [],
+            "reachability_hint": str(exc),
+        }
 
 
 def enrollment_failure_summary(action: str) -> str:
@@ -276,72 +315,94 @@ def _company_name(db: Session, company_id: Any) -> str:
 
 
 def build_network_settings_context(db: Session) -> dict[str, Any]:
-    devices = list(
-        db.scalars(
-            select(Device)
-            .options(selectinload(Device.company))
-            .join(Company)
-            .where(Device.revoked_at.is_(None))
-            .order_by(Company.name, Device.hostname)
-        ).all()
-    )
-    snapshot = runtime_peer_snapshot()
-    now = utc_now()
-    rows: list[dict[str, Any]] = []
-    for device in devices:
-        peer = snapshot.peers.get(device.wg_public_key)
-        expected_route = peer_allowed_ips(str(device.wg_tunnel_ip))
-        actual_allowed_ips = peer.allowed_ips if peer else []
-        drift = actual_allowed_ips != [expected_route]
-        handshake_state, handshake_label = summarize_handshake_age(
-            peer.last_handshake_at if peer else None,
-            now,
+    try:
+        devices = list(
+            db.scalars(
+                select(Device)
+                .options(selectinload(Device.company))
+                .join(Company)
+                .where(Device.revoked_at.is_(None))
+                .order_by(Company.name, Device.hostname)
+            ).all()
         )
-        rows.append(
-            {
-                "device": device,
-                "company_name": device.company.name if device.company else "Unknown",
-                "peer_present": peer is not None,
-                "endpoint": peer.endpoint if peer else None,
-                "expected_route": expected_route,
-                "actual_allowed_ips": actual_allowed_ips,
-                "assigned_ip": str(device.wg_tunnel_ip),
-                "last_handshake_at": peer.last_handshake_at if peer else None,
-                "handshake_state": handshake_state,
-                "handshake_label": handshake_label,
-                "policy_state": "critical" if drift else "success",
-                "policy_label": "Drift detected" if drift else "As expected",
-                "rx_bytes": peer.rx_bytes if peer else None,
-                "tx_bytes": peer.tx_bytes if peer else None,
-            }
+        snapshot = runtime_peer_snapshot()
+        now = utc_now()
+        rows: list[dict[str, Any]] = []
+        for device in devices:
+            peer = snapshot.peers.get(device.wg_public_key)
+            expected_route = peer_allowed_ips(str(device.wg_tunnel_ip))
+            actual_allowed_ips = peer.allowed_ips if peer else []
+            drift = actual_allowed_ips != [expected_route]
+            handshake_state, handshake_label = summarize_handshake_age(
+                peer.last_handshake_at if peer else None,
+                now,
+            )
+            rows.append(
+                {
+                    "device": device,
+                    "company_name": device.company.name
+                    if device.company
+                    else "Unknown",
+                    "peer_present": peer is not None,
+                    "endpoint": peer.endpoint if peer else None,
+                    "expected_route": expected_route,
+                    "actual_allowed_ips": actual_allowed_ips,
+                    "assigned_ip": str(device.wg_tunnel_ip),
+                    "last_handshake_at": peer.last_handshake_at if peer else None,
+                    "handshake_state": handshake_state,
+                    "handshake_label": handshake_label,
+                    "policy_state": "critical" if drift else "success",
+                    "policy_label": "Drift detected" if drift else "As expected",
+                    "rx_bytes": peer.rx_bytes if peer else None,
+                    "tx_bytes": peer.tx_bytes if peer else None,
+                }
+            )
+        enrollment_logs = list(
+            db.scalars(
+                select(AuditLog)
+                .where(AuditLog.action.in_(EXPECTED_ENROLLMENT_FAILURE_ACTIONS))
+                .order_by(AuditLog.created_at.desc())
+                .limit(25)
+            ).all()
         )
-    enrollment_logs = list(
-        db.scalars(
-            select(AuditLog)
-            .where(AuditLog.action.in_(EXPECTED_ENROLLMENT_FAILURE_ACTIONS))
-            .order_by(AuditLog.created_at.desc())
-            .limit(25)
-        ).all()
-    )
-    plugin_expected = expected_plugin_version()
-    return {
-        "isolation_check": build_isolation_check(),
-        "wireguard_runtime": {
-            "status": snapshot.status,
-            "interface": snapshot.interface,
-            "error": snapshot.error,
-            "peer_count": len(snapshot.peers),
-            "rows": rows,
-        },
-        "enrollment_logs": [
-            {
-                "created_at": entry.created_at,
-                "company_name": _company_name(db, entry.company_id),
-                "summary": enrollment_failure_summary(entry.action),
-                "action": entry.action,
-                "ip_address": entry.ip_address,
-            }
-            for entry in enrollment_logs
-        ],
-        "plugin_expected": plugin_expected,
-    }
+        plugin_expected = expected_plugin_version()
+        return {
+            "isolation_check": build_isolation_check(),
+            "wireguard_runtime": {
+                "status": snapshot.status,
+                "interface": snapshot.interface,
+                "error": snapshot.error,
+                "peer_count": len(snapshot.peers),
+                "rows": rows,
+            },
+            "enrollment_logs": [
+                {
+                    "created_at": entry.created_at,
+                    "company_name": _company_name(db, entry.company_id),
+                    "summary": enrollment_failure_summary(entry.action),
+                    "action": entry.action,
+                    "ip_address": entry.ip_address,
+                }
+                for entry in enrollment_logs
+            ],
+            "plugin_expected": plugin_expected,
+        }
+    except Exception as exc:  # pragma: no cover - runtime safety net
+        logger.exception("Failed to build network settings context")
+        return {
+            "isolation_check": {
+                "state": "warning",
+                "label": "Network diagnostics unavailable",
+                "summary": "The Network page could not compute diagnostics for this environment.",
+                "details": [str(exc)],
+            },
+            "wireguard_runtime": {
+                "status": "error",
+                "interface": settings.wg_interface,
+                "error": str(exc),
+                "peer_count": 0,
+                "rows": [],
+            },
+            "enrollment_logs": [],
+            "plugin_expected": expected_plugin_version(),
+        }
