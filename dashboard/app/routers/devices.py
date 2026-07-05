@@ -115,6 +115,34 @@ def _device_health_check_state(device: Device, now: datetime) -> dict[str, str |
     }
 
 
+def _firmware_health_detail(device: Device) -> str:
+    status = (device.firmware_status or "unknown").lower()
+    if status == "update":
+        update_count = max(0, int(device.firmware_update_count or 0))
+        if update_count > 0:
+            update_word = "update" if update_count == 1 else "updates"
+            return f"There are {update_count} {update_word} available."
+        if device.firmware_available_version:
+            return f"Updates are available to {device.firmware_available_version}."
+        return "Updates are available."
+    if status == "upgrade":
+        if device.firmware_available_version:
+            return f"Upgrade available to {device.firmware_available_version}."
+        return "A firmware upgrade is available."
+    if status == "none":
+        version = device.firmware_current_version or device.opnsense_version
+        if version:
+            return f"System is up to date on {version}."
+        return "System is up to date."
+    if status == "error":
+        return device.firmware_status_message or "Firmware check failed."
+    return (
+        f"Last checked at {device.firmware_checked_at.isoformat()}."
+        if device.firmware_checked_at
+        else "No firmware check has been reported yet."
+    )
+
+
 def _device_health_details(device: Device, now: datetime) -> list[dict[str, object]]:
     heartbeat = _device_health_check_state(device, now)
     backup = dashboard_backup_status(device, now)
@@ -186,12 +214,7 @@ def _device_health_details(device: Device, now: datetime) -> list[dict[str, obje
             else "critical"
             if firmware["label"] == "Check failed"
             else "neutral",
-            "detail": device.firmware_status_message
-            or (
-                f"Last checked at {device.firmware_checked_at.isoformat()}."
-                if device.firmware_checked_at
-                else "No firmware check has been reported yet."
-            ),
+            "detail": _firmware_health_detail(device),
             "timestamp": device.firmware_checked_at,
         },
         {

@@ -388,6 +388,27 @@ def test_device_page_renders_phase_one_sections(monkeypatch, tmp_path):
     assert "Runbook updated" in response.text
 
 
+def test_device_firmware_card_uses_normalized_update_count(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_firmware_card_detail") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        device.firmware_status = "update"
+        device.firmware_update_count = 0
+        device.firmware_status_message = "There are 0 updates available."
+        device.firmware_checked_at = utc_now()
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/devices/{device.id}")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Updates available" in response.text
+    assert "Updates are available." in response.text
+    assert "There are 0 updates available." not in response.text
+
+
 def test_device_runbook_update_persists_fields(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "device_runbook_update") as session:
         admin = seed_backup_source(session)
