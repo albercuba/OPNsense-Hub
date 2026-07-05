@@ -19,15 +19,8 @@
                     <strong data-dashboard-last-updated>just now</strong>
                 </div>
             </div>
-            <div>
-                <button
-                    class="button secondary icon-only-button"
-                    type="button"
-                    data-dashboard-refresh
-                >
-                    <i class="fa-solid fa-rotate-right"></i>
-                    Refresh
-                </button>
+            <div class="dashboard-refresh-icon" aria-hidden="true">
+                <i class="fa-solid fa-rotate-right"></i>
             </div>
     </div>
     <form
@@ -96,12 +89,7 @@
             <a class="button secondary" href="/dashboard">
                 <i class="fa-solid fa-rotate-left"></i> Reset
             </a>
-            <a
-                class="button button-outline"
-                href="/dashboard/export/devices.csv{% if filters.company_id or filters.status %}?{% endif %}{% if filters.company_id %}company_id={{ filters.company_id|urlencode }}{% endif %}{% if filters.company_id and filters.status %}&{% endif %}{% if filters.status %}status={{ filters.status|urlencode }}{% endif %}"
-            >
-                <i class="fa-solid fa-file-csv"></i> Export CSV
-            </a>
+
         </div>
     </form>
     <div class="dashboard-phase-two-tools">
@@ -130,30 +118,46 @@
         {% if saved_filters %}
         <div class="dashboard-saved-filters">
             <span class="muted">Saved filters</span>
-            <div class="dashboard-saved-filter-list">
-                {% for saved_filter in saved_filters %}
-                <div class="dashboard-saved-filter-pill">
-                    <a
-                        href="/dashboard{% if saved_filter.company_id or saved_filter.status %}?{% endif %}{% if saved_filter.company_id %}company_id={{ saved_filter.company_id|string|urlencode }}{% endif %}{% if saved_filter.company_id and saved_filter.status %}&{% endif %}{% if saved_filter.status %}status={{ saved_filter.status|urlencode }}{% endif %}"
-                    >
-                        {{ saved_filter.name }}
-                    </a>
-                    <form
-                        action="/dashboard/filters/{{ saved_filter.id }}/delete"
-                        method="post"
-                    >
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                        <button
-                            class="icon-button"
-                            type="submit"
-                            title="Delete saved filter"
-                            aria-label="Delete saved filter"
+            <div class="dashboard-saved-filter-controls">
+                <label class="form-row dashboard-saved-filter-select">
+                    <span class="sr-only">Saved filters</span>
+                    <select data-dashboard-saved-filter-select>
+                        <option value="">Select a saved filter</option>
+                        {% for saved_filter in saved_filters %}
+                        <option
+                            value="{{ saved_filter.id }}"
+                            data-href="/dashboard{% if saved_filter.company_id or saved_filter.status %}?{% endif %}{% if saved_filter.company_id %}company_id={{ saved_filter.company_id|string|urlencode }}{% endif %}{% if saved_filter.company_id and saved_filter.status %}&{% endif %}{% if saved_filter.status %}status={{ saved_filter.status|urlencode }}{% endif %}"
                         >
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </form>
-                </div>
-                {% endfor %}
+                            {{ saved_filter.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button
+                    class="button secondary button-small"
+                    type="button"
+                    data-dashboard-saved-filter-apply
+                    disabled
+                >
+                    <i class="fa-solid fa-bookmark"></i> Apply
+                </button>
+                <form
+                    method="post"
+                    data-dashboard-saved-filter-delete-form
+                    data-delete-action-template="/dashboard/filters/__FILTER_ID__/delete"
+                >
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <button
+                        class="icon-button"
+                        type="submit"
+                        title="Delete saved filter"
+                        aria-label="Delete saved filter"
+                        data-dashboard-saved-filter-delete
+                        disabled
+                    >
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </form>
             </div>
         </div>
         {% endif %}
@@ -294,21 +298,7 @@
     </button>
 </section>
 
-<section class="card dashboard-card dashboard-status-legend-card">
-    <div class="admin-card-header">
-        <div>
-            <h2>Status legend</h2>
-            <p class="muted">Quick reference for the dashboard status colors and badges.</p>
-        </div>
-    </div>
-    <ul class="dashboard-status-legend-list">
-        <li><span class="status online">online</span><span class="muted">Firewall is checking in normally.</span></li>
-        <li><span class="status warning">warning</span><span class="muted">Firewall reported a warning condition that needs review.</span></li>
-        <li><span class="status offline">critical</span><span class="muted">Firewall is offline or in a critical state.</span></li>
-        <li><span class="status revoked">revoked</span><span class="muted">Firewall access has been revoked and it is no longer active.</span></li>
-        <li><span class="status other">other</span><span class="muted">Firewall reported a state outside the standard set.</span></li>
-    </ul>
-</section>
+
 
 <section id="dashboard-overview-grid" class="dashboard-top-grid">
     <article

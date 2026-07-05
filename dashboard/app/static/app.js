@@ -507,11 +507,55 @@ document.addEventListener("DOMContentLoaded", () => {
     window.setInterval(updateElapsedTimestamp, 1000);
   }
 
-  document
-    .querySelector("[data-dashboard-refresh]")
-    ?.addEventListener("click", () => {
-      window.location.reload();
-    });
+  const savedFilterSelect = document.querySelector(
+    "[data-dashboard-saved-filter-select]",
+  );
+  const savedFilterApplyButton = document.querySelector(
+    "[data-dashboard-saved-filter-apply]",
+  );
+  const savedFilterDeleteForm = document.querySelector(
+    "[data-dashboard-saved-filter-delete-form]",
+  );
+  const savedFilterDeleteButton = document.querySelector(
+    "[data-dashboard-saved-filter-delete]",
+  );
+
+  const syncSavedFilterControls = () => {
+    const selectedOption =
+      savedFilterSelect?.options[savedFilterSelect.selectedIndex] || null;
+    const selectedFilterId = selectedOption?.value || "";
+    const selectedHref = selectedOption?.dataset.href || "";
+    const hasSelection = Boolean(selectedFilterId && selectedHref);
+
+    if (savedFilterApplyButton) {
+      savedFilterApplyButton.disabled = !hasSelection;
+    }
+    if (savedFilterDeleteButton) {
+      savedFilterDeleteButton.disabled = !hasSelection;
+    }
+    if (savedFilterDeleteForm) {
+      const template = savedFilterDeleteForm.dataset.deleteActionTemplate || "";
+      savedFilterDeleteForm.action = hasSelection
+        ? template.replace("__FILTER_ID__", selectedFilterId)
+        : "";
+    }
+  };
+
+  savedFilterSelect?.addEventListener("change", syncSavedFilterControls);
+  savedFilterApplyButton?.addEventListener("click", () => {
+    const selectedOption =
+      savedFilterSelect?.options[savedFilterSelect.selectedIndex] || null;
+    const selectedHref = selectedOption?.dataset.href || "";
+    if (selectedHref) {
+      window.location.href = selectedHref;
+    }
+  });
+  savedFilterDeleteForm?.addEventListener("submit", (event) => {
+    if (!savedFilterDeleteForm.action) {
+      event.preventDefault();
+    }
+  });
+  syncSavedFilterControls();
 
   const recentEventsTable = document.querySelector("#recent-events-table");
   const rangeSelect = document.querySelector("[data-events-range-select]");
@@ -657,60 +701,4 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 0);
   });
   applyAuditLogFilters();
-
-  const bulkDeviceForm = document.querySelector("[data-bulk-device-form]");
-  const bulkSubmit = document.querySelector("[data-bulk-submit]");
-  const deviceCheckboxes = Array.from(
-    document.querySelectorAll("[data-device-checkbox]"),
-  );
-  const selectAllCheckboxes = Array.from(
-    document.querySelectorAll("[data-select-all-devices]"),
-  );
-
-  const syncBulkToolbarState = () => {
-    if (!bulkSubmit) {
-      return;
-    }
-    const selectedCount = deviceCheckboxes.filter(
-      (input) => input.checked,
-    ).length;
-    bulkSubmit.disabled = selectedCount === 0;
-    bulkSubmit.setAttribute("aria-disabled", String(selectedCount === 0));
-  };
-
-  selectAllCheckboxes.forEach((selectAll) => {
-    selectAll.addEventListener("change", () => {
-      const table = selectAll.closest("table");
-      if (!table) {
-        return;
-      }
-      table.querySelectorAll("[data-device-checkbox]").forEach((checkbox) => {
-        checkbox.checked = selectAll.checked;
-      });
-      syncBulkToolbarState();
-    });
-  });
-
-  deviceCheckboxes.forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      const table = checkbox.closest("table");
-      const selectAll = table?.querySelector("[data-select-all-devices]");
-      const scopedCheckboxes = Array.from(
-        table?.querySelectorAll("[data-device-checkbox]") || [],
-      );
-      if (selectAll) {
-        selectAll.checked =
-          scopedCheckboxes.length > 0 &&
-          scopedCheckboxes.every((input) => input.checked);
-      }
-      syncBulkToolbarState();
-    });
-  });
-
-  bulkDeviceForm?.addEventListener("submit", (event) => {
-    if (deviceCheckboxes.every((input) => !input.checked)) {
-      event.preventDefault();
-    }
-  });
-  syncBulkToolbarState();
 });

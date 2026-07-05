@@ -906,6 +906,7 @@ def test_dashboard_saved_filters_can_be_created_deleted_and_exported(
             )
             saved_filter = session.scalars(select(UserDashboardFilter)).first()
             assert saved_filter is not None
+            dashboard_response = client.get("/dashboard")
             export_response = client.get(
                 f"/dashboard/export/devices.csv?company_id={company.id}&status=online"
             )
@@ -920,6 +921,9 @@ def test_dashboard_saved_filters_can_be_created_deleted_and_exported(
     assert create_response.status_code == 303
     assert "result=filter-saved" in create_response.headers["location"]
     assert "company_id=" in create_response.headers["location"]
+    assert dashboard_response.status_code == 200
+    assert "Select a saved filter" in dashboard_response.text
+    assert "Alpha online" in dashboard_response.text
     assert export_response.status_code == 200
     assert export_response.headers["content-type"].startswith("text/csv")
     csv_text = export_response.text

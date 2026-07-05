@@ -1732,6 +1732,14 @@ th,
     min-width: 0;
 }
 
+.dashboard-refresh-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    min-height: 2.25rem;
+}
+
 .nav a:hover,
 .link-button:hover,
 .side-menu-link:hover,
@@ -2241,8 +2249,8 @@ td {
     margin-bottom: 1rem;
 }
 .companies-bulk-controls,
-.dashboard-saved-filter-list,
-.dashboard-header-meta {
+.dashboard-header-meta,
+.dashboard-saved-filter-controls {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
@@ -2263,17 +2271,9 @@ td {
     display: grid;
     gap: 0.5rem;
 }
-.dashboard-saved-filter-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.45rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--accent-soft);
-}
-.dashboard-saved-filter-pill a {
-    text-decoration: none;
+.dashboard-saved-filter-select {
+    margin-bottom: 0;
+    min-width: 240px;
 }
 .checkbox-column {
     width: 2.5rem;

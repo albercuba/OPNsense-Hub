@@ -583,6 +583,9 @@ def test_dashboard_renders_when_zero_devices(monkeypatch, fixed_now):
     assert response.status_code == 200
     assert "Dashboard" in response.text
     assert "No device events in the current view." in response.text
+    assert "Status legend" not in response.text
+    assert "Export CSV" not in response.text
+    assert "data-dashboard-refresh" not in response.text
 
 
 def test_dashboard_notification_health_renders_with_and_without_per_firewall_support(
