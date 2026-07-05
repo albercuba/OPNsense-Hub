@@ -1115,7 +1115,7 @@
             <tbody>
                 {% for row in network_diagnostics.wireguard_runtime.rows %}
                 <tr>
-                    <td>{{ row.company.name if row.company else 'Unknown' }}</td>
+                    <td>{{ row.company_name }}</td>
                     <td><a href="/devices/{{ row.device.id }}">{{ row.device.hostname }}</a></td>
                     <td>{{ row.assigned_ip }}</td>
                     <td>
@@ -1161,7 +1161,7 @@
                 {% for row in network_diagnostics.enrollment_logs %}
                 <tr>
                     <td>{{ format_datetime(row.created_at) }}</td>
-                    <td>{{ row.company.name if row.company else 'Unknown' }}</td>
+                    <td>{{ row.company_name }}</td>
                     <td>{{ row.summary }}</td>
                     <td>{{ row.ip_address or 'Unknown' }}</td>
                 </tr>

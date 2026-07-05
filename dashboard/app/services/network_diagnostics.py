@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..config import get_settings
 from ..hardening import isolation_invariant_errors, verify_nftables_rule_present
@@ -268,10 +268,18 @@ def enrollment_failure_summary(action: str) -> str:
     }.get(action, action)
 
 
+def _company_name(db: Session, company_id: Any) -> str:
+    if not company_id:
+        return "Unknown"
+    company = db.get(Company, company_id)
+    return company.name if company is not None else "Unknown"
+
+
 def build_network_settings_context(db: Session) -> dict[str, Any]:
     devices = list(
         db.scalars(
             select(Device)
+            .options(selectinload(Device.company))
             .join(Company)
             .where(Device.revoked_at.is_(None))
             .order_by(Company.name, Device.hostname)
@@ -292,7 +300,7 @@ def build_network_settings_context(db: Session) -> dict[str, Any]:
         rows.append(
             {
                 "device": device,
-                "company": device.company,
+                "company_name": device.company.name if device.company else "Unknown",
                 "peer_present": peer is not None,
                 "endpoint": peer.endpoint if peer else None,
                 "expected_route": expected_route,
@@ -328,9 +336,7 @@ def build_network_settings_context(db: Session) -> dict[str, Any]:
         "enrollment_logs": [
             {
                 "created_at": entry.created_at,
-                "company": db.get(Company, entry.company_id)
-                if entry.company_id
-                else None,
+                "company_name": _company_name(db, entry.company_id),
                 "summary": enrollment_failure_summary(entry.action),
                 "action": entry.action,
                 "ip_address": entry.ip_address,
