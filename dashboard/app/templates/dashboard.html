@@ -2,27 +2,11 @@
 <section
     id="dashboard-filters-card"
     class="card dashboard-card dashboard-filters-card"
+    data-dashboard-revision="{{ dashboard_revision }}"
 >
     <div class="admin-card-header dashboard-page-header">
         <div>
             <h1>Dashboard</h1>
-        </div>
-        <div class="dashboard-header-actions">
-            <div class="dashboard-header-meta">
-                {% if maintenance_device_count %}
-                <span class="status text-warning"
-                    >{{ maintenance_device_count }} maintenance {{ 'window' if
-                    maintenance_device_count == 1 else 'windows' }} active</span
-                >
-                {% endif %}
-                <div class="dashboard-last-updated" aria-live="polite">
-                    <span class="muted">Last updated:</span>
-                    <strong data-dashboard-last-updated>just now</strong>
-                </div>
-            </div>
-            <div class="dashboard-refresh-icon" aria-hidden="true">
-                <i class="fa-solid fa-rotate-right"></i>
-            </div>
         </div>
     </div>
     <form

@@ -447,6 +447,19 @@ def test_device_page_renders_phase_one_sections(monkeypatch, tmp_path):
     assert "Runbook updated" in response.text
 
 
+def test_dashboard_updates_endpoint_returns_revision(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "dashboard_updates_endpoint") as session:
+        admin = seed_backup_source(session)
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get("/dashboard/updates")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert isinstance(response.json().get("revision"), str)
+    assert response.json()["revision"]
+
+
 def test_network_settings_page_renders_diagnostics(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "network_settings_page") as session:
         admin = seed_backup_source(session)

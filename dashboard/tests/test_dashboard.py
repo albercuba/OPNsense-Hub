@@ -6,6 +6,7 @@ from app.dashboard import (
     build_dashboard_context,
     dashboard_backup_status,
     dashboard_license_status,
+    dashboard_revision_token,
 )
 from app.database import get_db
 from app.integration import email_settings_configured
@@ -436,6 +437,16 @@ def test_dashboard_firmware_attention_includes_expected_states(monkeypatch, fixe
     names = {row["device"].hostname for row in context["firmware_attention_rows"]}
 
     assert {"alpha-warning", "alpha-critical", "beta-unknown", "beta-error"} <= names
+
+
+def test_dashboard_revision_token_tracks_latest_visible_change(monkeypatch, fixed_now):
+    seeded = seed_dashboard_data(fixed_now)
+    configure_dashboard_access(monkeypatch, seeded)
+    db = FakeDb(seeded["integration_settings"], seeded["events"])
+
+    revision = dashboard_revision_token(db, seeded["admin"], {})
+
+    assert revision == (fixed_now - timedelta(minutes=5)).isoformat()
 
 
 def test_dashboard_license_logic_handles_business_community_and_expiry(fixed_now):

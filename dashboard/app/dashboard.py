@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session, selectinload
 from .backups import backup_due, backup_request_pending
 from .integration import email_settings_configured
 from .models import (
+    AuditLog,
     Company,
     CompanyUser,
     Device,
     DeviceEvent,
     IntegrationSettings,
     User,
+    UserDashboardFilter,
 )
 from .rbac import is_global_admin
 from .security import utc_now
@@ -216,6 +218,86 @@ def _status_sort_key(device: Device) -> tuple[int, str]:
         ),
         device.hostname.lower(),
     )
+
+
+def _timestamp_value(value: object | None) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if value is not None and hasattr(value, "created_at"):
+        candidate = getattr(value, "created_at")
+        if isinstance(candidate, datetime):
+            return candidate
+    return None
+
+
+def dashboard_revision_token(
+    db: Session, user: User, filters: dict[str, str | None]
+) -> str:
+    devices = accessible_devices_for_user(db, user)
+    selected_company_id = (filters.get("company_id") or "").strip()
+    selected_status = (filters.get("status") or "").strip().lower()
+    filtered_devices = [
+        device
+        for device in devices
+        if (not selected_company_id or str(device.company_id) == selected_company_id)
+        and status_filter_matches(device, selected_status or None)
+    ]
+    timestamps: list[datetime] = []
+    for device in filtered_devices:
+        if device.created_at is not None:
+            timestamps.append(device.created_at)
+        for value in (
+            device.last_seen_at,
+            device.backup_last_requested_at,
+            device.backup_last_uploaded_at,
+            device.firmware_checked_at,
+            device.firmware_check_requested_at,
+            device.health_acknowledged_at,
+            device.revoked_at,
+        ):
+            if value is not None:
+                timestamps.append(value)
+    device_ids = [device.id for device in filtered_devices]
+    if device_ids:
+        latest_event = _timestamp_value(
+            db.scalar(
+                select(DeviceEvent.created_at)
+                .where(DeviceEvent.device_id.in_(device_ids))
+                .order_by(DeviceEvent.created_at.desc())
+                .limit(1)
+            )
+        )
+        if latest_event is not None:
+            timestamps.append(latest_event)
+        latest_audit = _timestamp_value(
+            db.scalar(
+                select(AuditLog.created_at)
+                .where(AuditLog.device_id.in_(device_ids))
+                .order_by(AuditLog.created_at.desc())
+                .limit(1)
+            )
+        )
+        if latest_audit is not None:
+            timestamps.append(latest_audit)
+    latest_saved_filter = _timestamp_value(
+        db.scalar(
+            select(UserDashboardFilter.created_at)
+            .where(UserDashboardFilter.user_id == user.id)
+            .order_by(UserDashboardFilter.created_at.desc())
+            .limit(1)
+        )
+    )
+    if latest_saved_filter is not None:
+        timestamps.append(latest_saved_filter)
+    if not timestamps:
+        return "0"
+    latest = max(
+        value.astimezone(timezone.utc)
+        if value.tzinfo
+        else value.replace(tzinfo=timezone.utc)
+        for value in timestamps
+    )
+    return latest.isoformat()
 
 
 def build_dashboard_context(

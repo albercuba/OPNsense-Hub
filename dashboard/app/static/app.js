@@ -511,26 +511,53 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  const updateElapsedTimestamp = () => {
-    const label = document.querySelector("[data-dashboard-last-updated]");
-    if (!label) {
-      return;
-    }
-    const startedAt = Number(label.dataset.startedAt || Date.now());
-    const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    label.textContent =
-      seconds < 5
-        ? "just now"
-        : `${seconds} second${seconds === 1 ? "" : "s"} ago`;
-  };
-
-  const lastUpdatedLabel = document.querySelector(
-    "[data-dashboard-last-updated]",
+  const dashboardFiltersCard = document.querySelector(
+    "[data-dashboard-revision]",
   );
-  if (lastUpdatedLabel) {
-    lastUpdatedLabel.dataset.startedAt = String(Date.now());
-    updateElapsedTimestamp();
-    window.setInterval(updateElapsedTimestamp, 1000);
+  if (dashboardFiltersCard) {
+    let currentRevision = dashboardFiltersCard.dataset.dashboardRevision || "0";
+    let dashboardRefreshInFlight = false;
+    const pollDashboardUpdates = async () => {
+      if (document.hidden || dashboardRefreshInFlight) {
+        return;
+      }
+      dashboardRefreshInFlight = true;
+      try {
+        const url = new URL("/dashboard/updates", window.location.origin);
+        const params = new URLSearchParams(window.location.search);
+        const companyId = params.get("company_id");
+        const status = params.get("status");
+        if (companyId) {
+          url.searchParams.set("company_id", companyId);
+        }
+        if (status) {
+          url.searchParams.set("status", status);
+        }
+        const response = await fetch(url, {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        const nextRevision = String(payload.revision || "0");
+        if (nextRevision !== currentRevision) {
+          window.location.reload();
+          return;
+        }
+      } catch (_error) {
+      } finally {
+        dashboardRefreshInFlight = false;
+      }
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        pollDashboardUpdates();
+      }
+    });
+    window.setInterval(pollDashboardUpdates, 10000);
+    pollDashboardUpdates();
   }
 
   const savedFilterSelect = document.querySelector(

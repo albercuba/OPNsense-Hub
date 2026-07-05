@@ -7,7 +7,7 @@ from typing import Annotated, cast
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from ..dashboard import (
     build_dashboard_context,
     dashboard_backup_status,
     dashboard_firmware_status,
+    dashboard_revision_token,
 )
 from ..database import get_db
 from ..deps import current_user, has_company_access, require_admin
@@ -75,6 +76,14 @@ def dashboard_page(
             "request": request,
             "user": user,
             "active_page": "dashboard",
+            "dashboard_revision": dashboard_revision_token(
+                db,
+                user,
+                {
+                    "company_id": company_id,
+                    "status": status,
+                },
+            ),
             "saved_filters": _saved_dashboard_filters(db, user),
             "toast": (
                 {"message": "Dashboard filter saved.", "level": "success"}
@@ -88,6 +97,27 @@ def dashboard_page(
         }
     )
     return render_template(db, "dashboard.html", context)
+
+
+@router.get("/dashboard/updates")
+def dashboard_updates(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    company_id: str | None = None,
+    status: str | None = None,
+):
+    return JSONResponse(
+        {
+            "revision": dashboard_revision_token(
+                db,
+                user,
+                {
+                    "company_id": company_id,
+                    "status": status,
+                },
+            )
+        }
+    )
 
 
 @router.post("/dashboard/filters")

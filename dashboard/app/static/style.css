@@ -1818,23 +1818,6 @@ summary,
     gap: 0.75rem;
 }
 
-.dashboard-filters-card .dashboard-header-actions {
-    flex: 1 1 auto;
-    justify-content: flex-end;
-    min-width: max-content;
-}
-
-.dashboard-last-updated {
-    display: grid;
-    gap: 0.2rem;
-    text-align: right;
-    margin-left: auto;
-}
-
-.dashboard-last-updated strong {
-    font-size: 14px;
-}
-
 .dashboard-summary-grid {
     grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
     gap: 0.9rem;
@@ -2301,17 +2284,11 @@ td {
     margin-bottom: 1rem;
 }
 .companies-bulk-controls,
-.dashboard-header-meta,
 .dashboard-saved-filter-controls {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
     gap: 0.75rem;
-}
-
-.dashboard-header-meta {
-    flex: 1 1 auto;
-    min-width: max-content;
 }
 
 .dashboard-filters-card .form-row {
@@ -2394,15 +2371,10 @@ td {
         align-items: start;
     }
 
-    .dashboard-header-actions,
     .dashboard-section-tools,
     .dashboard-events-tools,
     .dashboard-custom-range {
         width: 100%;
-    }
-
-    .dashboard-last-updated {
-        text-align: left;
     }
 
     .dashboard-summary-grid,
