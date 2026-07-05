@@ -11,7 +11,8 @@
             <div class="dashboard-header-meta">
                 {% if maintenance_device_count %}
                 <span class="status text-warning"
-                    >{{ maintenance_device_count }} maintenance {{ 'window' if maintenance_device_count == 1 else 'windows' }} active</span
+                    >{{ maintenance_device_count }} maintenance {{ 'window' if
+                    maintenance_device_count == 1 else 'windows' }} active</span
                 >
                 {% endif %}
                 <div class="dashboard-last-updated" aria-live="polite">
@@ -22,7 +23,9 @@
             <div class="dashboard-refresh-icon" aria-hidden="true">
                 <i class="fa-solid fa-rotate-right"></i>
             </div>
+        </div>
     </div>
+    div>
     <form
         id="dashboard-filter-form"
         class="dashboard-filters-form"
@@ -89,7 +92,6 @@
             <a class="button secondary" href="/dashboard">
                 <i class="fa-solid fa-rotate-left"></i> Reset
             </a>
-
         </div>
     </form>
     <div class="dashboard-phase-two-tools">
@@ -99,7 +101,11 @@
             class="dashboard-save-filter-form"
         >
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="company_id" value="{{ filters.company_id }}" />
+            <input
+                type="hidden"
+                name="company_id"
+                value="{{ filters.company_id }}"
+            />
             <input type="hidden" name="status" value="{{ filters.status }}" />
             <label class="form-row dashboard-save-filter-name">
                 <span>Save current view</span>
@@ -146,7 +152,11 @@
                     data-dashboard-saved-filter-delete-form
                     data-delete-action-template="/dashboard/filters/__FILTER_ID__/delete"
                 >
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{ csrf_token }}"
+                    />
                     <button
                         class="icon-button"
                         type="submit"
@@ -297,8 +307,6 @@
         <strong>{{ summary.email_notification_failures }}</strong>
     </button>
 </section>
-
-
 
 <section id="dashboard-overview-grid" class="dashboard-top-grid">
     <article
