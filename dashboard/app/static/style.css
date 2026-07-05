@@ -2030,7 +2030,7 @@ tbody tr:nth-child(even) {
     background: var(--panel-elevated);
 }
 
-tbody tr:hover {
+tr:hover {
     background: var(--accent-soft);
 }
 
@@ -2433,7 +2433,6 @@ select option {
 }
 .nested-table-wrap {
     padding: 0.35rem 0.5rem 0.5rem 1.45rem;
-    background: var(--status-bg);
     border-left: 1px solid var(--line);
 }
 .nested-table th,
