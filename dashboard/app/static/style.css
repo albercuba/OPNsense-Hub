@@ -428,7 +428,8 @@ h3 {
     align-items: start;
 }
 input,
-select {
+select,
+textarea {
     width: 100%;
     border: 1px solid var(--line);
     border-radius: var(--radius);
@@ -436,6 +437,9 @@ select {
     font: inherit;
     background: var(--input-bg);
     color: var(--text);
+}
+textarea {
+    resize: vertical;
 }
 select {
     appearance: none;
@@ -452,7 +456,8 @@ select {
     padding-right: 2.5rem;
 }
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
     outline: 2px solid rgba(47, 125, 225, 0.22);
     border-color: var(--accent);
 }
@@ -1489,6 +1494,7 @@ p {
 }
 input,
 select,
+textarea,
 .button {
     padding: 0.45rem 0.6rem;
 }
