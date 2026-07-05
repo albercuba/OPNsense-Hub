@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
@@ -26,6 +27,18 @@ class ValidatedWireGuardConfig:
     @property
     def hub_ip(self) -> ipaddress.IPv4Address:
         return self.hub_interface.ip
+
+
+@dataclass(frozen=True)
+class RuntimeWireGuardPeer:
+    public_key: str
+    preshared_key: str
+    endpoint: str | None
+    allowed_ips: list[str]
+    last_handshake_at: datetime | None
+    rx_bytes: int
+    tx_bytes: int
+    persistent_keepalive: int
 
 
 def _run(args: list[str], input_text: str | None = None, timeout: int = 15) -> str:
@@ -276,6 +289,52 @@ def add_peer(public_key: str, tunnel_ip: str) -> None:
         peer_allowed_ips(str(ip)),
     ]
     _run(cmd, timeout=10)
+
+
+def _parse_unix_timestamp(value: str) -> datetime | None:
+    if not value or value == "0":
+        return None
+    try:
+        timestamp = int(value)
+    except ValueError as exc:
+        raise WireGuardError(
+            f"invalid handshake timestamp in wg output: {value}"
+        ) from exc
+    if timestamp <= 0:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+
+
+def parse_wg_show_dump(output: str) -> list[RuntimeWireGuardPeer]:
+    peers: list[RuntimeWireGuardPeer] = []
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for line in lines[1:]:
+        fields = line.split("\t")
+        if len(fields) < 8:
+            raise WireGuardError("unexpected wg show dump output")
+        allowed_ips = [item.strip() for item in fields[3].split(",") if item.strip()]
+        endpoint = fields[2].strip() or None
+        peers.append(
+            RuntimeWireGuardPeer(
+                public_key=fields[0].strip(),
+                preshared_key=fields[1].strip(),
+                endpoint=endpoint,
+                allowed_ips=allowed_ips,
+                last_handshake_at=_parse_unix_timestamp(fields[4].strip()),
+                rx_bytes=int(fields[5].strip() or "0"),
+                tx_bytes=int(fields[6].strip() or "0"),
+                persistent_keepalive=int(fields[7].strip() or "0"),
+            )
+        )
+    return peers
+
+
+def get_runtime_peers() -> list[RuntimeWireGuardPeer]:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return []
+    output = _run(["wg", "show", settings.wg_interface, "dump"], timeout=10)
+    return parse_wg_show_dump(output)
 
 
 def remove_peer(public_key: str) -> None:

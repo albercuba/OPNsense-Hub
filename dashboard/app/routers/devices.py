@@ -44,6 +44,7 @@ from ..services.firmware_scheduler import (
     parse_bounded_int,
     parse_uploaded_backup_created_at,
 )
+from ..services.network_diagnostics import build_device_network_diagnostics
 from ..web import app_timezone_info, render_template, settings
 
 router = APIRouter()
@@ -89,7 +90,7 @@ def _parse_optional_form_datetime(value: str, field_name: str) -> datetime | Non
     return parsed.astimezone(timezone.utc)
 
 
-def _device_health_check_state(device: Device, now: datetime) -> dict[str, str | None]:
+def _device_health_check_state(device: Device, now: datetime) -> dict[str, object]:
     if device.last_seen_at is None:
         return {
             "label": "No heartbeat yet",
@@ -158,9 +159,10 @@ def _device_health_details(device: Device, now: datetime) -> list[dict[str, obje
         if current_status == "critical"
         else "neutral"
     )
-    license_detail = license_state["label"]
-    if license_state["days_left"] is not None:
-        days_left = int(license_state["days_left"])
+    license_detail = str(license_state["label"])
+    days_left_value = license_state["days_left"]
+    if isinstance(days_left_value, int):
+        days_left = days_left_value
         if license_state["expired"]:
             license_detail = f"Expired {abs(days_left)} days ago."
         else:
@@ -292,11 +294,10 @@ def _build_device_timeline(
             }
         )
     for entry in audit_entries:
-        actor = (
-            users_by_id.get(entry.user_id).email
-            if entry.user_id in users_by_id
-            else "Hub user"
+        actor_user = (
+            users_by_id.get(entry.user_id) if entry.user_id is not None else None
         )
+        actor = actor_user.email if actor_user is not None else "Hub user"
         timeline.append(
             {
                 "source": "audit",
@@ -564,10 +565,11 @@ def device_page(
             ),
             "events": events,
             "timeline": _build_device_timeline(
-                device, events, audit_entries, users_by_id
+                device, list(events), list(audit_entries), users_by_id
             ),
             "health_details": _device_health_details(device, now),
             "health_acknowledged_by": health_acknowledged_by,
+            "network_diagnostics": build_device_network_diagnostics(db, device),
             "maintenance_active": bool(
                 device.maintenance_until
                 and device.maintenance_until.astimezone(timezone.utc)

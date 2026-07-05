@@ -10,7 +10,7 @@
                 <span class="status warning">maintenance active</span>
                 {% endif %}
                 {% if device.health_acknowledged_at %}
-               </div> <span class="status">acknowledged</span>
+                <span class="status">acknowledged</span>
                 {% endif %}
             </p>
         </div>
@@ -99,6 +99,93 @@
             </span>
         </article>
         {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Tunnel diagnostics</h2>
+            <p class="muted">WireGuard runtime visibility, policy simulation, plugin compatibility, and recent enrollment diagnostics for this firewall.</p>
+        </div>
+    </div>
+    <div class="health-detail-grid">
+        <article class="health-detail-card" data-state="{{ network_diagnostics.tunnel.state }}">
+            <div class="health-detail-head">
+                <span class="muted">Hub peer runtime</span>
+                <span class="status health-status health-status-{{ network_diagnostics.tunnel.state }}">{{ network_diagnostics.tunnel.label }}</span>
+            </div>
+            <strong>{{ network_diagnostics.tunnel.interface }}</strong>
+            <span class="muted">
+                {% if network_diagnostics.tunnel.endpoint %}Endpoint {{ network_diagnostics.tunnel.endpoint }}{% else %}No endpoint reported yet.{% endif %}
+            </span>
+        </article>
+        <article class="health-detail-card" data-state="{{ network_diagnostics.tunnel.handshake_state }}">
+            <div class="health-detail-head">
+                <span class="muted">Last handshake</span>
+                <span class="status health-status health-status-{{ network_diagnostics.tunnel.handshake_state }}">{{ network_diagnostics.tunnel.handshake_label }}</span>
+            </div>
+            <strong>{% if network_diagnostics.tunnel.last_handshake_at %}{{ format_datetime(network_diagnostics.tunnel.last_handshake_at) }}{% else %}Never{% endif %}</strong>
+            <span class="muted">
+                RX {{ network_diagnostics.tunnel.rx_bytes if network_diagnostics.tunnel.rx_bytes is not none else 0 }} bytes ·
+                TX {{ network_diagnostics.tunnel.tx_bytes if network_diagnostics.tunnel.tx_bytes is not none else 0 }} bytes
+            </span>
+        </article>
+        <article class="health-detail-card" data-state="{{ network_diagnostics.policy.state }}">
+            <div class="health-detail-head">
+                <span class="muted">Network policy simulation</span>
+                <span class="status health-status health-status-{{ network_diagnostics.policy.state }}">{{ 'Drift detected' if network_diagnostics.policy.warnings else 'As expected' }}</span>
+            </div>
+            <strong>{{ network_diagnostics.policy.expected_device_route }}</strong>
+            <span class="muted">Hub route for this firewall. Firewall should route only {{ network_diagnostics.policy.expected_firewall_route }} back to the Hub.</span>
+        </article>
+        <article class="health-detail-card" data-state="{{ network_diagnostics.plugin.state }}">
+            <div class="health-detail-head">
+                <span class="muted">Plugin compatibility</span>
+                <span class="status health-status health-status-{{ network_diagnostics.plugin.state }}">{{ network_diagnostics.plugin.actual or 'Unknown' }}</span>
+            </div>
+            <strong>{{ network_diagnostics.plugin.label }}</strong>
+            <span class="muted">Expected {{ network_diagnostics.plugin.expected or 'Unknown' }}</span>
+        </article>
+    </div>
+    <div class="inline-note-card">
+        <strong>Policy summary</strong></strong>
+        <p>{{ network_diagnostics.policy.summary }}</p>
+        <ul>
+            <li>Expected Hub route: {{ network_diagnostics.policy.expected_device_route }}</li>
+            <li>Expected firewall route: {{ network_diagnostics.policy.expected_firewall_route }}</li>
+            <li>Actual Hub route: {{ network_diagnostics.policy.actual_allowed_ips|join(', ') if network_diagnostics.policy.actual_allowed_ips else 'Missing peer' }}</li>
+            {% for warning in network_diagnostics.policy.warnings %}
+            <li>{{ warning }}</li>
+            {% endfor %}
+        </ul>
+        {% if network_diagnostics.reachability_hint %}
+        <p>{{ network_diagnostics.reachability_hint }}</p>
+        {% endif %}
+    </div>
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Recent enrollment diagnostics</th>
+                    <th>Time</th>
+                    <th>IP address</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in network_diagnostics.enrollment_diagnostics %}
+                <tr>
+                    <td>{{ row.summary }}</td>
+                    <td>{{ format_datetime(row.created_at) }}</td>
+                    <td>{{ row.ip_address or 'Unknown' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="muted">No recent enrollment diagnostics for this company.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </section>
 

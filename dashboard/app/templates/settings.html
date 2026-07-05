@@ -10,7 +10,7 @@
             elif active_settings == 'local-ad' %}Microsoft Local AD
             Integration{% elif active_settings == 'branding' %}Branding{% elif
             active_settings == 'backup' %}Backup{% elif active_settings ==
-            'security' %}Security{% elif active_settings == 'retention' %}Retention{% endif %}
+            'security' %}Security{% elif active_settings == 'network' %}Network{% elif active_settings == 'retention' %}Retention{% endif %}
         </h1>
     </div>
 </section>
@@ -1062,6 +1062,111 @@
                 </tr>
                 {% else %}
                 <tr><td colspan="6" class="muted">No active sessions.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %} {% if active_settings == 'network' %}
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Isolation verification</h2>
+            <p class="muted">Verifies the Hub is configured to prevent one firewall from reaching another firewall through the management tunnel.</p>
+        </div>
+    </div>
+    <div class="inline-note-card" data-state="{{ network_diagnostics.isolation_check.state }}">
+        <strong>{{ network_diagnostics.isolation_check.label }}</strong>
+        <p>{{ network_diagnostics.isolation_check.summary }}</p>
+        <ul>
+            {% for detail in network_diagnostics.isolation_check.details %}
+            <li>{{ detail }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>WireGuard state visibility</h2>
+            <p class="muted">Peer freshness, assigned addresses, expected routes, and policy drift warnings.</p>
+        </div>
+    </div>
+    {% if network_diagnostics.wireguard_runtime.error %}
+    <div class="inline-note-card" data-state="warning">
+        <strong>Runtime unavailable</strong>
+        <p>{{ network_diagnostics.wireguard_runtime.error }}</p>
+    </div>
+    {% endif %}
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Firewall</th>
+                    <th>Assigned IP</th>
+                    <th>Last handshake</th>
+                    <th>Expected route</th>
+                    <th>Actual route</th>
+                    <th>Policy</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in network_diagnostics.wireguard_runtime.rows %}
+                <tr>
+                    <td>{{ row.company.name if row.company else 'Unknown' }}</td>
+                    <td><a href="/devices/{{ row.device.id }}">{{ row.device.hostname }}</a></td>
+                    <td>{{ row.assigned_ip }}</td>
+                    <td>
+                        <span class="status health-status health-status-{{ row.handshake_state }}">{{ row.handshake_label }}</span>
+                        {% if row.last_handshake_at %}<div class="muted">{{ format_datetime(row.last_handshake_at) }}</div>{% endif %}
+                    </td>
+                    <td>{{ row.expected_route }}</td>
+                    <td>{{ row.actual_allowed_ips|join(', ') if row.actual_allowed_ips else 'Missing peer' }}</td>
+                    <td><span class="status health-status health-status-{{ row.policy_state }}">{{ row.policy_label }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="muted">No enrolled firewalls.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Enrollment diagnostics</h2>
+            <p class="muted">Recent enrollment failures help explain invalid OTPs, bad requests, and Hub peer creation problems.</p>
+        </div>
+    </div>
+    {% if network_diagnostics.plugin_expected %}
+    <div class="inline-note-card">
+        <strong>Expected plugin version</strong>
+        <p>{{ network_diagnostics.plugin_expected }}</p>
+    </div>
+    {% endif %}
+    <div class="responsive-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Company</th>
+                    <th>Diagnostic</th>
+                    <th>IP address</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in network_diagnostics.enrollment_logs %}
+                <tr>
+                    <td>{{ format_datetime(row.created_at) }}</td>
+                    <td>{{ row.company.name if row.company else 'Unknown' }}</td>
+                    <td>{{ row.summary }}</td>
+                    <td>{{ row.ip_address or 'Unknown' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="muted">No recent enrollment diagnostics.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

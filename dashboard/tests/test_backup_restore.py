@@ -447,6 +447,112 @@ def test_device_page_renders_phase_one_sections(monkeypatch, tmp_path):
     assert "Runbook updated" in response.text
 
 
+def test_network_settings_page_renders_diagnostics(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "network_settings_page") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        monkeypatch.setattr(
+            "app.services.network_diagnostics.get_runtime_peers",
+            lambda: [
+                __import__(
+                    "app.wireguard", fromlist=["RuntimeWireGuardPeer"]
+                ).RuntimeWireGuardPeer(
+                    public_key=device.wg_public_key,
+                    preshared_key="(off)",
+                    endpoint="198.51.100.10:51820",
+                    allowed_ips=[f"{device.wg_tunnel_ip}/32"],
+                    last_handshake_at=utc_now(),
+                    rx_bytes=123,
+                    tx_bytes=456,
+                    persistent_keepalive=25,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "app.services.network_diagnostics.verify_nftables_rule_present",
+            lambda _settings: None,
+        )
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get("/settings/network")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Isolation verification" in response.text
+    assert "WireGuard state visibility" in response.text
+    assert "Enrollment diagnostics" in response.text
+    assert "fw-acme-1" in response.text
+
+
+def test_device_page_renders_tunnel_diagnostics(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "device_network_page") as session:
+        admin = seed_backup_source(session)
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert device is not None
+        session.add(
+            AuditLog(
+                id=uuid4(),
+                company_id=device.company_id,
+                action="enrollment.peer_add_failed",
+                ip_address="198.51.100.20",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+        monkeypatch.setattr(
+            "app.services.network_diagnostics.get_runtime_peers",
+            lambda: [
+                __import__(
+                    "app.wireguard", fromlist=["RuntimeWireGuardPeer"]
+                ).RuntimeWireGuardPeer(
+                    public_key=device.wg_public_key,
+                    preshared_key="(off)",
+                    endpoint="198.51.100.10:51820",
+                    allowed_ips=[f"{device.wg_tunnel_ip}/32"],
+                    last_handshake_at=utc_now(),
+                    rx_bytes=100,
+                    tx_bytes=200,
+                    persistent_keepalive=25,
+                )
+            ],
+        )
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/devices/{device.id}")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Tunnel diagnostics" in response.text
+    assert "Network policy simulation" in response.text
+    assert "Plugin compatibility" in response.text
+    assert "Hub failed to add the WireGuard peer" in response.text
+
+
+def test_enrollment_invalid_otp_writes_audit_log(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "enrollment_invalid_otp") as session:
+        admin = seed_backup_source(session)
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/enroll",
+                json={
+                    "otp": "BADOTP",
+                    "hostname": "fw-test",
+                    "wg_public_key": VALID_WG_PUBLIC_KEY,
+                },
+            )
+        entry = session.scalar(
+            select(AuditLog)
+            .where(AuditLog.action == "enrollment.invalid_otp")
+            .order_by(AuditLog.created_at.desc())
+        )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+    assert entry is not None
+
+
 def test_device_firmware_card_uses_normalized_update_count(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "device_firmware_card_detail") as session:
         admin = seed_backup_source(session)

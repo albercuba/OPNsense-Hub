@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from ..audit import write_audit
 from ..database import get_db
-from ..deps import device_from_token
 from ..models import Device, DeviceEvent, EnrollmentCode
 from ..security import hash_secret, random_token, utc_now, verify_secret
 from ..security.rate_limit import apply_rate_limit
@@ -23,6 +22,17 @@ from ..wireguard import (
 )
 
 router = APIRouter()
+
+
+def _log_enrollment_failure(
+    db: Session,
+    request: Request,
+    action: str,
+    *,
+    company_id=None,
+) -> None:
+    write_audit(db, request, action, company_id=company_id)
+    db.commit()
 
 
 @router.post("/api/v1/enroll")
@@ -42,6 +52,7 @@ def enroll(
         settings.rate_limit_enrollment_window_seconds,
     )
     if not otp or not hostname or not wg_public_key:
+        _log_enrollment_failure(db, request, "enrollment.invalid_payload")
         raise HTTPException(
             status_code=400, detail="otp, hostname and wg_public_key are required"
         )
@@ -53,6 +64,7 @@ def enroll(
     ).all()
     matched = next((code for code in codes if verify_secret(otp, code.code_hash)), None)
     if not matched:
+        _log_enrollment_failure(db, request, "enrollment.invalid_otp")
         raise HTTPException(
             status_code=401, detail="invalid or expired enrollment code"
         )
@@ -73,6 +85,12 @@ def enroll(
     try:
         add_peer(wg_public_key, tunnel_ip)
     except WireGuardError as exc:
+        _log_enrollment_failure(
+            db,
+            request,
+            "enrollment.peer_add_failed",
+            company_id=matched.company_id,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     matched.used_at = now
     db.add(device)

@@ -8,6 +8,7 @@ from app.wireguard import (
     WireGuardError,
     client_allowed_ips,
     next_tunnel_ip,
+    parse_wg_show_dump,
     peer_allowed_ips,
     validate_hub_wireguard_config,
     validate_public_key,
@@ -231,6 +232,29 @@ def test_plugin_firmware_parser_maps_upgrade_payload():
     assert parsed["update_available"] is True
     assert parsed["update_type"] == "upgrade"
     assert parsed["available_version"] == "26.1"
+
+
+def test_parse_wg_show_dump_reads_runtime_peer_data():
+    output = (
+        "private\tpublic\t51820\tmark\n"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\t(off)\t198.51.100.10:51820\t100.96.0.10/32\t1751712000\t1234\t5678\t25\n"
+    )
+
+    peers = parse_wg_show_dump(output)
+
+    assert len(peers) == 1
+    assert peers[0].public_key == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    assert peers[0].endpoint == "198.51.100.10:51820"
+    assert peers[0].allowed_ips == ["100.96.0.10/32"]
+    assert peers[0].rx_bytes == 1234
+    assert peers[0].tx_bytes == 5678
+    assert peers[0].persistent_keepalive == 25
+    assert peers[0].last_handshake_at is not None
+
+
+def test_parse_wg_show_dump_rejects_short_rows():
+    with pytest.raises(WireGuardError):
+        parse_wg_show_dump("private\tpublic\t51820\tmark\nshort\trow\n")
 
 
 def test_plugin_firmware_parser_maps_error_payload():

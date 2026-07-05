@@ -57,6 +57,7 @@ from ..services.mfa_service import (
     local_user_supports_hub_mfa,
     totp_qr_code_data_url,
 )
+from ..services.network_diagnostics import build_network_settings_context
 from ..services.notification_service import send_security_alert_email
 from ..web import render_template, settings
 
@@ -108,6 +109,9 @@ def render_settings_template(
     }
     security_checks = secret_health_checks(settings) if section == "security" else None
     active_sessions = active_sessions_for_admin(db) if section == "security" else None
+    network_diagnostics = (
+        build_network_settings_context(db) if section == "network" else None
+    )
     return render_template(
         db,
         "settings.html",
@@ -126,6 +130,7 @@ def render_settings_template(
             "security_checks": security_checks,
             "active_sessions": active_sessions,
             "backup_verification_result": backup_verification_result,
+            "network_diagnostics": network_diagnostics,
         },
         status_code=status_code,
     )
@@ -196,6 +201,7 @@ def settings_page(
         "backup",
         "retention",
         "security",
+        "network",
     }
     if section not in allowed_sections:
         raise HTTPException(status_code=404)
