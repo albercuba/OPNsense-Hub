@@ -443,8 +443,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  dashboardCompanyInput?.addEventListener("input", syncDashboardFilterInputs);
-  dashboardStatusInput?.addEventListener("input", syncDashboardFilterInputs);
+  let dashboardFilterSubmitTimer = null;
+  const submitDashboardFilters = () => {
+    syncDashboardFilterInputs();
+    filterForm?.requestSubmit();
+  };
+  const scheduleDashboardFilterSubmit = (delay = 250) => {
+    if (!filterForm) {
+      return;
+    }
+    if (dashboardFilterSubmitTimer) {
+      window.clearTimeout(dashboardFilterSubmitTimer);
+    }
+    dashboardFilterSubmitTimer = window.setTimeout(() => {
+      dashboardFilterSubmitTimer = null;
+      submitDashboardFilters();
+    }, delay);
+  };
+
+  dashboardCompanyInput?.addEventListener("input", () => {
+    syncDashboardFilterInputs();
+    scheduleDashboardFilterSubmit();
+  });
+  dashboardCompanyInput?.addEventListener("change", submitDashboardFilters);
+  dashboardStatusInput?.addEventListener("input", () => {
+    syncDashboardFilterInputs();
+    scheduleDashboardFilterSubmit();
+  });
+  dashboardStatusInput?.addEventListener("change", submitDashboardFilters);
   filterForm?.addEventListener("submit", syncDashboardFilterInputs);
   syncDashboardFilterInputs();
 

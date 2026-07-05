@@ -917,7 +917,7 @@ th {
 
 .dashboard-filters-form {
     display: grid;
-    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) auto;
+    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr);
     gap: 1rem;
     align-items: end;
     min-width: 0;

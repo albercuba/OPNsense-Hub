@@ -84,14 +84,6 @@
                 ></option>
             </datalist>
         </label>
-        <div class="dashboard-filter-actions">
-            <button class="button" type="submit">
-                <i class="fa-solid fa-filter"></i> Apply filters
-            </button>
-            <a class="button secondary" href="/dashboard">
-                <i class="fa-solid fa-rotate-left"></i> Reset
-            </a>
-        </div>
     </form>
     <div class="dashboard-phase-two-tools">
         <form
@@ -116,8 +108,13 @@
                     required
                 />
             </label>
-            <button class="button secondary button-small" type="submit">
-                <i class="fa-solid fa-bookmark"></i> Save filter
+            <button
+                class="button secondary button-small icon-only-button"
+                type="submit"
+                title="Save filter"
+                aria-label="Save filter"
+            >
+                <i class="fa-solid fa-bookmark"></i>
             </button>
         </form>
         {% if saved_filters %}
@@ -139,12 +136,14 @@
                     </select>
                 </label>
                 <button
-                    class="button secondary button-small"
+                    class="button secondary button-small icon-only-button"
                     type="button"
+                    title="Apply saved filter"
+                    aria-label="Apply saved filter"
                     data-dashboard-saved-filter-apply
                     disabled
                 >
-                    <i class="fa-solid fa-bookmark"></i> Apply
+                    <i class="fa-solid fa-play"></i>
                 </button>
                 <form
                     method="post"
