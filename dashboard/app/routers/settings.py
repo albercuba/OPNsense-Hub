@@ -31,6 +31,12 @@ from ..models import (
 from ..security import generate_totp_secret, hash_secret, utc_now
 from ..security.rate_limit import apply_rate_limit
 from ..security.secrets import decrypt_secret, encrypt_secret, store_secret
+from ..services.admin_security import (
+    active_sessions_for_admin,
+    parse_allowlist_entries,
+    secret_health_checks,
+)
+from ..services.auth_service import revoke_session_token, session_from_request
 from ..services.backup_service import (
     export_backup_bundle,
     parse_backup_bundle,
@@ -79,6 +85,50 @@ def external_auth_provider_for_user(db: Session, user: User) -> str | None:
 
 def user_is_externally_managed(db: Session, user: User) -> bool:
     return external_auth_provider_for_user(db, user) is not None
+
+
+def render_settings_template(
+    db: Session,
+    request: Request,
+    user: User,
+    section: str,
+    *,
+    status_code: int = 200,
+    backup_verification_result: dict[str, object] | None = None,
+):
+    companies = db.scalars(select(Company).order_by(Company.name)).all()
+    users = db.scalars(select(User).order_by(User.email)).all()
+    integration_settings = get_or_create_integration_settings(db)
+    retention_summary = (
+        get_log_retention_summary(db) if section == "retention" else None
+    )
+    external_user_providers = {
+        managed_user.id: external_auth_provider_for_user(db, managed_user)
+        for managed_user in users
+    }
+    security_checks = secret_health_checks(settings) if section == "security" else None
+    active_sessions = active_sessions_for_admin(db) if section == "security" else None
+    return render_template(
+        db,
+        "settings.html",
+        {
+            "request": request,
+            "user": user,
+            "companies": companies,
+            "users": users,
+            "settings": integration_settings,
+            "protected_admin_email": settings.initial_admin_email.lower(),
+            "active_page": "settings",
+            "active_settings": section,
+            "status": request.query_params.get("status"),
+            "retention_summary": retention_summary,
+            "external_user_providers": external_user_providers,
+            "security_checks": security_checks,
+            "active_sessions": active_sessions,
+            "backup_verification_result": backup_verification_result,
+        },
+        status_code=status_code,
+    )
 
 
 def render_user_mfa_template(
@@ -145,36 +195,11 @@ def settings_page(
         "branding",
         "backup",
         "retention",
+        "security",
     }
     if section not in allowed_sections:
         raise HTTPException(status_code=404)
-    companies = db.scalars(select(Company).order_by(Company.name)).all()
-    users = db.scalars(select(User).order_by(User.email)).all()
-    integration_settings = get_or_create_integration_settings(db)
-    retention_summary = (
-        get_log_retention_summary(db) if section == "retention" else None
-    )
-    external_user_providers = {
-        managed_user.id: external_auth_provider_for_user(db, managed_user)
-        for managed_user in users
-    }
-    return render_template(
-        db,
-        "settings.html",
-        {
-            "request": request,
-            "user": user,
-            "companies": companies,
-            "users": users,
-            "settings": integration_settings,
-            "protected_admin_email": settings.initial_admin_email.lower(),
-            "active_page": "settings",
-            "active_settings": section,
-            "status": request.query_params.get("status"),
-            "retention_summary": retention_summary,
-            "external_user_providers": external_user_providers,
-        },
-    )
+    return render_settings_template(db, request, user, section)
 
 
 @router.post("/settings/users")
@@ -502,6 +527,55 @@ def update_local_ad_settings(
     return RedirectResponse("/settings/local-ad?status=local-ad-saved", status_code=303)
 
 
+@router.post("/settings/security")
+def update_security_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    admin_login_allowlist: str = Form(""),
+):
+    require_admin(user)
+    valid_entries, invalid_entries = parse_allowlist_entries(admin_login_allowlist)
+    if invalid_entries:
+        raise HTTPException(
+            status_code=400,
+            detail="invalid admin login allowlist entries: "
+            + ", ".join(invalid_entries),
+        )
+    integration_settings = get_or_create_integration_settings(db)
+    integration_settings.admin_login_allowlist = (
+        "\n".join(valid_entries) if valid_entries else None
+    )
+    integration_settings.updated_at = utc_now()
+    write_audit(db, request, "settings.security.update", user=user)
+    db.commit()
+    return RedirectResponse("/settings/security?status=security-saved", status_code=303)
+
+
+@router.post("/settings/security/sessions/{session_id}/revoke")
+def revoke_admin_session(
+    request: Request,
+    session_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    require_admin(user)
+    target = db.get(SessionToken, session_id)
+    if not target or target.revoked_at is not None:
+        raise HTTPException(status_code=404)
+    current_session = session_from_request(request, db)
+    revoke_session_token(db, target)
+    write_audit(db, request, "settings.session.revoke", user=user)
+    db.commit()
+    if target.id == current_session.id:
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie(settings.session_cookie_name)
+        return response
+    return RedirectResponse(
+        "/settings/security?status=session-revoked", status_code=303
+    )
+
+
 @router.get("/branding/logo")
 def branding_logo():
     logo_path = uploaded_logo_path(settings.branding_upload_dir)
@@ -604,6 +678,65 @@ def export_retention_archive(
         content=archive,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/settings/backup/verify")
+async def verify_settings_backup(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    backup_file: UploadFile = File(...),
+    backup_passphrase: str = Form(""),
+):
+    require_admin(user)
+    content = await read_upload_limited(
+        backup_file,
+        settings.max_backup_restore_bytes,
+        field_name="backup file",
+    )
+    if not content:
+        raise HTTPException(status_code=400, detail="backup file is required")
+    try:
+        manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(
+            content, clean_optional(backup_passphrase)
+        )
+        verification_result = {
+            "ok": True,
+            "filename": backup_file.filename or "backup file",
+            "manifest": manifest,
+            "tables": {
+                table_name: len(rows) if isinstance(rows, list) else 0
+                for table_name, rows in data.items()
+            },
+            "includes": {
+                "branding_logo": bool(logo_file),
+                "wireguard_private_key": bool(wireguard_private_key),
+            },
+            "message": "Backup integrity check passed.",
+        }
+    except HTTPException as exc:
+        verification_result = {
+            "ok": False,
+            "filename": backup_file.filename or "backup file",
+            "message": str(exc.detail),
+        }
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=400,
+            backup_verification_result=verification_result,
+        )
+    write_audit(db, request, "settings.backup.verify", user=user)
+    db.commit()
+    return render_settings_template(
+        db,
+        request,
+        user,
+        "backup",
+        backup_verification_result=verification_result,
     )
 
 

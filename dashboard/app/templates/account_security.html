@@ -16,6 +16,10 @@
     <i class="fa-solid fa-circle-check"></i> Multi-factor authentication
     disabled.
 </div>
+{% elif status == 'session-revoked' %}
+<div class="card status-card">
+    <i class="fa-solid fa-circle-check"></i> Session revoked.
+</div>
 {% endif %}
 
 <section class="admin-card card narrow-form">
@@ -133,5 +137,72 @@
         </div>
     </form>
     {% endif %}
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Active sessions</h2>
+            <p class="muted">
+                Review your active dashboard sessions and revoke any that should
+                no longer have access.
+            </p>
+        </div>
+    </div>
+    <div class="responsive-table">
+        <table class="session-table">
+            <thead>
+                <tr>
+                    <th>IP address</th>
+                    <th>User agent</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for active_session in active_sessions %}
+                <tr>
+                    <td>{{ active_session.ip_address or 'Unknown' }}</td>
+                    <td>{{ active_session.user_agent or 'Unknown' }}</td>
+                    <td>{{ format_datetime(active_session.created_at) }}</td>
+                    <td>{{ format_datetime(active_session.expires_at) }}</td>
+                    <td>
+                        {% if current_session_id == active_session.id %}<span
+                            class="status online"
+                            >Current</span
+                        >{% else %}<span class="status">Active</span>{% endif %}
+                    </td>
+                    <td class="actions">
+                        <form
+                            action="/account/security/sessions/{{ active_session.id }}/revoke"
+                            method="post"
+                            class="inline-action-form"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token }}"
+                            />
+                            <button
+                                class="icon-button danger-text"
+                                type="submit"
+                                title="Revoke session"
+                                aria-label="Revoke session"
+                            >
+                                <i class="fa-solid fa-ban"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="muted">No active sessions.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, cast
 
 import httpx
@@ -13,7 +14,7 @@ from ..audit import log_security_warning, write_audit
 from ..database import get_db
 from ..deps import current_user, ui_user
 from ..integration import local_ad_login_configured, microsoft_login_configured
-from ..models import IntegrationSettings, User
+from ..models import IntegrationSettings, SessionToken, User
 from ..security import (
     generate_totp_secret,
     random_token,
@@ -23,8 +24,13 @@ from ..security import (
 )
 from ..security.rate_limit import apply_rate_limit
 from ..security.secrets import decrypt_secret, encrypt_secret
+from ..services.admin_security import (
+    active_sessions_for_user,
+    admin_login_ip_allowed,
+)
 from ..services.auth_service import (
     create_user_session,
+    revoke_session_token,
     session_from_request,
     set_session_cookie,
     upsert_external_user,
@@ -137,6 +143,11 @@ def render_account_security_template(
     effective_setup_secret = setup_secret
     if effective_setup_secret is None and not user.mfa_enabled:
         effective_setup_secret = decrypt_secret(user.mfa_secret)
+    current_session = None
+    try:
+        current_session = session_from_request(request, db)
+    except HTTPException:
+        current_session = None
     return render_template(
         db,
         "account_security.html",
@@ -153,6 +164,8 @@ def render_account_security_template(
             )
             if effective_setup_secret
             else None,
+            "active_sessions": active_sessions_for_user(db, user.id),
+            "current_session_id": current_session.id if current_session else None,
         },
         status_code=status_code,
     )
@@ -238,7 +251,7 @@ def complete_mfa_login(
             error="Invalid authenticator code",
             status_code=401,
         )
-    token = create_user_session(db, user)
+    token = create_user_session(db, user, request)
     write_audit(db, request, "auth.login", user=user)
     db.commit()
     response = RedirectResponse("/dashboard", status_code=303)
@@ -378,6 +391,22 @@ def login(
         return render_login_template(
             db, request, error="Invalid email or password", status_code=401
         )
+    integration_settings = db.get(IntegrationSettings, 1)
+    if not admin_login_ip_allowed(integration_settings, request, user):
+        audit_failure(
+            db,
+            request,
+            "auth.login.denied_ip",
+            user=user,
+            detail="administrator login blocked by IP allowlist",
+            notify=True,
+        )
+        return render_login_template(
+            db,
+            request,
+            error="Administrator login is not allowed from this IP address.",
+            status_code=403,
+        )
     if user.mfa_enabled:
         if not local_user_supports_hub_mfa(user):
             return render_login_template(
@@ -396,7 +425,7 @@ def login(
         response = RedirectResponse("/auth/mfa", status_code=303)
         set_pending_mfa_cookie(response, user)
         return response
-    token = create_user_session(db, user)
+    token = create_user_session(db, user, request)
     response = RedirectResponse("/dashboard", status_code=303)
     set_session_cookie(response, token)
     write_audit(db, request, "auth.login", user=user)
@@ -587,7 +616,25 @@ def microsoft_callback(
         role=role,
         auth_provider="microsoft",
     )
-    session_token = create_user_session(db, user)
+    if not admin_login_ip_allowed(integration_settings, request, user):
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.denied_ip",
+            user=user,
+            detail="administrator login blocked by IP allowlist",
+            notify=True,
+        )
+        response = render_login_template(
+            db,
+            request,
+            error="Administrator login is not allowed from this IP address.",
+            status_code=403,
+        )
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
+    session_token = create_user_session(db, user, request)
     write_audit(db, request, "auth.microsoft.login", user=user)
     db.commit()
     response = RedirectResponse("/dashboard", status_code=303)
@@ -649,7 +696,20 @@ def microsoft_login(
         role=role,
         auth_provider="microsoft",
     )
-    session_token = create_user_session(db, user)
+    if not admin_login_ip_allowed(integration_settings, request, user):
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.denied_ip",
+            user=user,
+            detail="administrator login blocked by IP allowlist",
+            notify=True,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator login is not allowed from this IP address.",
+        )
+    session_token = create_user_session(db, user, request)
     write_audit(db, request, "auth.microsoft.login", user=user)
     db.commit()
     response = JSONResponse({"ok": True, "redirect": "/dashboard"})
@@ -710,7 +770,22 @@ def local_ad_login(
         role=role,
         auth_provider="local_ad",
     )
-    session_token = create_user_session(db, user)
+    if not admin_login_ip_allowed(integration_settings, request, user):
+        audit_failure(
+            db,
+            request,
+            "auth.local_ad.denied_ip",
+            user=user,
+            detail="administrator login blocked by IP allowlist",
+            notify=True,
+        )
+        return render_login_template(
+            db,
+            request,
+            error="Administrator login is not allowed from this IP address.",
+            status_code=403,
+        )
+    session_token = create_user_session(db, user, request)
     write_audit(db, request, "auth.local_ad.login", user=user)
     db.commit()
     response = RedirectResponse("/dashboard", status_code=303)
@@ -725,13 +800,35 @@ def logout(
     user: Annotated[User, Depends(current_user)],
 ):
     session = session_from_request(request, db)
-    session.revoked_at = utc_now()
+    revoke_session_token(db, session)
     write_audit(db, request, "auth.logout", user=user)
     db.commit()
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(settings.session_cookie_name)
     clear_pending_mfa_cookie(response)
     return response
+
+
+@router.post("/account/security/sessions/{session_id}/revoke")
+def revoke_own_session(
+    request: Request,
+    session_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    target = db.get(SessionToken, session_id)
+    if not target or target.user_id != user.id or target.revoked_at is not None:
+        raise HTTPException(status_code=404)
+    current_session = session_from_request(request, db)
+    revoke_session_token(db, target)
+    write_audit(db, request, "auth.session.revoke", user=user)
+    db.commit()
+    if target.id == current_session.id:
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie(settings.session_cookie_name)
+        clear_pending_mfa_cookie(response)
+        return response
+    return RedirectResponse("/account/security?status=session-revoked", status_code=303)
 
 
 @router.get("/api/v1/auth/me")

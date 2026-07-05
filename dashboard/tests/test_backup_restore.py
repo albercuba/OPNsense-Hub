@@ -274,6 +274,65 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
     assert exported_key == "test-private-key"
 
 
+def test_backup_verification_reports_structural_integrity(monkeypatch, tmp_path):
+    branding_dir = tmp_path / "branding-verify"
+    branding_dir.mkdir(parents=True, exist_ok=True)
+    (branding_dir / "logo.png").write_bytes(PNG_BYTES)
+    wg_key_path = tmp_path / "wireguard-verify" / "server.key"
+    wg_key_path.parent.mkdir(parents=True, exist_ok=True)
+    wg_key_path.write_text("verify-private-key\n")
+    monkeypatch.setattr(settings, "branding_upload_dir", str(branding_dir))
+    monkeypatch.setattr(settings, "wg_server_private_key_path", str(wg_key_path))
+
+    with sqlite_session(tmp_path, "backup_verify") as session:
+        admin = seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client)
+            response = client.post(
+                "/settings/backup/verify",
+                data={"csrf_token": csrf_token},
+                files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
+            )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Backup integrity check passed" in response.text
+    assert (
+        "wireguard_private_key" in response.text
+        or "WireGuard private key" in response.text
+    )
+
+
+def test_security_settings_allowlist_can_be_saved(monkeypatch, tmp_path):
+    with sqlite_session(tmp_path, "security_settings") as session:
+        admin = seed_backup_source(session)
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            security_page = client.get("/settings/security")
+            assert security_page.status_code == 200
+            assert "Administrator login IP allowlist" in security_page.text
+            csrf_token = get_csrf(client, "/settings/security")
+            response = client.post(
+                "/settings/security",
+                data={
+                    "csrf_token": csrf_token,
+                    "admin_login_allowlist": "203.0.113.10/32\n198.51.100.0/24",
+                },
+                follow_redirects=False,
+            )
+            integration_settings = session.get(IntegrationSettings, 1)
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings/security?status=security-saved"
+    assert integration_settings is not None
+    assert (
+        integration_settings.admin_login_allowlist == "203.0.113.10/32\n198.51.100.0/24"
+    )
+
+
 def test_externally_managed_users_cannot_be_edited_from_settings(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "external_user_settings") as session:
         admin = seed_backup_source(session)

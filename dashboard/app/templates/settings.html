@@ -10,7 +10,7 @@
             elif active_settings == 'local-ad' %}Microsoft Local AD
             Integration{% elif active_settings == 'branding' %}Branding{% elif
             active_settings == 'backup' %}Backup{% elif active_settings ==
-            'retention' %}Retention{% endif %}
+            'security' %}Security{% elif active_settings == 'retention' %}Retention{% endif %}
         </h1>
     </div>
 </section>
@@ -20,7 +20,7 @@
     <i class="fa-solid fa-circle-check"></i>
     {% if status == 'retention-cleanup-ran' %}Retention cleanup completed.{%
     elif status == 'retention-cleanup-skipped' %}Retention cleanup skipped
-    because retention is disabled.{% else %}Settings saved.{% endif %}
+    because retention is disabled.{% elif status == 'session-revoked' %}Session revoked.{% else %}Settings saved.{% endif %}
 </div>
 {% endif %} {% if active_settings == 'manage-companies' %}
 <section class="admin-card card">
@@ -888,21 +888,185 @@
         </button>
     </form>
 </section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <h2>Verify backup integrity</h2>
+    </div>
+    <form
+        action="/settings/backup/verify"
+        method="post"
+        enctype="multipart/form-data"
+        class="settings-form narrow-form"
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="form-row">
+            <span>Backup archive</span>
+            <div class="file-upload-control">
+                <input
+                    class="file-upload-input"
+                    id="backup_verify_file"
+                    type="file"
+                    name="backup_file"
+                    accept=".zip,.opnhub,application/zip,application/octet-stream"
+                    required
+                />
+                <label class="button secondary" for="backup_verify_file">
+                    <i class="fa-solid fa-shield-check"></i> Choose backup file
+                </label>
+                <span class="file-upload-name" data-backup-verify-file-name
+                    >No file selected</span
+                >
+            </div>
+        </div>
+        <label class="form-row"
+            >Backup passphrase
+            <input
+                type="password"
+                name="backup_passphrase"
+                autocomplete="new-password"
+                placeholder="Required for encrypted .opnhub backups"
+            />
+        </label>
+        <button class="button secondary" type="submit">
+            <i class="fa-solid fa-shield-check"></i> Verify backup bundle
+        </button>
+    </form>
+    {% if backup_verification_result %}
+    <div class="inline-note-card backup-verification-result">
+        <strong>
+            {% if backup_verification_result.ok %}Backup integrity check passed{% else %}Backup integrity check failed{% endif %}
+        </strong>
+        <p class="muted">{{ backup_verification_result.filename }}</p>
+        <p>{{ backup_verification_result.message }}</p>
+        {% if backup_verification_result.ok %}
+        <div class="responsive-table">
+            <table>
+                <tbody>
+                    <tr>
+                        <th>Format version</th>
+                        <td>{{ backup_verification_result.manifest.format_version }}</td>
+                    </tr>
+                    <tr>
+                        <th>Created</th>
+                        <td>{{ backup_verification_result.manifest.created_at }}</td>
+                    </tr>
+                    <tr>
+                        <th>Branding logo</th>
+                        <td>{% if backup_verification_result.includes.branding_logo %}Included{% else %}Not included{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <th>WireGuard private key</th>
+                        <td>{% if backup_verification_result.includes.wireguard_private_key %}Included{% else %}Not included{% endif %}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
 <script>
     (function () {
-        const input = document.getElementById("backup_file");
-        const fileName = document.querySelector("[data-backup-file-name]");
-        if (!input || !fileName) {
-            return;
-        }
-        input.addEventListener("change", function () {
-            fileName.textContent =
-                input.files && input.files.length
-                    ? input.files[0].name
-                    : "No file selected";
+        const bindings = [
+            ["backup_file", "[data-backup-file-name]"],
+            ["backup_verify_file", "[data-backup-verify-file-name]"],
+        ];
+        bindings.forEach(function ([inputId, outputSelector]) {
+            const input = document.getElementById(inputId);
+            const fileName = document.querySelector(outputSelector);
+            if (!input || !fileName) {
+                return;
+            }
+            input.addEventListener("change", function () {
+                fileName.textContent =
+                    input.files && input.files.length
+                        ? input.files[0].name
+                        : "No file selected";
+            });
         });
     })();
 </script>
+{% endif %} {% if active_settings == 'security' %}
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Administrator login IP allowlist</h2>
+            <p class="muted">Optionally restrict administrator sign-in to specific IP addresses or CIDR ranges. Leave blank to allow admin logins from anywhere.</p>
+        </div>
+    </div>
+    <form action="/settings/security" method="post" class="settings-form narrow-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="form-row full-row">
+            <span>Allowed IPs or networks</span>
+            <textarea name="admin_login_allowlist" rows="5" placeholder="203.0.113.10&#10;198.51.100.0/24">{{ settings.admin_login_allowlist or '' }}</textarea>
+        </label>
+        <button class="button" type="submit">
+            <i class="fa-solid fa-shield-halved"></i> Save security settings
+        </button>
+    </form>
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Secret health checks</h2>
+            <p class="muted">Warnings for insecure defaults, weak runtime secret configuration, and related hardening gaps.</p>
+        </div>
+    </div>
+    <div class="security-check-list">
+        {% for check in security_checks %}
+        <div class="inline-note-card" data-state="{{ check.level }}">
+            <strong>{% if check.level == 'success' %}Healthy{% else %}Needs review{% endif %}</strong>
+            <p>{{ check.message }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="admin-card card">
+    <div class="admin-card-header">
+        <div>
+            <h2>Active sessions</h2>
+            <p class="muted">Review active dashboard sessions and revoke them if needed.</p>
+        </div>
+    </div>
+    <div class="responsive-table">
+        <table class="session-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>IP address</th>
+                    <th>User agent</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th class="actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for active_session in active_sessions %}
+                <tr>
+                    <td>{{ active_session.user.email }}</td>
+                    <td>{{ active_session.ip_address or 'Unknown' }}</td>
+                    <td>{{ active_session.user_agent or 'Unknown' }}</td>
+                    <td>{{ format_datetime(active_session.created_at) }}</td>
+                    <td>{{ format_datetime(active_session.expires_at) }}</td>
+                    <td class="actions">
+                        <form action="/settings/security/sessions/{{ active_session.id }}/revoke" method="post" class="inline-action-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                            <button class="icon-button danger-text" type="submit" title="Revoke session" aria-label="Revoke session">
+                                <i class="fa-solid fa-ban"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="muted">No active sessions.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
 {% endif %} {% if active_settings == 'retention' %}
 <section class="admin-card card">
     <div class="admin-card-header">

@@ -473,3 +473,102 @@ def test_local_login_with_enabled_totp_requires_second_step(monkeypatch, tmp_pat
             dashboard_response = client.get("/dashboard", follow_redirects=False)
             assert dashboard_response.status_code == 200
         app.dependency_overrides.clear()
+
+
+def test_account_security_allows_revoking_another_active_session(monkeypatch, tmp_path):
+    disable_background_startup(monkeypatch)
+    with sqlite_session(tmp_path) as session:
+        user = User(
+            id=uuid4(),
+            email="local-user@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+        )
+        session.add(user)
+        session.commit()
+
+        def override_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            login_page = client.get("/login")
+            csrf_token = extract_csrf_token(login_page.text)
+            login_response = client.post(
+                "/api/v1/auth/login",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": user.email,
+                    "password": "StrongPassword123",
+                },
+                follow_redirects=False,
+            )
+            assert login_response.status_code == 303
+            extra_session = SessionToken(
+                user_id=user.id,
+                token_hash="secondary-token-hash",
+                ip_address="203.0.113.5",
+                user_agent="pytest secondary session",
+                expires_at=utc_now() + timedelta(hours=1),
+            )
+            session.add(extra_session)
+            session.commit()
+
+            account_page = client.get("/account/security")
+            assert account_page.status_code == 200
+            assert "Active sessions" in account_page.text
+            csrf_token = extract_csrf_token(account_page.text)
+            revoke_response = client.post(
+                f"/account/security/sessions/{extra_session.id}/revoke",
+                data={"csrf_token": csrf_token},
+                follow_redirects=False,
+            )
+            assert revoke_response.status_code == 303
+            assert (
+                revoke_response.headers["location"]
+                == "/account/security?status=session-revoked"
+            )
+            session.refresh(extra_session)
+            assert extra_session.revoked_at is not None
+        app.dependency_overrides.clear()
+
+
+def test_admin_login_allowlist_blocks_disallowed_local_login(monkeypatch, tmp_path):
+    disable_background_startup(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.admin_security.client_ip", lambda _request: "198.51.100.20"
+    )
+    with sqlite_session(tmp_path) as session:
+        user = User(
+            id=uuid4(),
+            email="admin@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="administrator",
+        )
+        session.add_all(
+            [
+                user,
+                IntegrationSettings(id=1, admin_login_allowlist="203.0.113.10/32"),
+            ]
+        )
+        session.commit()
+
+        def override_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            login_page = client.get("/login")
+            csrf_token = extract_csrf_token(login_page.text)
+            response = client.post(
+                "/api/v1/auth/login",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": user.email,
+                    "password": "StrongPassword123",
+                },
+            )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert "Administrator login is not allowed from this IP address." in response.text

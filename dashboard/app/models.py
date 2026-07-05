@@ -58,6 +58,8 @@ class SessionToken(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, nullable=False
     )
@@ -110,6 +112,7 @@ class IntegrationSettings(Base):
     ad_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ad_base_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ad_bind_dn: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    admin_login_allowlist: Mapped[str | None] = mapped_column(Text, nullable=True)
     branding_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     notify_on_offline: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
