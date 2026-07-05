@@ -292,7 +292,7 @@ def add_peer(public_key: str, tunnel_ip: str) -> None:
 
 
 def _parse_unix_timestamp(value: str) -> datetime | None:
-    if not value or value == "0":
+    if not value or value in {"0", "off"}:
         return None
     try:
         timestamp = int(value)
@@ -303,6 +303,18 @@ def _parse_unix_timestamp(value: str) -> datetime | None:
     if timestamp <= 0:
         return None
     return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+
+
+def _parse_wg_integer(value: str, *, field_name: str) -> int:
+    normalized = value.strip().lower()
+    if not normalized or normalized == "off":
+        return 0
+    try:
+        return int(normalized)
+    except ValueError as exc:
+        raise WireGuardError(
+            f"invalid {field_name} value in wg output: {value}"
+        ) from exc
 
 
 def parse_wg_show_dump(output: str) -> list[RuntimeWireGuardPeer]:
@@ -321,9 +333,11 @@ def parse_wg_show_dump(output: str) -> list[RuntimeWireGuardPeer]:
                 endpoint=endpoint,
                 allowed_ips=allowed_ips,
                 last_handshake_at=_parse_unix_timestamp(fields[4].strip()),
-                rx_bytes=int(fields[5].strip() or "0"),
-                tx_bytes=int(fields[6].strip() or "0"),
-                persistent_keepalive=int(fields[7].strip() or "0"),
+                rx_bytes=_parse_wg_integer(fields[5], field_name="rx bytes"),
+                tx_bytes=_parse_wg_integer(fields[6], field_name="tx bytes"),
+                persistent_keepalive=_parse_wg_integer(
+                    fields[7], field_name="persistent keepalive"
+                ),
             )
         )
     return peers

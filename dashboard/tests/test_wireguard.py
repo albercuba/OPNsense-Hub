@@ -257,6 +257,18 @@ def test_parse_wg_show_dump_rejects_short_rows():
         parse_wg_show_dump("private\tpublic\t51820\tmark\nshort\trow\n")
 
 
+def test_parse_wg_show_dump_accepts_off_keepalive():
+    output = (
+        "private\tpublic\t51820\tmark\n"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\t(off)\t198.51.100.10:51820\t100.96.0.10/32\t1751712000\t1234\t5678\toff\n"
+    )
+
+    peers = parse_wg_show_dump(output)
+
+    assert len(peers) == 1
+    assert peers[0].persistent_keepalive == 0
+
+
 def test_plugin_firmware_parser_maps_error_payload():
     firmware_status = load_firmware_status_module()
 
