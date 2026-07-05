@@ -123,7 +123,10 @@
             <div class="dashboard-saved-filter-controls">
                 <label class="form-row dashboard-saved-filter-select">
                     <span class="sr-only">Saved filters</span>
-                    <select data-dashboard-saved-filter-select>
+                    <select
+                        class="dashboard-select"
+                        data-dashboard-saved-filter-select
+                    >
                         <option value="">Select a saved filter</option>
                         {% for saved_filter in saved_filters %}
                         <option
