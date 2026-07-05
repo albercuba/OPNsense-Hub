@@ -2094,6 +2094,7 @@ td {
     font-weight: 700;
     line-height: 1.2;
     text-transform: none;
+    min-width: fit-content;
 }
 
 .status::before {
