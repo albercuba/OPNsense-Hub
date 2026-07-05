@@ -145,7 +145,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    ALLOWED_HOSTS=hub.example.com
    TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
    RATE_LIMIT_BACKEND=redis
-   RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+   RATE_LIMIT_REDIS_URL=redis://opnsense-hub-redis:6379/0
    PROXY_VERIFY_TLS=true
    NETWORK_CONTROL_MODE=external
    HUB_WG_ENDPOINT=hub.example.com:51820
@@ -157,7 +157,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    WG_DRY_RUN=false
    ```
 
-   If you change the PostgreSQL username, password, database, or service name, keep `DATABASE_URL` in `.env` aligned with the `opnsense-hub-db` environment in `docker-compose.yml`.
+   If you change the PostgreSQL username, password, database, Redis service name, or service hostnames, keep `DATABASE_URL` and `RATE_LIMIT_REDIS_URL` in `.env` aligned with `docker-compose.yml`.
 
 3. Configure the reverse proxy profile when using the bundled Caddy example:
 
