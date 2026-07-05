@@ -485,6 +485,28 @@ def test_network_settings_page_renders_diagnostics(monkeypatch, tmp_path):
     assert "fw-acme-1" in response.text
 
 
+def test_build_isolation_check_distinguishes_external_isolation(monkeypatch, tmp_path):
+    from app.services import network_diagnostics
+
+    monkeypatch.setattr(
+        network_diagnostics.settings, "network_control_mode", "external"
+    )
+    monkeypatch.setattr(
+        network_diagnostics.settings, "hub_manage_firewall_rules", False
+    )
+    monkeypatch.setattr(
+        network_diagnostics,
+        "verify_nftables_rule_present",
+        lambda _settings: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
+
+    result = network_diagnostics.build_isolation_check()
+
+    assert result["state"] == "warning"
+    assert result["label"] == "Externally enforced"
+    assert "outside the app runtime" in result["summary"]
+
+
 def test_device_page_renders_tunnel_diagnostics(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "device_network_page") as session:
         admin = seed_backup_source(session)

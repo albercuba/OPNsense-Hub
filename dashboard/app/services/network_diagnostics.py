@@ -108,26 +108,26 @@ def runtime_peer_snapshot() -> RuntimePeerSnapshot:
 
 def build_isolation_check() -> dict[str, Any]:
     issues = isolation_invariant_errors(settings)
-    runtime_error = None
-    if (
-        settings.network_control_mode.strip().lower() == "inline"
-        and settings.hub_manage_firewall_rules
-        and not settings.wg_dry_run
-    ):
-        try:
-            verify_nftables_rule_present(settings)
-        except Exception as exc:  # pragma: no cover - defensive runtime check
-            runtime_error = str(exc)
-    if issues or runtime_error:
-        details = list(issues)
-        if runtime_error:
-            details.append(runtime_error)
+    if issues:
         return {
             "state": "critical",
             "label": "Isolation risk",
-            "summary": "Peer-to-peer firewall isolation is not fully verified.",
-            "details": details,
+            "summary": "Peer-to-peer firewall isolation has configuration issues that need review.",
+            "details": list(issues),
         }
+
+    mode = settings.network_control_mode.strip().lower()
+    if mode == "external" or not settings.hub_manage_firewall_rules:
+        return {
+            "state": "warning",
+            "label": "Externally enforced",
+            "summary": "Peer-to-peer firewall isolation is expected to be enforced outside the app runtime.",
+            "details": [
+                "The container is not the source of truth for the isolation rule in this deployment model.",
+                f"Expected policy still limits each firewall to its own tunnel /32 and the Hub route {client_allowed_ips()}.",
+            ],
+        }
+
     if settings.wg_dry_run:
         return {
             "state": "warning",
@@ -137,6 +137,20 @@ def build_isolation_check() -> dict[str, Any]:
                 "Policy intent still restricts firewall reachability to tunnel /32 routes only."
             ],
         }
+
+    runtime_error = None
+    try:
+        verify_nftables_rule_present(settings)
+    except Exception as exc:  # pragma: no cover - defensive runtime check
+        runtime_error = str(exc)
+    if runtime_error:
+        return {
+            "state": "critical",
+            "label": "Verification failed",
+            "summary": "Peer-to-peer firewall isolation should be enforced by the app runtime, but runtime verification failed.",
+            "details": [runtime_error],
+        }
+
     return {
         "state": "success",
         "label": "Isolation verified",
