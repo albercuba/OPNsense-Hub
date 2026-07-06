@@ -791,6 +791,7 @@ async def restore_settings_backup(
         )
         restore_backup_bundle(db, data, logo_file, wireguard_private_key)
     except HTTPException as exc:
+        db.rollback()
         write_audit(db, request, "settings.backup.restore.failed", user=user)
         db.commit()
         log_security_warning(
@@ -802,7 +803,43 @@ async def restore_settings_backup(
             "[OPNsense Hub] Security event: backup restore failed",
             f"Backup restore failed for {user.email}: {exc.detail}",
         )
-        raise exc
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=400,
+            backup_verification_result={
+                "ok": False,
+                "filename": backup_file.filename or "backup file",
+                "message": str(exc.detail),
+            },
+        )
+    except Exception as exc:
+        db.rollback()
+        write_audit(db, request, "settings.backup.restore.failed", user=user)
+        db.commit()
+        log_security_warning(
+            "settings.backup.restore.failed",
+            detail=str(exc),
+        )
+        send_security_alert_email(
+            db,
+            "[OPNsense Hub] Security event: backup restore failed",
+            f"Backup restore failed for {user.email}: {exc}",
+        )
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=500,
+            backup_verification_result={
+                "ok": False,
+                "filename": backup_file.filename or "backup file",
+                "message": "Backup restore failed due to an unexpected server error.",
+            },
+        )
     write_audit(db, request, "settings.backup.restore", user=user)
     db.execute(delete(SessionToken))
     db.commit()

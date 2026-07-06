@@ -1009,6 +1009,52 @@ def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
     assert remaining_backups == []
 
 
+def test_backup_restore_shows_error_when_wireguard_reinit_fails(monkeypatch, tmp_path):
+    source_branding_dir = tmp_path / "branding-source-restore-fail"
+    source_branding_dir.mkdir(parents=True, exist_ok=True)
+    (source_branding_dir / "logo.png").write_bytes(PNG_BYTES)
+    source_wg_key_path = tmp_path / "wireguard-source-restore-fail" / "server.key"
+    source_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
+    source_wg_key_path.write_text("restored-private-key\n")
+
+    with sqlite_session(tmp_path, "source_restore_fail") as source_session:
+        seed_backup_source(source_session)
+        monkeypatch.setattr(settings, "branding_upload_dir", str(source_branding_dir))
+        monkeypatch.setattr(
+            settings, "wg_server_private_key_path", str(source_wg_key_path)
+        )
+        bundle, _filename, _media_type = export_backup_bundle(source_session)
+
+    target_branding_dir = tmp_path / "branding-target-restore-fail"
+    target_branding_dir.mkdir(parents=True, exist_ok=True)
+    target_wg_key_path = tmp_path / "wireguard-target-restore-fail" / "server.key"
+    target_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
+    target_wg_key_path.write_text("old-private-key\n")
+    monkeypatch.setattr(settings, "branding_upload_dir", str(target_branding_dir))
+    monkeypatch.setattr(settings, "wg_server_private_key_path", str(target_wg_key_path))
+    monkeypatch.setattr(
+        "app.services.backup_service.bootstrap_wireguard",
+        lambda _db: (_ for _ in ()).throw(RuntimeError("wg0 not available")),
+    )
+
+    with sqlite_session(tmp_path, "target_restore_fail") as target_session:
+        acting_admin = seed_restore_target(target_session)
+        configure_test_client(monkeypatch, target_session, acting_admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client)
+            response = client.post(
+                "/settings/backup/restore",
+                data={"csrf_token": csrf_token},
+                files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
+                follow_redirects=False,
+            )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "Restore configuration" in response.text
+    assert "WireGuard could not be reinitialized" in response.text
+
+
 def test_backup_restore_replaces_configuration_and_clears_sessions(
     monkeypatch, tmp_path
 ):

@@ -357,4 +357,10 @@ def restore_backup_bundle(
         key_path.write_text(wireguard_private_key.strip() + "\n")
         with contextlib.suppress(OSError):
             os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
-    bootstrap_wireguard(db)
+    try:
+        bootstrap_wireguard(db)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"restore completed but WireGuard could not be reinitialized: {exc}",
+        ) from exc
