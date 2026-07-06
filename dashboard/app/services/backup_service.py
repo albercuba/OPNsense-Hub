@@ -339,7 +339,7 @@ def restore_backup_bundle(
                     detail=f"backup table '{table_name}' contains an invalid row",
                 )
             db.add(deserialize_model_row(model, row))
-    db.flush()
+        db.flush()
     if logo_file:
         logo_name, logo_content = logo_file
         extension = detect_image_extension(logo_content)
