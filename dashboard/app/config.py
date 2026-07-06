@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     run_db_migrations_on_startup: bool = True
     allow_legacy_schema_bootstrap: bool = True
     firewall_health_warning_misses: int = 3
-    firewall_health_critical_misses: int = 4
+    firewall_health_critical_misses: int = 5
     firewall_health_warning_recovery_successes: int = 1
     firewall_health_critical_recovery_successes: int = 2
 
