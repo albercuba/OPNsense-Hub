@@ -837,7 +837,7 @@ async def restore_settings_backup(
             backup_verification_result={
                 "ok": False,
                 "filename": backup_file.filename or "backup file",
-                "message": "Backup restore failed due to an unexpected server error.",
+                "message": f"Backup restore failed: {exc}",
             },
         )
     write_audit(db, request, "settings.backup.restore", user=user)
