@@ -1123,9 +1123,19 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     assert target_wg_key_path.read_text().strip() == "restored-private-key"
 
 
-def test_email_settings_persist_phase_two_notification_rules(monkeypatch, tmp_path):
+def test_email_settings_save_updates_transport_without_touching_legacy_rules(
+    monkeypatch, tmp_path
+):
     with sqlite_session(tmp_path, "email_phase_two_rules") as session:
         admin = seed_backup_source(session)
+        settings_row = session.get(IntegrationSettings, 1)
+        assert settings_row is not None
+        settings_row.notify_on_offline = False
+        settings_row.notify_on_backup_overdue = False
+        settings_row.notify_on_license_expiring = False
+        settings_row.notify_on_firmware_available = False
+        settings_row.notify_on_repeated_auth_failures = False
+        session.commit()
         configure_test_client(monkeypatch, session, admin)
         with TestClient(app) as client:
             csrf_token = get_csrf(client, "/settings/email-settings")
@@ -1137,11 +1147,6 @@ def test_email_settings_persist_phase_two_notification_rules(monkeypatch, tmp_pa
                     "smtp_host": "smtp.example.com",
                     "smtp_port": "2525",
                     "smtp_from": "hub@example.com",
-                    "notify_on_offline": "on",
-                    "notify_on_backup_overdue": "on",
-                    "notify_on_license_expiring": "",
-                    "notify_on_firmware_available": "on",
-                    "notify_on_repeated_auth_failures": "",
                 },
                 follow_redirects=False,
             )
@@ -1151,10 +1156,11 @@ def test_email_settings_persist_phase_two_notification_rules(monkeypatch, tmp_pa
     assert response.status_code == 303
     assert response.headers["location"] == "/settings/email-settings?status=email-saved"
     assert settings_row is not None
-    assert settings_row.notify_on_offline is True
-    assert settings_row.notify_on_backup_overdue is True
+    assert settings_row.smtp_host == "smtp.example.com"
+    assert settings_row.notify_on_offline is False
+    assert settings_row.notify_on_backup_overdue is False
     assert settings_row.notify_on_license_expiring is False
-    assert settings_row.notify_on_firmware_available is True
+    assert settings_row.notify_on_firmware_available is False
     assert settings_row.notify_on_repeated_auth_failures is False
 
 

@@ -110,9 +110,9 @@ def make_device(hostname="fw-01", **overrides):
     return device
 
 
-def make_integration_settings(configured=True):
+def make_integration_settings(configured=True, **overrides):
     if configured:
-        return IntegrationSettings(
+        settings = IntegrationSettings(
             id=1,
             smtp_enabled=True,
             smtp_host="smtp.example.com",
@@ -120,7 +120,11 @@ def make_integration_settings(configured=True):
             smtp_from="hub@example.com",
             graph_enabled=False,
         )
-    return IntegrationSettings(id=1, smtp_enabled=False, graph_enabled=False)
+    else:
+        settings = IntegrationSettings(id=1, smtp_enabled=False, graph_enabled=False)
+    for key, value in overrides.items():
+        setattr(settings, key, value)
+    return settings
 
 
 def test_device_template_renders_email_notifications_section():
@@ -521,6 +525,48 @@ def test_backup_overdue_respects_device_level_override(monkeypatch):
 
     assert sent == []
     assert device.backup_overdue_notified_at is None
+
+
+def test_offline_email_ignores_legacy_global_rule_flags(monkeypatch):
+    sent = []
+    device = make_device(
+        status="warning",
+        health_missed_checks=4,
+        email_notifications_enabled=True,
+        email_notification_recipient="alerts@example.com",
+    )
+    company = Company(id=device.company_id, name="Acme")
+    db = FakeDb(
+        device=device,
+        devices=[device],
+        integration_settings=make_integration_settings(
+            configured=True,
+            notify_on_offline=False,
+            notify_on_backup_overdue=False,
+            notify_on_license_expiring=False,
+            notify_on_firmware_available=False,
+        ),
+        company=company,
+    )
+    monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
+
+    async def fake_probe(_client, _device):
+        return False, "unreachable"
+
+    monkeypatch.setattr("app.main.probe_device_webgui", fake_probe)
+    monkeypatch.setattr(
+        "app.main.send_notification_email",
+        lambda _db, to_email, subject, body: sent.append((to_email, subject, body)),
+    )
+
+    asyncio.run(run_device_health_checks_once())
+
+    assert len(sent) == 1
+    assert "critical" in sent[0][1]
+    assert device.status == "offline"
 
 
 def test_disabled_notification_status_does_not_send_email():

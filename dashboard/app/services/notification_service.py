@@ -121,24 +121,15 @@ def maintenance_window_active(
     return maintenance_until.astimezone(timezone.utc) > now.astimezone(timezone.utc)
 
 
-def _rule_enabled(value: bool | None) -> bool:
-    return value is not False
-
-
 def health_notification_status_label(status: str) -> str:
     return "critical" if status == "offline" else status
 
 
-def should_notify_for_health_status(
-    integration_settings: IntegrationSettings, device: Device, new_status: str
-) -> bool:
+def should_notify_for_health_status(device: Device, new_status: str) -> bool:
     if new_status == "warning":
         return device.email_notify_on_warning
     if new_status == "offline":
-        return (
-            _rule_enabled(integration_settings.notify_on_offline)
-            and device.email_notify_on_critical
-        )
+        return device.email_notify_on_critical
     return False
 
 
@@ -192,7 +183,7 @@ def maybe_send_health_notification(
     integration_settings = get_or_create_integration_settings(db)
     if not email_settings_configured(integration_settings):
         return False
-    if not should_notify_for_health_status(integration_settings, device, new_status):
+    if not should_notify_for_health_status(device, new_status):
         return False
     company = db.get(Company, device.company_id)
     subject, body = build_health_notification_email(
@@ -302,8 +293,7 @@ def maybe_send_phase2_device_notifications(
     company = db.get(Company, device.company_id)
     if backup_overdue:
         if (
-            _rule_enabled(integration_settings.notify_on_backup_overdue)
-            and device.email_notify_on_backup_overdue
+            device.email_notify_on_backup_overdue
             and device.backup_overdue_notified_at is None
         ):
             subject = f"[OPNsense Hub] Backup overdue: {device.hostname}"
@@ -334,15 +324,11 @@ def maybe_send_phase2_device_notifications(
         device.backup_overdue_notified_at = None
 
     if license_expiring:
-        should_send_license = (
-            _rule_enabled(integration_settings.notify_on_license_expiring)
-            and device.email_notify_on_license_expiring
-            and (
-                device.license_expiring_notified_at is None
-                or (
-                    device.license_expires_at
-                    and device.license_expiring_notified_at < device.license_expires_at
-                )
+        should_send_license = device.email_notify_on_license_expiring and (
+            device.license_expiring_notified_at is None
+            or (
+                device.license_expires_at
+                and device.license_expiring_notified_at < device.license_expires_at
             )
         )
         if should_send_license:
@@ -373,16 +359,11 @@ def maybe_send_phase2_device_notifications(
         device.license_expiring_notified_at = None
 
     if firmware_available:
-        should_send_firmware = (
-            _rule_enabled(integration_settings.notify_on_firmware_available)
-            and device.email_notify_on_firmware_available
-            and (
-                device.firmware_available_notified_at is None
-                or (
-                    device.firmware_checked_at
-                    and device.firmware_available_notified_at
-                    < device.firmware_checked_at
-                )
+        should_send_firmware = device.email_notify_on_firmware_available and (
+            device.firmware_available_notified_at is None
+            or (
+                device.firmware_checked_at
+                and device.firmware_available_notified_at < device.firmware_checked_at
             )
         )
         if should_send_firmware:
@@ -417,7 +398,7 @@ def maybe_notify_for_repeated_auth_failures(
     current_time: datetime | None = None,
 ) -> bool:
     integration_settings = get_or_create_integration_settings(db)
-    if not _rule_enabled(integration_settings.notify_on_repeated_auth_failures):
+    if integration_settings.notify_on_repeated_auth_failures is False:
         return False
     if not action.startswith("auth.") or not action.endswith(".failed"):
         return False
