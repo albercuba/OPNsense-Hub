@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -59,6 +61,10 @@ def load_connect_module():
 
 def load_firmware_status_module():
     return load_plugin_module("firmware_status.py", "opnsensehub_firmware_status")
+
+
+def load_heartbeat_module():
+    return load_plugin_module("heartbeat.py", "opnsensehub_heartbeat")
 
 
 def test_validate_public_key_accepts_wireguard_shape():
@@ -283,3 +289,105 @@ def test_plugin_firmware_parser_maps_error_payload():
     assert parsed["status"] == "error"
     assert parsed["update_available"] is False
     assert parsed["message"] == "firmware probe failed"
+
+
+def test_plugin_heartbeat_does_not_remove_local_state_on_unauthorized(
+    monkeypatch, tmp_path, capsys
+):
+    heartbeat = load_heartbeat_module()
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{}")
+    state = {
+        "device_id": "device-1",
+        "device_token": "token",
+        "hub_url": "https://hub.example.com",
+    }
+    saved_states = []
+    cleanup_called = False
+
+    def fake_send_heartbeat(_state, _payload):
+        raise urllib.error.HTTPError(
+            url="https://hub.example.com/api/v1/devices/device-1/heartbeat",
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=None,
+        )
+
+    def fake_remove_local_artifacts(reason=None):
+        nonlocal cleanup_called
+        cleanup_called = True
+        return {"reason": reason}
+
+    monkeypatch.setattr(heartbeat, "STATE_FILE", state_file)
+    monkeypatch.setattr(heartbeat, "load_state", lambda: state.copy())
+    monkeypatch.setattr(
+        heartbeat, "save_state", lambda value: saved_states.append(value.copy())
+    )
+    monkeypatch.setattr(heartbeat, "send_heartbeat", fake_send_heartbeat)
+    monkeypatch.setattr(
+        heartbeat, "remove_local_artifacts", fake_remove_local_artifacts
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        heartbeat.main()
+
+    assert exc_info.value.code == 1
+    assert cleanup_called is False
+    assert saved_states[-1]["last_error"] == "heartbeat failed with HTTP 401"
+    output = json.loads(capsys.readouterr().out.strip())
+    assert output == {
+        "status": "error",
+        "message": "heartbeat failed with HTTP 401",
+    }
+
+
+def test_plugin_heartbeat_removes_local_state_only_on_revocation(
+    monkeypatch, tmp_path, capsys
+):
+    heartbeat = load_heartbeat_module()
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{}")
+    state = {
+        "device_id": "device-1",
+        "device_token": "token",
+        "hub_url": "https://hub.example.com",
+    }
+    saved_states = []
+    cleanup_reasons = []
+
+    def fake_send_heartbeat(_state, _payload):
+        raise urllib.error.HTTPError(
+            url="https://hub.example.com/api/v1/devices/device-1/heartbeat",
+            code=410,
+            msg="Gone",
+            hdrs=None,
+            fp=None,
+        )
+
+    def fake_remove_local_artifacts(reason=None):
+        cleanup_reasons.append(reason)
+        return {"status": "removed", "reason": reason, "device_id": "device-1"}
+
+    monkeypatch.setattr(heartbeat, "STATE_FILE", state_file)
+    monkeypatch.setattr(heartbeat, "load_state", lambda: state.copy())
+    monkeypatch.setattr(
+        heartbeat, "save_state", lambda value: saved_states.append(value.copy())
+    )
+    monkeypatch.setattr(heartbeat, "send_heartbeat", fake_send_heartbeat)
+    monkeypatch.setattr(
+        heartbeat, "remove_local_artifacts", fake_remove_local_artifacts
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        heartbeat.main()
+
+    assert exc_info.value.code == 1
+    assert cleanup_reasons == ["heartbeat failed with HTTP 410"]
+    assert saved_states[-1]["last_error"] == "heartbeat failed with HTTP 410"
+    output = json.loads(capsys.readouterr().out.strip())
+    assert output["status"] == "revoked"
+    assert output["reason"] == "heartbeat failed with HTTP 410"
+    assert output["message"] == (
+        "Hub revoked this device; removed local OPNsense Hub tunnel and state"
+    )

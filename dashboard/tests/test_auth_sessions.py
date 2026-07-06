@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from app.database import Base
+from app.deps import device_from_token
 from app.main import (
     app,
     current_user,
@@ -16,7 +17,7 @@ from app.main import (
     session_from_request,
     settings,
 )
-from app.models import IntegrationSettings, SessionToken, User
+from app.models import Device, IntegrationSettings, SessionToken, User
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
 from app.security.secrets import encrypt_secret
 from app.services.auth_service import upsert_external_user
@@ -36,10 +37,11 @@ def compile_inet_sqlite(_type, _compiler, **_kw):
 
 
 class FakeDb:
-    def __init__(self, user=None, session=None, integration_settings=None):
+    def __init__(self, user=None, session=None, integration_settings=None, device=None):
         self.user = user
         self.session = session
         self.integration_settings = integration_settings
+        self.device = device
         self.added = []
         self.committed = False
 
@@ -53,6 +55,8 @@ class FakeDb:
             return self.user
         if model is IntegrationSettings and key == 1:
             return self.integration_settings
+        if model is Device and self.device and key == self.device.id:
+            return self.device
         return None
 
     def add(self, obj):
@@ -136,6 +140,26 @@ def test_current_user_looks_up_user_from_hashed_session_token():
     )
     db = FakeDb(user=user, session=session)
     assert current_user(make_request(token), cast(Session, db)).id == user.id
+
+
+def test_device_from_token_returns_gone_for_revoked_device():
+    device_token = "device-token"
+    device = Device(
+        id=uuid4(),
+        company_id=uuid4(),
+        hostname="fw-1",
+        wg_public_key="pubkey",
+        wg_tunnel_ip="100.96.0.2",
+        device_token_hash=hash_secret(device_token),
+        revoked_at=utc_now(),
+    )
+    db = FakeDb(device=device)
+
+    with pytest.raises(HTTPException) as exc_info:
+        device_from_token(cast(Session, db), device.id, f"Bearer {device_token}")
+
+    assert exc_info.value.status_code == 410
+    assert exc_info.value.detail == "device revoked"
 
 
 def test_upsert_external_user_marks_auth_provider():

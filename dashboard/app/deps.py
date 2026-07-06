@@ -58,10 +58,10 @@ def device_from_token(
         raise HTTPException(status_code=401)
     token = authorization.removeprefix("Bearer ").strip()
     device = db.get(Device, device_id)
-    if (
-        not device
-        or device.revoked_at
-        or not verify_secret(token, device.device_token_hash)
-    ):
+    if not device:
+        raise HTTPException(status_code=401)
+    if device.revoked_at:
+        raise HTTPException(status_code=410, detail="device revoked")
+    if not verify_secret(token, device.device_token_hash):
         raise HTTPException(status_code=401)
     return device

@@ -143,11 +143,11 @@ def main():
     except urllib.error.HTTPError as exc:
         state["last_error"] = f"heartbeat failed with HTTP {exc.code}"
         save_state(state)
-        if exc.code in (401, 404):
+        if exc.code == 410:
             result = remove_local_artifacts(reason=state["last_error"])
             result["status"] = "revoked"
             result["message"] = (
-                "Hub rejected this device; removed local OPNsense Hub tunnel and state"
+                "Hub revoked this device; removed local OPNsense Hub tunnel and state"
             )
             print(json.dumps(result))
             sys.exit(1)
