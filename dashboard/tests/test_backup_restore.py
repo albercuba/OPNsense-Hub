@@ -1102,6 +1102,9 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
         restored_devices = target_session.scalars(
             select(Device).order_by(Device.hostname)
         ).all()
+        restored_device_backups = target_session.scalars(
+            select(DeviceBackup).order_by(DeviceBackup.filename)
+        ).all()
         restored_sessions = target_session.scalars(select(SessionToken)).all()
         restored_settings = target_session.get(IntegrationSettings, 1)
 
@@ -1111,6 +1114,8 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     assert [user.email for user in restored_users] == ["admin@example.com"]
     assert [company.name for company in restored_companies] == ["Acme"]
     assert [device.hostname for device in restored_devices] == ["fw-acme-1"]
+    assert [backup.filename for backup in restored_device_backups] == ["config.xml"]
+    assert restored_device_backups[0].content == "<config />"
     assert restored_sessions == []
     assert restored_settings is not None
     assert restored_settings.smtp_host == "smtp.example.com"
