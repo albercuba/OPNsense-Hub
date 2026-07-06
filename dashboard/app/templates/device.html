@@ -501,13 +501,40 @@
             <label class="checkbox-label"
                 ><input
                     type="checkbox"
-                    name="email_notify_on_critical"
+                    name="email_notify_on_offline"
                     {% if device.email_notify_on_critical %}checked{% endif %}
                     {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
                 />
-                When status becomes critical</label
+                When firewall goes offline</label
             >
-            <div class="form-row">
+            <label class="checkbox-label"
+                ><input
+                    type="checkbox"
+                    name="email_notify_on_backup_overdue"
+                    {% if device.email_notify_on_backup_overdue %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                When backups become overdue</label
+            >
+            <label class="checkbox-label"
+                ><input
+                    type="checkbox"
+                    name="email_notify_on_license_expiring"
+                    {% if device.email_notify_on_license_expiring %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                When business licenses are expiring soon</label
+            >
+            <label class="checkbox-label full-row"
+                ><input
+                    type="checkbox"
+                    name="email_notify_on_firmware_available"
+                    {% if device.email_notify_on_firmware_available %}checked{% endif %}
+                    {% if not email_settings_configured or not can_edit_notification_settings %}disabled{% endif %}
+                />
+                When firmware updates or upgrades are available</label
+            >
+            <div class="form-row full-row">
                 <strong>Last notified</strong><br />{{ format_datetime(device.email_last_notified_at) if device.email_last_notified_at else 'Never' }}
             </div>
             {% if email_settings_configured and can_edit_notification_settings %}

@@ -303,6 +303,7 @@ def maybe_send_phase2_device_notifications(
     if backup_overdue:
         if (
             _rule_enabled(integration_settings.notify_on_backup_overdue)
+            and device.email_notify_on_backup_overdue
             and device.backup_overdue_notified_at is None
         ):
             subject = f"[OPNsense Hub] Backup overdue: {device.hostname}"
@@ -333,13 +334,15 @@ def maybe_send_phase2_device_notifications(
         device.backup_overdue_notified_at = None
 
     if license_expiring:
-        should_send_license = _rule_enabled(
-            integration_settings.notify_on_license_expiring
-        ) and (
-            device.license_expiring_notified_at is None
-            or (
-                device.license_expires_at
-                and device.license_expiring_notified_at < device.license_expires_at
+        should_send_license = (
+            _rule_enabled(integration_settings.notify_on_license_expiring)
+            and device.email_notify_on_license_expiring
+            and (
+                device.license_expiring_notified_at is None
+                or (
+                    device.license_expires_at
+                    and device.license_expiring_notified_at < device.license_expires_at
+                )
             )
         )
         if should_send_license:
@@ -370,13 +373,16 @@ def maybe_send_phase2_device_notifications(
         device.license_expiring_notified_at = None
 
     if firmware_available:
-        should_send_firmware = _rule_enabled(
-            integration_settings.notify_on_firmware_available
-        ) and (
-            device.firmware_available_notified_at is None
-            or (
-                device.firmware_checked_at
-                and device.firmware_available_notified_at < device.firmware_checked_at
+        should_send_firmware = (
+            _rule_enabled(integration_settings.notify_on_firmware_available)
+            and device.email_notify_on_firmware_available
+            and (
+                device.firmware_available_notified_at is None
+                or (
+                    device.firmware_checked_at
+                    and device.firmware_available_notified_at
+                    < device.firmware_checked_at
+                )
             )
         )
         if should_send_firmware:

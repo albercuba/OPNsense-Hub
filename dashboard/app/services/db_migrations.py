@@ -88,8 +88,16 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notification_recipient text NULL",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_warning boolean NOT NULL DEFAULT true",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_critical boolean NOT NULL DEFAULT true",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_backup_overdue boolean NOT NULL DEFAULT true",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_license_expiring boolean NOT NULL DEFAULT true",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_notify_on_firmware_available boolean NOT NULL DEFAULT true",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_last_notified_status text NULL",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS email_last_notified_at timestamptz NULL",
+            "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS notify_on_offline boolean NOT NULL DEFAULT true",
+            "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS notify_on_backup_overdue boolean NOT NULL DEFAULT true",
+            "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS notify_on_license_expiring boolean NOT NULL DEFAULT true",
+            "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS notify_on_firmware_available boolean NOT NULL DEFAULT true",
+            "ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS notify_on_repeated_auth_failures boolean NOT NULL DEFAULT true",
             "UPDATE devices SET backup_interval_value = backup_interval_hours, backup_interval_unit = 'hours' WHERE backup_interval_hours IS NOT NULL",
             """
             CREATE TABLE IF NOT EXISTS sessions (

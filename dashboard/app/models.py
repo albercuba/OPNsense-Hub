@@ -309,6 +309,15 @@ class Device(Base):
     email_notify_on_critical: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
+    email_notify_on_backup_overdue: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    email_notify_on_license_expiring: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    email_notify_on_firmware_available: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
     email_last_notified_status: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )

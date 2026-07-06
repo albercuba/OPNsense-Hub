@@ -790,7 +790,10 @@ def update_device_email_notification_settings(
     email_notifications_enabled: str | None = Form(None),
     email_notification_recipient: str = Form(""),
     email_notify_on_warning: str | None = Form(None),
-    email_notify_on_critical: str | None = Form(None),
+    email_notify_on_offline: str | None = Form(None),
+    email_notify_on_backup_overdue: str | None = Form(None),
+    email_notify_on_license_expiring: str | None = Form(None),
+    email_notify_on_firmware_available: str | None = Form(None),
 ):
     device = db.get(Device, device_id)
     if not device or not has_company_access(db, user, device.company_id, "admin"):
@@ -807,7 +810,12 @@ def update_device_email_notification_settings(
     device.email_notifications_enabled = enabled
     device.email_notification_recipient = recipient if enabled else None
     device.email_notify_on_warning = email_notify_on_warning == "on"
-    device.email_notify_on_critical = email_notify_on_critical == "on"
+    device.email_notify_on_critical = email_notify_on_offline == "on"
+    device.email_notify_on_backup_overdue = email_notify_on_backup_overdue == "on"
+    device.email_notify_on_license_expiring = email_notify_on_license_expiring == "on"
+    device.email_notify_on_firmware_available = (
+        email_notify_on_firmware_available == "on"
+    )
     if not enabled:
         device.email_last_notified_status = None
         device.email_last_notified_at = None

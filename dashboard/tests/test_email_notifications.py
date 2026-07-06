@@ -100,6 +100,9 @@ def make_device(hostname="fw-01", **overrides):
         email_notifications_enabled=False,
         email_notify_on_warning=True,
         email_notify_on_critical=True,
+        email_notify_on_backup_overdue=True,
+        email_notify_on_license_expiring=True,
+        email_notify_on_firmware_available=True,
         created_at=now,
     )
     for key, value in overrides.items():
@@ -142,6 +145,38 @@ def test_device_template_renders_email_notifications_section():
         brand_logo_url=None,
         active_page="companies",
         status=None,
+        maintenance_active=False,
+        health_acknowledged_by=None,
+        health_details=[],
+        network_diagnostics={
+            "tunnel": {
+                "state": "success",
+                "label": "Peer present in the Hub WireGuard runtime",
+                "interface": "wg0",
+                "endpoint": None,
+                "handshake_state": "warning",
+                "handshake_label": "No handshake observed",
+                "last_handshake_at": None,
+                "rx_bytes": 0,
+                "tx_bytes": 0,
+            },
+            "policy": {
+                "state": "success",
+                "summary": "As expected",
+                "expected_device_route": "100.96.0.10/32",
+                "expected_firewall_route": "100.96.0.1/32",
+                "actual_allowed_ips": [],
+                "warnings": [],
+            },
+            "plugin": {
+                "state": "success",
+                "actual": "0.1",
+                "expected": "0.1",
+                "label": "Plugin version matches",
+            },
+            "enrollment_diagnostics": [],
+            "reachability_hint": None,
+        },
     )
 
     assert "Email notifications" in rendered
@@ -170,6 +205,38 @@ def test_device_template_disables_email_form_when_hub_email_not_configured():
         brand_logo_url=None,
         active_page="companies",
         status=None,
+        maintenance_active=False,
+        health_acknowledged_by=None,
+        health_details=[],
+        network_diagnostics={
+            "tunnel": {
+                "state": "success",
+                "label": "Peer present in the Hub WireGuard runtime",
+                "interface": "wg0",
+                "endpoint": None,
+                "handshake_state": "warning",
+                "handshake_label": "No handshake observed",
+                "last_handshake_at": None,
+                "rx_bytes": 0,
+                "tx_bytes": 0,
+            },
+            "policy": {
+                "state": "success",
+                "summary": "As expected",
+                "expected_device_route": "100.96.0.10/32",
+                "expected_firewall_route": "100.96.0.1/32",
+                "actual_allowed_ips": [],
+                "warnings": [],
+            },
+            "plugin": {
+                "state": "success",
+                "actual": "0.1",
+                "expected": "0.1",
+                "label": "Plugin version matches",
+            },
+            "enrollment_diagnostics": [],
+            "reachability_hint": None,
+        },
     )
 
     assert "Email settings are not configured." in rendered
@@ -194,7 +261,10 @@ def test_email_notification_settings_reject_when_email_not_configured(monkeypatc
             email_notifications_enabled="on",
             email_notification_recipient="alerts@example.com",
             email_notify_on_warning="on",
-            email_notify_on_critical="on",
+            email_notify_on_offline="on",
+            email_notify_on_backup_overdue="on",
+            email_notify_on_license_expiring="on",
+            email_notify_on_firmware_available="on",
         )
 
     assert exc.value.status_code == 400
@@ -218,7 +288,10 @@ def test_company_admin_can_save_email_notification_settings(monkeypatch):
         email_notifications_enabled="on",
         email_notification_recipient="alerts@example.com",
         email_notify_on_warning="on",
-        email_notify_on_critical=None,
+        email_notify_on_offline=None,
+        email_notify_on_backup_overdue="on",
+        email_notify_on_license_expiring=None,
+        email_notify_on_firmware_available="on",
     )
 
     assert response.status_code == 303
@@ -226,6 +299,9 @@ def test_company_admin_can_save_email_notification_settings(monkeypatch):
     assert device.email_notification_recipient == "alerts@example.com"
     assert device.email_notify_on_warning is True
     assert device.email_notify_on_critical is False
+    assert device.email_notify_on_backup_overdue is True
+    assert device.email_notify_on_license_expiring is False
+    assert device.email_notify_on_firmware_available is True
     assert db.committed is True
 
 
@@ -247,7 +323,10 @@ def test_non_admin_cannot_save_email_notification_settings(monkeypatch):
             email_notifications_enabled="on",
             email_notification_recipient="alerts@example.com",
             email_notify_on_warning="on",
-            email_notify_on_critical="on",
+            email_notify_on_offline="on",
+            email_notify_on_backup_overdue="on",
+            email_notify_on_license_expiring="on",
+            email_notify_on_firmware_available="on",
         )
 
     assert exc.value.status_code == 404
@@ -402,6 +481,46 @@ def test_backup_overdue_sends_email_once(monkeypatch):
     assert len(sent) == 1
     assert "Backup overdue" in sent[0][1]
     assert device.backup_overdue_notified_at is not None
+
+
+def test_backup_overdue_respects_device_level_override(monkeypatch):
+    sent = []
+    now = datetime.now(timezone.utc)
+    device = make_device(
+        backup_enabled=True,
+        backup_last_uploaded_at=now.replace(hour=0, minute=0, second=0, microsecond=0),
+        backup_interval_value=1,
+        backup_interval_unit="hours",
+        backup_interval_hours=1,
+        email_notifications_enabled=True,
+        email_notification_recipient="alerts@example.com",
+        email_notify_on_backup_overdue=False,
+    )
+    company = Company(id=device.company_id, name="Acme")
+    db = FakeDb(
+        device=device,
+        devices=[device],
+        integration_settings=make_integration_settings(configured=True),
+        company=company,
+    )
+    monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
+
+    async def fake_probe(_client, _device):
+        return True, "reachable"
+
+    monkeypatch.setattr("app.main.probe_device_webgui", fake_probe)
+    monkeypatch.setattr(
+        "app.main.send_notification_email",
+        lambda _db, to_email, subject, body: sent.append((to_email, subject, body)),
+    )
+
+    asyncio.run(run_device_health_checks_once())
+
+    assert sent == []
+    assert device.backup_overdue_notified_at is None
 
 
 def test_disabled_notification_status_does_not_send_email():
