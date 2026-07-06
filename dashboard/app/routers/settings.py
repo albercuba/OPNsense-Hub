@@ -840,7 +840,7 @@ async def restore_settings_backup(
                 "message": f"Backup restore failed: {exc}",
             },
         )
-    write_audit(db, request, "settings.backup.restore", user=user)
+    write_audit(db, request, "settings.backup.restore")
     db.execute(delete(SessionToken))
     db.commit()
     response = RedirectResponse("/login", status_code=303)
