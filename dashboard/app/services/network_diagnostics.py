@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass
@@ -183,7 +184,9 @@ def build_device_network_diagnostics(db: Session, device: Device) -> dict[str, A
         now = utc_now()
         snapshot = runtime_peer_snapshot()
         runtime_peer = snapshot.peers.get(device.wg_public_key)
-        expected_device_route = peer_allowed_ips(str(device.wg_tunnel_ip))
+        expected_device_route = peer_allowed_ips(
+            str(ipaddress.ip_interface(str(device.wg_tunnel_ip)).ip)
+        )
         actual_allowed_ips = runtime_peer.allowed_ips if runtime_peer else []
         policy_summary, policy_warnings = _policy_summary(
             actual_allowed_ips,
@@ -209,6 +212,12 @@ def build_device_network_diagnostics(db: Session, device: Device) -> dict[str, A
         elif runtime_peer is None:
             tunnel_state = "critical"
             tunnel_label = "Peer missing from the Hub WireGuard runtime"
+        elif handshake_state == "critical":
+            tunnel_state = "critical"
+            tunnel_label = "Peer present, but no recent handshake was observed"
+        elif handshake_state == "warning":
+            tunnel_state = "warning"
+            tunnel_label = "Peer present, but the handshake is stale"
         else:
             tunnel_state = "success"
             tunnel_label = "Peer present in the Hub WireGuard runtime"

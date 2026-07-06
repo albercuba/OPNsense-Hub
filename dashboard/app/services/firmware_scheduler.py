@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..backups import (
     DEVICE_BACKUP_INTERVAL_UNITS,
+    backup_due,
     backup_interval_delta,
     backup_request_pending,
     mark_device_backup_requested,

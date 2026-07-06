@@ -7,6 +7,7 @@ from app.dashboard import (
     dashboard_backup_status,
     dashboard_license_status,
     dashboard_revision_token,
+    normalized_status,
 )
 from app.database import get_db
 from app.integration import email_settings_configured
@@ -158,6 +159,21 @@ def make_device(
     )
     device.company = company
     return device
+
+
+def test_normalized_status_marks_stale_online_device_critical(monkeypatch):
+    now = datetime(2026, 7, 6, 15, 0, tzinfo=timezone.utc)
+    company = make_company("Alpha Co")
+    device = make_device(
+        company,
+        "alpha-stale",
+        "100.96.0.50/32",
+        status="online",
+        last_seen_at=now - timedelta(minutes=6),
+    )
+    monkeypatch.setattr("app.dashboard.utc_now", lambda: now)
+
+    assert normalized_status(device) == "critical"
 
 
 def seed_dashboard_data(now: datetime):

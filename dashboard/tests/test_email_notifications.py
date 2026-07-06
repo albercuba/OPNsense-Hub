@@ -4,8 +4,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
-
 from app.main import (
     maybe_send_health_notification,
     run_device_health_checks_once,
@@ -14,6 +12,7 @@ from app.main import (
 )
 from app.models import Company, Device, DeviceEvent, IntegrationSettings
 from app.security import hash_secret
+from fastapi import HTTPException
 
 
 class FakeScalarResult:
@@ -25,7 +24,9 @@ class FakeScalarResult:
 
 
 class FakeDb:
-    def __init__(self, device=None, devices=None, integration_settings=None, company=None):
+    def __init__(
+        self, device=None, devices=None, integration_settings=None, company=None
+    ):
         self.device = device
         self.devices = devices or ([] if device is None else [device])
         self.integration_settings = integration_settings
@@ -267,7 +268,9 @@ def test_online_to_warning_transition_sends_one_email(monkeypatch):
         company=company,
     )
     monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
-    monkeypatch.setattr("app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient())
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
 
     async def fake_probe(_client, _device):
         return False, "unreachable"
@@ -306,7 +309,9 @@ def test_repeated_warning_state_does_not_send_duplicate_emails(monkeypatch):
     )
     monkeypatch.setattr("app.main.settings.firewall_health_critical_misses", 99)
     monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
-    monkeypatch.setattr("app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient())
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
 
     async def fake_probe(_client, _device):
         return False, "unreachable"
@@ -327,7 +332,7 @@ def test_warning_to_critical_transition_sends_email(monkeypatch):
     sent = []
     device = make_device(
         status="warning",
-        health_missed_checks=3,
+        health_missed_checks=4,
         email_notifications_enabled=True,
         email_notification_recipient="alerts@example.com",
     )
@@ -339,7 +344,9 @@ def test_warning_to_critical_transition_sends_email(monkeypatch):
         company=company,
     )
     monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
-    monkeypatch.setattr("app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient())
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
 
     async def fake_probe(_client, _device):
         return False, "unreachable"
@@ -355,6 +362,46 @@ def test_warning_to_critical_transition_sends_email(monkeypatch):
     assert len(sent) == 1
     assert "critical" in sent[0][1]
     assert device.status == "offline"
+
+
+def test_backup_overdue_sends_email_once(monkeypatch):
+    sent = []
+    now = datetime.now(timezone.utc)
+    device = make_device(
+        backup_enabled=True,
+        backup_last_uploaded_at=now.replace(hour=0, minute=0, second=0, microsecond=0),
+        backup_interval_value=1,
+        backup_interval_unit="hours",
+        backup_interval_hours=1,
+        email_notifications_enabled=True,
+        email_notification_recipient="alerts@example.com",
+    )
+    company = Company(id=device.company_id, name="Acme")
+    db = FakeDb(
+        device=device,
+        devices=[device],
+        integration_settings=make_integration_settings(configured=True),
+        company=company,
+    )
+    monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
+
+    async def fake_probe(_client, _device):
+        return True, "reachable"
+
+    monkeypatch.setattr("app.main.probe_device_webgui", fake_probe)
+    monkeypatch.setattr(
+        "app.main.send_notification_email",
+        lambda _db, to_email, subject, body: sent.append((to_email, subject, body)),
+    )
+
+    asyncio.run(run_device_health_checks_once())
+
+    assert len(sent) == 1
+    assert "Backup overdue" in sent[0][1]
+    assert device.backup_overdue_notified_at is not None
 
 
 def test_disabled_notification_status_does_not_send_email():
@@ -424,7 +471,9 @@ def test_email_send_failure_creates_device_event_and_does_not_crash(monkeypatch)
         company=company,
     )
     monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
-    monkeypatch.setattr("app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient())
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
 
     async def fake_probe(_client, _device):
         return False, "unreachable"

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .backups import backup_due, backup_request_pending
+from .config import get_settings
 from .integration import email_settings_configured
 from .models import (
     AuditLog,
@@ -31,6 +32,7 @@ STATUS_COLORS = {
     "revoked": "#6c7a8e",
     "other": "#2f7de1",
 }
+settings = get_settings()
 
 
 def accessible_companies_for_user(db: Session, user: User) -> list[Company]:
@@ -61,6 +63,20 @@ def normalized_status(device: Device) -> str:
     if status == "offline":
         return "critical"
     if status in {"online", "warning", "critical"}:
+        if device.last_seen_at is not None:
+            age = utc_now() - device.last_seen_at.astimezone(timezone.utc)
+            warning_after = timedelta(
+                seconds=max(1, settings.firewall_health_check_interval_seconds)
+                * max(1, settings.firewall_health_warning_misses)
+            )
+            critical_after = timedelta(
+                seconds=max(1, settings.firewall_health_check_interval_seconds)
+                * max(1, settings.firewall_health_critical_misses)
+            )
+            if age >= critical_after:
+                return "critical"
+            if age >= warning_after and status == "online":
+                return "warning"
         return status
     return "other"
 
