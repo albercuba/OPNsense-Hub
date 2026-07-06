@@ -331,9 +331,8 @@ def heartbeat(
         settings.rate_limit_device_heartbeat_window_seconds,
     )
     device = device_from_token(db, device_id, authorization)
-    device.status = str(payload.get("status", "online"))[:30]
-    device.health_missed_checks = 0
-    device.health_success_checks += 1
+    reported_status = str(payload.get("status", "online"))[:30].strip().lower()
+    previous_status = device.status
     device.hostname = str(payload.get("hostname", device.hostname))[:255]
     opnsense_version = payload.get("opnsense_version")
     if opnsense_version is not None:
@@ -344,11 +343,11 @@ def heartbeat(
     apply_device_license_payload(device, payload)
     firmware_applied = apply_device_firmware_payload(device, payload)
     device.last_seen_at = utc_now()
-    if firmware_applied or device.status != "online":
-        event_message = device.status
+    if firmware_applied or reported_status not in {"", "online"}:
+        event_message = reported_status or previous_status
         if firmware_applied:
             event_message = (
-                f"{device.status}; firmware={device.firmware_status}; updates={device.firmware_update_count}"
+                f"{event_message}; firmware={device.firmware_status}; updates={device.firmware_update_count}"
             )[:1000]
         db.add(
             DeviceEvent(

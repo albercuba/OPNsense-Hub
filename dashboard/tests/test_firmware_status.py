@@ -9,9 +9,9 @@ from app.main import (
     backup_request_pending,
     firmware_status_ui,
     heartbeat,
-    request_device_backup_now,
     mark_devices_for_firmware_check,
     normalize_device_firmware_payload,
+    request_device_backup_now,
     run_firmware_schedule_once,
     upload_device_backup,
 )
@@ -203,6 +203,31 @@ def test_backup_interval_delta_supports_days_and_months():
 
     assert backup_interval_delta(days_device).total_seconds() == 2 * 24 * 3600
     assert backup_interval_delta(months_device).total_seconds() == 90 * 24 * 3600
+
+
+def test_heartbeat_does_not_reset_health_state_from_reported_online():
+    token = "device-token"
+    device = make_device(
+        "fw-health-preserve",
+        token=token,
+        status="warning",
+        health_missed_checks=3,
+        health_success_checks=0,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {"status": "online", "hostname": "fw-health-preserve"},
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["ok"] is True
+    assert device.status == "warning"
+    assert device.health_missed_checks == 3
+    assert device.health_success_checks == 0
+    assert db.committed is True
 
 
 def test_heartbeat_response_includes_pending_backup_request():
