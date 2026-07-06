@@ -99,6 +99,23 @@ def render_settings_template(
 ):
     companies = db.scalars(select(Company).order_by(Company.name)).all()
     users = db.scalars(select(User).order_by(User.email)).all()
+    status = request.query_params.get("status")
+    toast_messages = {
+        "company-created": "Company created.",
+        "company-updated": "Company updated.",
+        "company-deleted": "Company deleted.",
+        "user-created": "User created.",
+        "user-updated": "User updated.",
+        "user-deleted": "User deleted.",
+        "email-saved": "Email settings saved.",
+        "microsoft-saved": "Microsoft 365 settings saved.",
+        "local-ad-saved": "Local AD settings saved.",
+        "branding-saved": "Branding settings saved.",
+        "security-saved": "Security settings saved.",
+        "session-revoked": "Session revoked.",
+        "retention-cleanup-ran": "Retention cleanup completed.",
+        "retention-cleanup-skipped": "Retention cleanup skipped because retention is disabled.",
+    }
     integration_settings = get_or_create_integration_settings(db)
     retention_summary = (
         get_log_retention_summary(db) if section == "retention" else None
@@ -124,7 +141,12 @@ def render_settings_template(
             "protected_admin_email": settings.initial_admin_email.lower(),
             "active_page": "settings",
             "active_settings": section,
-            "status": request.query_params.get("status"),
+            "status": status,
+            "toast": (
+                {"message": toast_messages[status], "level": "success"}
+                if status in toast_messages
+                else None
+            ),
             "retention_summary": retention_summary,
             "external_user_providers": external_user_providers,
             "security_checks": security_checks,

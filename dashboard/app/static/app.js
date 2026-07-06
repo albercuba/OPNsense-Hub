@@ -39,6 +39,43 @@ document.addEventListener("DOMContentLoaded", () => {
     window.setTimeout(dismiss, 4200);
   });
 
+  const sideMenu = document.querySelector("#primary-side-menu");
+  const sideMenuToggle = document.querySelector("[data-side-menu-toggle]");
+  const sideMenuBackdrop = document.querySelector("[data-side-menu-backdrop]");
+  const closeSideMenu = () => {
+    document.body.classList.remove("side-menu-open");
+    sideMenuToggle?.setAttribute("aria-expanded", "false");
+  };
+  const openSideMenu = () => {
+    document.body.classList.add("side-menu-open");
+    sideMenuToggle?.setAttribute("aria-expanded", "true");
+  };
+  sideMenuToggle?.addEventListener("click", () => {
+    if (document.body.classList.contains("side-menu-open")) {
+      closeSideMenu();
+    } else {
+      openSideMenu();
+    }
+  });
+  sideMenuBackdrop?.addEventListener("click", closeSideMenu);
+  sideMenu?.querySelectorAll("a, summary").forEach((element) => {
+    element.addEventListener("click", () => {
+      if (window.matchMedia("(max-width: 900px)").matches) {
+        closeSideMenu();
+      }
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSideMenu();
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (!window.matchMedia("(max-width: 900px)").matches) {
+      closeSideMenu();
+    }
+  });
+
   const setCompanyRowExpanded = (row, expanded) => {
     const firewallsRow = row.nextElementSibling;
     if (!firewallsRow || !firewallsRow.matches("[data-company-firewalls]")) {
@@ -74,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    editButton.addEventListener("click", () => {
+    const startEditing = () => {
       controls.forEach((control) => {
         control.disabled = false;
       });
@@ -84,6 +121,17 @@ document.addEventListener("DOMContentLoaded", () => {
       controls[0].focus();
       if (typeof controls[0].select === "function") {
         controls[0].select();
+      }
+    };
+
+    editButton.addEventListener("click", startEditing);
+    row.addEventListener("keydown", (event) => {
+      if (
+        (event.key === "Enter" || event.key === " ") &&
+        event.target === editButton
+      ) {
+        event.preventDefault();
+        startEditing();
       }
     });
   });
@@ -284,12 +332,21 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const updateSortIndicators = (table, activeIndex, direction) => {
-    table
-      .querySelectorAll(".dashboard-sort-indicator")
-      .forEach((indicator, index) => {
+    table.querySelectorAll("thead th").forEach((headerCell, index) => {
+      const indicator = headerCell.querySelector(".dashboard-sort-indicator");
+      if (indicator) {
         indicator.textContent =
           index === activeIndex ? (direction === "asc" ? "▲" : "▼") : "↕";
-      });
+      }
+      headerCell.setAttribute(
+        "aria-sort",
+        index === activeIndex
+          ? direction === "asc"
+            ? "ascending"
+            : "descending"
+          : "none",
+      );
+    });
   };
 
   document
@@ -314,7 +371,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "dashboard-sort-button";
+        button.setAttribute("aria-label", `Sort by ${label}`);
         button.innerHTML = `<span>${escapeHtml(label)}</span><span class="dashboard-sort-indicator" aria-hidden="true">↕</span>`;
+        headerCell.textContent = "";
+        headerCell.appendChild(button);
+        +headerCell.setAttribute("aria-sort", "none");
         headerCell.textContent = "";
         headerCell.appendChild(button);
 
@@ -510,6 +571,47 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
+  const userFiltersForm = document.querySelector("[data-user-filters]");
+  const userTable = document.querySelector("[data-user-table]");
+  const userQueryInput = document.querySelector("[data-user-filter-query]");
+  const userRoleSelect = document.querySelector("[data-user-filter-role]");
+  const userMfaSelect = document.querySelector("[data-user-filter-mfa]");
+  const userEmptyState = document.querySelector("[data-user-filter-empty]");
+
+  const applyUserFilters = () => {
+    if (!userTable) {
+      return;
+    }
+    const query = (userQueryInput?.value || "").trim().toLowerCase();
+    const role = (userRoleSelect?.value || "").trim().toLowerCase();
+    const mfa = (userMfaSelect?.value || "").trim().toLowerCase();
+    let visibleRows = 0;
+
+    userTable.querySelectorAll("[data-user-row]").forEach((row) => {
+      const matchesQuery =
+        !query || (row.dataset.userSearch || "").includes(query);
+      const matchesRole = !role || (row.dataset.userRole || "") === role;
+      const matchesMfa = !mfa || (row.dataset.userMfa || "") === mfa;
+      const visible = matchesQuery && matchesRole && matchesMfa;
+      row.dataset.userHidden = visible ? "false" : "true";
+      if (visible) {
+        visibleRows += 1;
+      }
+    });
+
+    if (userEmptyState) {
+      userEmptyState.hidden = visibleRows > 0;
+    }
+  };
+
+  userQueryInput?.addEventListener("input", applyUserFilters);
+  userRoleSelect?.addEventListener("change", applyUserFilters);
+  userMfaSelect?.addEventListener("change", applyUserFilters);
+  userFiltersForm?.addEventListener("reset", () => {
+    window.setTimeout(applyUserFilters, 0);
+  });
+  applyUserFilters();
 
   const dashboardFiltersCard = document.querySelector(
     "[data-dashboard-revision]",

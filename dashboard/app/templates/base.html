@@ -25,6 +25,12 @@
     </head>
     <body>
         <header class="topbar">
+            <div class="topbar-leading">
+                {% if user %}
+                <button class="side-menu-toggle" type="button" data-side-menu-toggle aria-expanded="false" aria-controls="primary-side-menu" aria-label="Open navigation menu">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                {% endif %}
             <div class="brand">
                 {% if brand_logo_url %}
                 <img
@@ -37,6 +43,7 @@
                     ><i class="fa-solid fa-shield-halved"></i
                 ></span>
                 {% endif %} OPNsense Hub
+            </div>
             </div>
             <nav class="nav">
                 <div class="theme-toggle-wrap">
@@ -65,7 +72,10 @@
             </nav>
         </header>
         <div class="app-layout">
-            <aside class="side-menu" aria-label="Primary navigation">
+            {% if user %}
+            <button class="side-menu-backdrop" type="button" hidden data-side-menu-backdrop aria-label="Close navigation menu"></button>
+            {% endif %}
+            <aside id="primary-side-menu" class="side-menu" aria-label="Primary navigation">
                 <a
                     class="side-menu-link {% if active_page == 'dashboard' %}active{% endif %}"
                     href="/dashboard"

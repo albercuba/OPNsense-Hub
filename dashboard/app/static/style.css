@@ -125,6 +125,28 @@ a {
     border-bottom: 1px solid var(--line);
     backdrop-filter: blur(10px);
 }
+.topbar-leading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.side-menu-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-elevated);
+    color: var(--muted);
+    cursor: pointer;
+}
+.side-menu-toggle:hover,
+.side-menu-toggle:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+}
 .brand {
     display: flex;
     gap: 0.45rem;
@@ -270,6 +292,9 @@ a {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
+}
+.side-menu-backdrop {
+    display: none;
 }
 .side-menu-link,
 .side-menu-sublink {
@@ -891,6 +916,16 @@ th {
     background: var(--status-ok-bg);
     border-color: var(--status-ok-border);
 }
+.user-filter-form {
+    align-items: end;
+}
+.user-filter-empty {
+    margin: 0 0 0.75rem;
+}
+tr[data-row-hidden="true"],
+tr[data-user-hidden="true"] {
+    display: none;
+}
 .responsive-table {
     overflow-x: auto;
 }
@@ -1440,6 +1475,9 @@ th {
     .topbar {
         padding: 1rem;
     }
+    .side-menu-toggle {
+        display: inline-flex;
+    }
     .login-theme-toggle-wrap {
         top: 0.75rem;
         right: 0.75rem;
@@ -1471,9 +1509,35 @@ th {
         align-items: start;
         flex-direction: column;
     }
+    .side-menu-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        border: 0;
+        background: var(--overlay-bg);
+    }
+    body.side-menu-open {
+        overflow: hidden;
+    }
+    body.side-menu-open .side-menu-backdrop {
+        display: block;
+    }
     .side-menu {
-        position: static;
-        margin-top: 1rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 40;
+        width: min(18rem, calc(100vw - 2.5rem));
+        max-height: 100vh;
+        height: 100vh;
+        margin-top: 0;
+        border-radius: 0;
+        border-left: 0;
+        transform: translateX(-105%);
+        transition: transform 0.18s ease;
+    }
+    body.side-menu-open .side-menu {
+        transform: translateX(0);
     }
     .settings-grid-form,
     .inline-user-form {
