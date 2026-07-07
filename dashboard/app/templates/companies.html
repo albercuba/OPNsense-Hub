@@ -176,11 +176,7 @@
                                             action="/api/v1/devices/{{ device.id }}/delete"
                                             method="post"
                                             class="inline-action-form"
-                                            onsubmit="
-                                                return confirm(
-                                                    'Remove this revoked firewall? This cannot be undone.',
-                                                );
-                                            "
+                                            data-confirm-message="Remove this revoked firewall? This cannot be undone."
                                         >
                                             <input
                                                 type="hidden"
@@ -217,11 +213,7 @@
                                             action="/api/v1/devices/{{ device.id }}/revoke"
                                             method="post"
                                             class="inline-action-form"
-                                            onsubmit="
-                                                return confirm(
-                                                    'Revoke this firewall?',
-                                                );
-                                            "
+                                            data-confirm-message="Revoke this firewall?"
                                         >
                                             <input
                                                 type="hidden"

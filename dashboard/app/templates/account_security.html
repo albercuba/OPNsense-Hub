@@ -179,6 +179,7 @@
                             action="/account/security/sessions/{{ active_session.id }}/revoke"
                             method="post"
                             class="inline-action-form"
+                            data-confirm-message="Revoke this session? The device using it will need to sign in again."
                         >
                             <input
                                 type="hidden"

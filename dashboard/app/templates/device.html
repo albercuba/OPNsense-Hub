@@ -24,7 +24,7 @@
                 action="/api/v1/devices/{{ device.id }}/delete"
                 method="post"
                 class="inline-action-form"
-                onsubmit="return confirm('Remove this revoked firewall? This cannot be undone.');"
+                data-confirm-message="Remove this revoked firewall? This cannot be undone."
             >
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="/companies" />
@@ -436,7 +436,7 @@
                             action="/devices/{{ device.id }}/backups/{{ backup.id }}/delete"
                             method="post"
                             class="inline-action-form"
-                            onsubmit="return confirm('Delete this stored backup?');"
+                            data-confirm-message="Delete this stored backup?"
                         >
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                             <button

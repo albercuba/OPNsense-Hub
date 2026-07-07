@@ -105,6 +105,7 @@
                             action="/settings/companies/{{ company.id }}/delete"
                             method="post"
                             class="inline-delete-form"
+                            data-confirm-message="Remove this company? This cannot be undone."
                         >
                             <input
                                 type="hidden"
@@ -394,6 +395,7 @@
                             action="/settings/users/{{ managed_user.id }}/delete"
                             method="post"
                             class="inline-delete-form"
+                            data-confirm-message="Remove this user? This cannot be undone."
                         >
                             <input
                                 type="hidden"
