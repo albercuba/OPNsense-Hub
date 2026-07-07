@@ -12,7 +12,10 @@ from app.main import (
 )
 from app.models import Company, Device, DeviceEvent, IntegrationSettings
 from app.security import hash_secret
-from app.services.notification_service import maybe_send_phase2_device_notifications
+from app.services.notification_service import (
+    maybe_send_phase2_device_notifications,
+    send_smtp_email,
+)
 from fastapi import HTTPException
 
 
@@ -126,6 +129,101 @@ def make_integration_settings(configured=True, **overrides):
     for key, value in overrides.items():
         setattr(settings, key, value)
     return settings
+
+
+class FakeSmtpClient:
+    def __init__(self, _host, _port, timeout=20, *, supports_starttls=True):
+        self.timeout = timeout
+        self.supports_starttls = supports_starttls
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def ehlo(self):
+        self.calls.append("ehlo")
+
+    def has_extn(self, name):
+        return name.lower() == "starttls" and self.supports_starttls
+
+    def starttls(self):
+        self.calls.append("starttls")
+
+    def login(self, username, _password):
+        self.calls.append(("login", username))
+
+    def send_message(self, _message):
+        self.calls.append("send_message")
+
+
+def test_send_smtp_email_uses_starttls_before_login_when_available(monkeypatch):
+    integration_settings = make_integration_settings(
+        configured=True,
+        smtp_username="mailer@example.com",
+        smtp_password="encrypted-secret",
+    )
+    fake_smtp = FakeSmtpClient("smtp.example.com", 25)
+    monkeypatch.setattr(
+        "app.services.notification_service.smtplib.SMTP",
+        lambda host, port, timeout=20: fake_smtp,
+    )
+    monkeypatch.setattr(
+        "app.services.notification_service.decrypt_secret",
+        lambda _secret: "smtp-password",
+    )
+
+    send_smtp_email(
+        integration_settings,
+        "alerts@example.com",
+        "Subject",
+        "Body",
+    )
+
+    assert fake_smtp.calls == [
+        "ehlo",
+        "starttls",
+        "ehlo",
+        ("login", "mailer@example.com"),
+        "send_message",
+    ]
+
+
+def test_offline_notification_requires_critical_miss_threshold(monkeypatch):
+    sent = []
+    device = make_device(
+        status="warning",
+        health_missed_checks=3,
+        email_notifications_enabled=True,
+        email_notification_recipient="alerts@example.com",
+    )
+    company = Company(id=device.company_id, name="Acme")
+    db = FakeDb(
+        device=device,
+        devices=[device],
+        integration_settings=make_integration_settings(configured=True),
+        company=company,
+    )
+    monkeypatch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
+    monkeypatch.setattr(
+        "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+    )
+
+    async def fake_probe(_client, _device):
+        return False, "unreachable"
+
+    monkeypatch.setattr("app.main.probe_device_webgui", fake_probe)
+    monkeypatch.setattr(
+        "app.main.send_notification_email",
+        lambda _db, to_email, subject, body: sent.append((to_email, subject, body)),
+    )
+
+    asyncio.run(run_device_health_checks_once())
+
+    assert sent == []
+    assert device.status == "warning"
 
 
 def test_device_template_renders_email_notifications_section():

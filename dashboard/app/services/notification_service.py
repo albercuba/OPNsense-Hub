@@ -54,7 +54,11 @@ def send_smtp_email(
     message["Subject"] = subject
     message.set_content(body)
     with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
+        smtp.ehlo()
         smtp_password = decrypt_secret(integration_settings.smtp_password)
+        if smtp.has_extn("starttls"):
+            smtp.starttls()
+            smtp.ehlo()
         if integration_settings.smtp_username and smtp_password:
             smtp.login(integration_settings.smtp_username, smtp_password)
         smtp.send_message(message)
