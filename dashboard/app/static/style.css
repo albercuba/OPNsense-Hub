@@ -546,7 +546,9 @@ textarea:focus {
 .icon-button:hover {
     color: var(--accent);
 }
-.danger-text,
+.danger-text {
+    color: auto;
+}
 .danger-text:hover {
     color: var(--danger);
 }
