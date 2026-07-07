@@ -1160,6 +1160,7 @@ tr[data-user-hidden="true"] {
     display: grid;
     gap: 0.45rem;
     padding: 0.9rem;
+    margin-bottom: 10px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--panel-elevated);
