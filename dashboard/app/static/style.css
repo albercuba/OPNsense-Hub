@@ -546,12 +546,12 @@ textarea:focus {
 .icon-button:hover {
     color: var(--accent);
 }
-.btn-danger {
+.danger-text {
     background: var(--danger);
     color: #fff;
     border: 1px solid var(--danger);
 }
-.btn-danger:hover {
+.danger-text:hover {
     background: color-mix(in srgb, var(--danger) 85%, black);
     border-color: color-mix(in srgb, var(--danger) 85%, black);
 }
