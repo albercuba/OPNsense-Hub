@@ -241,6 +241,7 @@ def _send_device_rule_notification(
     subject: str,
     body: str,
     event_message: str,
+    failure_context: str,
 ) -> bool:
     recipient = clean_optional(device.email_notification_recipient)
     if not recipient:
@@ -253,7 +254,7 @@ def _send_device_rule_notification(
                 device_id=device.id,
                 event_type="email_notification_failed",
                 message=(
-                    f"Could not send rule notification: {exc.__class__.__name__}: {event_message}"
+                    f"Could not send {failure_context} notification: {exc.__class__.__name__}"
                 )[:1000],
             )
         )
@@ -318,6 +319,7 @@ def maybe_send_phase2_device_notifications(
                 subject=subject,
                 body=body,
                 event_message="Backup overdue notification sent",
+                failure_context="backup overdue",
             ):
                 device.backup_overdue_notified_at = current_time
     else:
@@ -353,6 +355,7 @@ def maybe_send_phase2_device_notifications(
                 subject=subject,
                 body=body,
                 event_message="License expiring notification sent",
+                failure_context="license expiring",
             ):
                 device.license_expiring_notified_at = current_time
     else:
@@ -385,6 +388,7 @@ def maybe_send_phase2_device_notifications(
                 subject=subject,
                 body=body,
                 event_message="Firmware available notification sent",
+                failure_context="firmware available",
             ):
                 device.firmware_available_notified_at = current_time
     else:

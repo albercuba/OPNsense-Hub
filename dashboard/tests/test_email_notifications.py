@@ -12,6 +12,7 @@ from app.main import (
 )
 from app.models import Company, Device, DeviceEvent, IntegrationSettings
 from app.security import hash_secret
+from app.services.notification_service import maybe_send_phase2_device_notifications
 from fastapi import HTTPException
 
 
@@ -622,6 +623,50 @@ def test_revoked_device_does_not_send_email():
     assert sent == []
 
 
+def test_rule_notification_failure_uses_failure_specific_message(monkeypatch):
+    device = make_device(
+        email_notifications_enabled=True,
+        email_notification_recipient="alerts@example.com",
+        email_notify_on_firmware_available=True,
+        firmware_status="update",
+    )
+    company = Company(id=device.company_id, name="Acme")
+    db = FakeDb(
+        device=device,
+        devices=[device],
+        integration_settings=make_integration_settings(configured=True),
+        company=company,
+    )
+
+    def failing_sender(_db, _to_email, _subject, _body):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "app.services.notification_service.send_notification_email",
+        failing_sender,
+    )
+
+    maybe_send_phase2_device_notifications(
+        db,
+        device,
+        backup_overdue=False,
+        license_expiring=False,
+        firmware_available=True,
+        current_time=datetime.now(timezone.utc),
+    )
+
+    failed_events = [
+        event
+        for event in db.added
+        if isinstance(event, DeviceEvent)
+        and event.event_type == "email_notification_failed"
+    ]
+    assert failed_events
+    assert failed_events[0].message == (
+        "Could not send firmware available notification: RuntimeError"
+    )
+
+
 def test_email_send_failure_creates_device_event_and_does_not_crash(monkeypatch):
     device = make_device(
         health_missed_checks=2,
@@ -652,9 +697,14 @@ def test_email_send_failure_creates_device_event_and_does_not_crash(monkeypatch)
 
     asyncio.run(run_device_health_checks_once())
 
-    assert any(
-        isinstance(event, DeviceEvent)
-        and event.event_type == "email_notification_failed"
+    failed_events = [
+        event
         for event in db.added
+        if isinstance(event, DeviceEvent)
+        and event.event_type == "email_notification_failed"
+    ]
+    assert failed_events
+    assert "Could not send health status email notification: RuntimeError" in (
+        failed_events[0].message or ""
     )
     assert db.committed is True
