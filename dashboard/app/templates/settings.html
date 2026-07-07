@@ -158,10 +158,19 @@
         /></label>
         <label class="form-row"
             >Role
-            <select name="role">
-                <option value="user">User</option>
-                <option value="administrator">Administrator</option>
-            </select>
+            <input
+                type="hidden"
+                name="role"
+                value="user"
+                data-create-user-role-value
+            />
+            <input
+                type="text"
+                list="settings-user-role-options"
+                value="User"
+                placeholder="Select a role"
+                data-create-user-role-input
+            />
         </label>
         <div class="form-row submit-row">
             <button class="button" type="submit">
@@ -193,24 +202,40 @@
         </label>
         <label class="form-row">
             Role
-            <select data-user-filter-role aria-controls="existing-users-table">
-                <option value="">All roles</option>
-                <option value="user">User</option>
-                <option value="administrator">Administrator</option>
-            </select>
+            <input
+                type="text"
+                list="settings-user-filter-role-options"
+                placeholder="All roles"
+                data-user-filter-role
+                aria-controls="existing-users-table"
+            />
         </label>
         <label class="form-row">
             MFA status
-            <select data-user-filter-mfa aria-controls="existing-users-table">
-                <option value="">All MFA states</option>
-                <option value="enabled">Enabled</option>
-                <option value="ready">Ready</option>
-            </select>
+            <input
+                type="text"
+                list="settings-user-filter-mfa-options"
+                placeholder="All MFA states"
+                data-user-filter-mfa
+                aria-controls="existing-users-table"
+            />
         </label>
         <div class="form-row submit-row">
             <button class="button secondary" type="reset">Reset filters</button>
         </div>
     </form>
+    <datalist id="settings-user-role-options">
+        <option value="User" data-role-value="user"></option>
+        <option value="Administrator" data-role-value="administrator"></option>
+    </datalist>
+    <datalist id="settings-user-filter-role-options">
+        <option value="User" data-role-value="user"></option>
+        <option value="Administrator" data-role-value="administrator"></option>
+    </datalist>
+    <datalist id="settings-user-filter-mfa-options">
+        <option value="Enabled" data-mfa-value="enabled"></option>
+        <option value="Ready" data-mfa-value="ready"></option>
+    </datalist>
     <p class="muted user-filter-empty" data-user-filter-empty hidden>
         No users match the current filters.
     </p>
@@ -281,20 +306,24 @@
                         />
                     </td>
                     <td>
-                        <select
+                        <input
+                            form="user-edit-{{ managed_user.id }}"
+                            type="hidden"
+                            name="role"
+                            value="{{ managed_user.role }}"
+                            data-user-edit-role-value
+                        />
+                        <input
                             class="edit-field"
                             form="user-edit-{{ managed_user.id }}"
-                            name="role"
+                            type="text"
+                            list="settings-user-role-options"
+                            value="{% if managed_user.role == 'administrator' %}Administrator{% else %}User{% endif %}"
+                            placeholder="Select a role"
                             data-edit-control
+                            data-user-edit-role-input
                             disabled
-                        >
-                            <option value="user" {% if managed_user.role == 'user' %}selected{% endif %}>
-                                User
-                            </option>
-                            <option value="administrator" {% if managed_user.role == 'administrator' %}selected{% endif %}>
-                                Administrator
-                            </option>
-                        </select>
+                        />
                     </td>
                     <td>
                         <div class="user-status-group">

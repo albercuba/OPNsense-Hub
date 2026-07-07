@@ -475,17 +475,21 @@ document.addEventListener("DOMContentLoaded", () => {
     "[data-dashboard-status-value]",
   );
 
-  const resolveDatalistValue = (listId, textValue, dataAttribute) => {
+  const resolveDatalistOption = (listId, textValue) => {
     const normalized = (textValue || "").trim().toLowerCase();
     if (!normalized) {
-      return "";
+      return null;
     }
     const options = Array.from(document.querySelectorAll(`#${listId} option`));
-    const match = options.find(
-      (option) => option.value.trim().toLowerCase() === normalized,
+    return (
+      options.find(
+        (option) => option.value.trim().toLowerCase() === normalized,
+      ) || null
     );
-    return match?.dataset?.[dataAttribute] || "";
   };
+
+  const resolveDatalistValue = (listId, textValue, dataAttribute) =>
+    resolveDatalistOption(listId, textValue)?.dataset?.[dataAttribute] || "";
 
   const syncDashboardFilterInputs = () => {
     if (dashboardCompanyId) {
@@ -575,8 +579,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const userFiltersForm = document.querySelector("[data-user-filters]");
   const userTable = document.querySelector("[data-user-table]");
   const userQueryInput = document.querySelector("[data-user-filter-query]");
-  const userRoleSelect = document.querySelector("[data-user-filter-role]");
-  const userMfaSelect = document.querySelector("[data-user-filter-mfa]");
+  const userRoleInput = document.querySelector("[data-user-filter-role]");
+  const userMfaInput = document.querySelector("[data-user-filter-mfa]");
   const userEmptyState = document.querySelector("[data-user-filter-empty]");
 
   const applyUserFilters = () => {
@@ -584,8 +588,16 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const query = (userQueryInput?.value || "").trim().toLowerCase();
-    const role = (userRoleSelect?.value || "").trim().toLowerCase();
-    const mfa = (userMfaSelect?.value || "").trim().toLowerCase();
+    const role = resolveDatalistValue(
+      "settings-user-filter-role-options",
+      userRoleInput?.value,
+      "roleValue",
+    );
+    const mfa = resolveDatalistValue(
+      "settings-user-filter-mfa-options",
+      userMfaInput?.value,
+      "mfaValue",
+    );
     let visibleRows = 0;
 
     userTable.querySelectorAll("[data-user-row]").forEach((row) => {
@@ -606,8 +618,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   userQueryInput?.addEventListener("input", applyUserFilters);
-  userRoleSelect?.addEventListener("change", applyUserFilters);
-  userMfaSelect?.addEventListener("change", applyUserFilters);
+  userRoleInput?.addEventListener("input", applyUserFilters);
+  userRoleInput?.addEventListener("change", applyUserFilters);
+  userMfaInput?.addEventListener("input", applyUserFilters);
+  userMfaInput?.addEventListener("change", applyUserFilters);
   userFiltersForm?.addEventListener("reset", () => {
     window.setTimeout(applyUserFilters, 0);
   });
@@ -662,8 +676,8 @@ document.addEventListener("DOMContentLoaded", () => {
     pollDashboardUpdates();
   }
 
-  const savedFilterSelect = document.querySelector(
-    "[data-dashboard-saved-filter-select]",
+  const savedFilterInput = document.querySelector(
+    "[data-dashboard-saved-filter-input]",
   );
   const savedFilterApplyButton = document.querySelector(
     "[data-dashboard-saved-filter-apply]",
@@ -676,9 +690,11 @@ document.addEventListener("DOMContentLoaded", () => {
   );
 
   const syncSavedFilterControls = () => {
-    const selectedOption =
-      savedFilterSelect?.options[savedFilterSelect.selectedIndex] || null;
-    const selectedFilterId = selectedOption?.value || "";
+    const selectedOption = resolveDatalistOption(
+      "dashboard-saved-filter-options",
+      savedFilterInput?.value,
+    );
+    const selectedFilterId = selectedOption?.dataset.filterId || "";
     const selectedHref = selectedOption?.dataset.href || "";
     const hasSelection = Boolean(selectedFilterId && selectedHref);
 
@@ -696,10 +712,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  savedFilterSelect?.addEventListener("change", syncSavedFilterControls);
+  savedFilterInput?.addEventListener("input", syncSavedFilterControls);
+  savedFilterInput?.addEventListener("change", syncSavedFilterControls);
   savedFilterApplyButton?.addEventListener("click", () => {
-    const selectedOption =
-      savedFilterSelect?.options[savedFilterSelect.selectedIndex] || null;
+    const selectedOption = resolveDatalistOption(
+      "dashboard-saved-filter-options",
+      savedFilterInput?.value,
+    );
     const selectedHref = selectedOption?.dataset.href || "";
     if (selectedHref) {
       window.location.href = selectedHref;
@@ -711,6 +730,75 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   syncSavedFilterControls();
+
+  const createUserRoleInput = document.querySelector(
+    "[data-create-user-role-input]",
+  );
+  const createUserRoleValue = document.querySelector(
+    "[data-create-user-role-value]",
+  );
+  const createUserForm = createUserRoleInput?.closest("form") || null;
+  const syncCreateUserRole = () => {
+    if (createUserRoleValue) {
+      createUserRoleValue.value =
+        resolveDatalistValue(
+          "settings-user-role-options",
+          createUserRoleInput?.value,
+          "roleValue",
+        ) || "user";
+    }
+  };
+  createUserRoleInput?.addEventListener("input", syncCreateUserRole);
+  createUserRoleInput?.addEventListener("change", syncCreateUserRole);
+  createUserForm?.addEventListener("submit", syncCreateUserRole);
+  syncCreateUserRole();
+
+  document.querySelectorAll("[data-user-edit-role-input]").forEach((input) => {
+    const formId = input.getAttribute("form");
+    if (!formId) {
+      return;
+    }
+    const form = document.getElementById(formId);
+    const hiddenValue = document.querySelector(
+      `[data-user-edit-role-value][form="${formId}"]`,
+    );
+    const syncRole = () => {
+      if (hiddenValue) {
+        hiddenValue.value =
+          resolveDatalistValue(
+            "settings-user-role-options",
+            input.value,
+            "roleValue",
+          ) || "user";
+      }
+    };
+    input.addEventListener("input", syncRole);
+    input.addEventListener("change", syncRole);
+    form?.addEventListener("submit", syncRole);
+    syncRole();
+  });
+
+  const backupIntervalUnitInput = document.querySelector(
+    "[data-backup-interval-unit-input]",
+  );
+  const backupIntervalUnitValue = document.querySelector(
+    "[data-backup-interval-unit-value]",
+  );
+  const backupSettingsForm = backupIntervalUnitInput?.closest("form") || null;
+  const syncBackupIntervalUnit = () => {
+    if (backupIntervalUnitValue) {
+      backupIntervalUnitValue.value =
+        resolveDatalistValue(
+          "backup-interval-unit-options",
+          backupIntervalUnitInput?.value,
+          "unitValue",
+        ) || "hours";
+    }
+  };
+  backupIntervalUnitInput?.addEventListener("input", syncBackupIntervalUnit);
+  backupIntervalUnitInput?.addEventListener("change", syncBackupIntervalUnit);
+  backupSettingsForm?.addEventListener("submit", syncBackupIntervalUnit);
+  syncBackupIntervalUnit();
 
   const recentEventsTable = document.querySelector("#recent-events-table");
   const rangeSelect = document.querySelector("[data-events-range-select]");

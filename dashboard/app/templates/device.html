@@ -367,11 +367,25 @@
                             value="{{ device.backup_interval_value }}"
                             required
                         />
-                        <select class="backup-interval-field" name="backup_interval_unit">
-                            <option value="hours" {% if device.backup_interval_unit == 'hours' %}selected{% endif %}>Hours</option>
-                            <option value="days" {% if device.backup_interval_unit == 'days' %}selected{% endif %}>Days</option>
-                            <option value="months" {% if device.backup_interval_unit == 'months' %}selected{% endif %}>Months</option>
-                        </select>
+                        <input
+                            type="hidden"
+                            name="backup_interval_unit"
+                            value="{{ device.backup_interval_unit }}"
+                            data-backup-interval-unit-value
+                        />
+                        <input
+                            class="backup-interval-field"
+                            type="text"
+                            list="backup-interval-unit-options"
+                            value="{{ device.backup_interval_unit|capitalize }}"
+                            placeholder="Select a unit"
+                            data-backup-interval-unit-input
+                        />
+                        <datalist id="backup-interval-unit-options">
+                            <option value="Hours" data-unit-value="hours"></option>
+                            <option value="Days" data-unit-value="days"></option>
+                            <option value="Months" data-unit-value="months"></option>
+                        </datalist>
                     </div>
                 </label>
             </div>

@@ -107,20 +107,22 @@
             <div class="dashboard-saved-filter-controls">
                 <label class="form-row dashboard-saved-filter-select">
                     <span class="sr-only">Saved filters</span>
-                    <select
-                        class="dashboard-select"
-                        data-dashboard-saved-filter-select
-                    >
-                        <option value="">Select a saved filter</option>
+                    <input
+                        class="dashboard-text-filter"
+                        type="text"
+                        list="dashboard-saved-filter-options"
+                        placeholder="Select a saved filter"
+                        data-dashboard-saved-filter-input
+                    />
+                    <datalist id="dashboard-saved-filter-options">
                         {% for saved_filter in saved_filters %}
                         <option
-                            value="{{ saved_filter.id }}"
+                            value="{{ saved_filter.name }}"
+                            data-filter-id="{{ saved_filter.id }}"
                             data-href="/dashboard{% if saved_filter.company_id or saved_filter.status %}?{% endif %}{% if saved_filter.company_id %}company_id={{ saved_filter.company_id|string|urlencode }}{% endif %}{% if saved_filter.company_id and saved_filter.status %}&{% endif %}{% if saved_filter.status %}status={{ saved_filter.status|urlencode }}{% endif %}"
-                        >
-                            {{ saved_filter.name }}
-                        </option>
+                        ></option>
                         {% endfor %}
-                    </select>
+                    </datalist>
                 </label>
                 <button
                     class="icon-button"
