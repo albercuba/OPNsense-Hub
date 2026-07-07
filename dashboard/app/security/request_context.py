@@ -72,17 +72,29 @@ def is_trusted_proxy(host: str | None) -> bool:
 
 def client_ip(request: Request) -> str:
     direct_ip = request_ip(request)
-    if is_trusted_proxy(direct_ip):
-        forwarded = request.headers.get("x-forwarded-for", "")
-        for item in forwarded.split(","):
-            candidate = item.strip()
-            if not candidate:
-                continue
-            try:
-                ipaddress.ip_address(candidate)
-            except ValueError:
-                continue
-            return candidate
-    if direct_ip:
+    if not direct_ip:
+        return "unknown"
+    if not is_trusted_proxy(direct_ip):
         return direct_ip
-    return "unknown"
+
+    forwarded = request.headers.get("x-forwarded-for", "")
+    forwarded_hops: list[str] = []
+    for item in forwarded.split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        forwarded_hops.append(candidate)
+
+    if not forwarded_hops:
+        return direct_ip
+
+    chain = forwarded_hops + [direct_ip]
+    for candidate in reversed(chain[:-1]):
+        if is_trusted_proxy(candidate):
+            continue
+        return candidate
+    return direct_ip

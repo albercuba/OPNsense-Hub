@@ -25,6 +25,7 @@ from .security.csrf import (
     csrf_cookie_value_for_request,
     should_enforce_csrf,
     validate_csrf_request,
+    validate_proxy_unsafe_request,
 )
 from .security.rate_limit import rate_limiter
 from .security.request_context import ensure_allowed_host
@@ -94,6 +95,11 @@ async def security_middleware(request: Request, call_next):
         ensure_allowed_host(request)
     except HTTPException as exc:
         detail = exc.detail if exc.detail is not None else "Bad Request"
+        return JSONResponse(status_code=exc.status_code, content={"detail": detail})
+    try:
+        validate_proxy_unsafe_request(request)
+    except HTTPException as exc:
+        detail = exc.detail if exc.detail is not None else "Forbidden"
         return JSONResponse(status_code=exc.status_code, content={"detail": detail})
     if should_enforce_csrf(request):
         try:

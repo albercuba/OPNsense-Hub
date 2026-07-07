@@ -18,7 +18,7 @@ from ..dashboard import (
     normalized_status,
 )
 from ..database import get_db
-from ..deps import current_user, has_company_access, require_company
+from ..deps import current_user, has_company_access, require_admin, require_company
 from ..models import (
     AuditLog,
     Company,
@@ -64,6 +64,7 @@ def create_company(
     user: Annotated[User, Depends(current_user)],
     name: str = Form(...),
 ):
+    require_admin(user)
     company = Company(name=name.strip())
     db.add(company)
     db.flush()

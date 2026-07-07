@@ -85,6 +85,14 @@ def upsert_external_user(
     normalized_email = email.strip().lower()
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
+        if existing.auth_provider and existing.auth_provider != auth_provider:
+            raise RuntimeError(
+                "An account with this email is already linked to a different identity provider."
+            )
+        if existing.auth_provider is None:
+            raise RuntimeError(
+                "An account with this email already exists and must be explicitly linked by an administrator."
+            )
         existing.first_name = clean_optional(first_name) or existing.first_name
         existing.last_name = clean_optional(last_name) or existing.last_name
         existing.auth_provider = auth_provider

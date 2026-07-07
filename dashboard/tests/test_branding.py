@@ -72,3 +72,11 @@ def test_remove_uploaded_logo_clears_file(tmp_path):
     assert uploaded_logo_path(str(tmp_path)) is not None
     clear_uploaded_logo(str(tmp_path))
     assert uploaded_logo_path(str(tmp_path)) is None
+
+
+def test_current_brand_logo_url_rejects_non_https_remote_logo():
+    assert current_brand_logo_url(cast(Session, FakeDb("javascript:alert(1)"))) is None
+    assert (
+        current_brand_logo_url(cast(Session, FakeDb("http://example.com/logo.png")))
+        is None
+    )

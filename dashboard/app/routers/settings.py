@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
@@ -28,7 +29,12 @@ from ..models import (
     SessionToken,
     User,
 )
-from ..security import generate_totp_secret, hash_secret, utc_now
+from ..security import (
+    generate_totp_secret,
+    hash_secret,
+    password_is_strong_enough,
+    utc_now,
+)
 from ..security.rate_limit import apply_rate_limit
 from ..security.secrets import decrypt_secret, encrypt_secret, store_secret
 from ..services.admin_security import (
@@ -62,6 +68,19 @@ from ..services.notification_service import send_security_alert_email
 from ..web import render_template, settings
 
 router = APIRouter()
+
+
+def validate_branding_logo_url(value: str | None) -> str | None:
+    normalized = clean_optional(value)
+    if not normalized:
+        return None
+    parsed = urlparse(normalized)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail="branding logo URL must be an absolute HTTPS URL",
+        )
+    return normalized
 
 
 def external_auth_provider_for_user(db: Session, user: User) -> str | None:
@@ -246,6 +265,11 @@ def create_user(
     normalized_email = email.lower().strip()
     if not normalized_email or not password:
         raise HTTPException(status_code=400, detail="email and password are required")
+    if not password_is_strong_enough(password):
+        raise HTTPException(
+            status_code=400,
+            detail="password must be at least 12 characters and include letters and numbers",
+        )
     if db.scalar(select(User).where(User.email == normalized_email)):
         raise HTTPException(status_code=400, detail="email already exists")
     db.add(
@@ -300,6 +324,11 @@ def update_user(
     target.last_name = clean_optional(last_name)
     target.role = role
     if password.strip():
+        if not password_is_strong_enough(password):
+            raise HTTPException(
+                status_code=400,
+                detail="password must be at least 12 characters and include letters and numbers",
+            )
         target.password_hash = hash_secret(password)
     write_audit(db, request, "settings.user.update", user=user)
     db.commit()
@@ -612,7 +641,9 @@ async def update_branding_settings(
 ):
     require_admin(user)
     integration_settings = get_or_create_integration_settings(db)
-    integration_settings.branding_logo_url = clean_optional(branding_logo_url)
+    integration_settings.branding_logo_url = validate_branding_logo_url(
+        branding_logo_url
+    )
     if remove_logo == "on":
         clear_uploaded_logo(settings.branding_upload_dir)
         integration_settings.branding_logo_url = None
@@ -848,7 +879,7 @@ async def restore_settings_backup(
                 "message": f"Backup restore failed: {exc}",
             },
         )
-    write_audit(db, request, "settings.backup.restore")
+    write_audit(db, request, "settings.backup.restore", user=user)
     db.execute(delete(SessionToken))
     db.commit()
     response = RedirectResponse("/login", status_code=303)

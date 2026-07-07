@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Request
@@ -66,7 +67,15 @@ def current_brand_logo_url(db: Session | None = None) -> str | None:
         close_db = True
     try:
         integration_settings = db.get(IntegrationSettings, 1)
-        return integration_settings.branding_logo_url if integration_settings else None
+        logo_url = (
+            integration_settings.branding_logo_url if integration_settings else None
+        )
+        if not logo_url:
+            return None
+        parsed = urlparse(logo_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            return None
+        return logo_url
     finally:
         if close_db:
             db.close()

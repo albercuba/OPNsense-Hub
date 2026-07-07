@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 from hashlib import sha256
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request
 
@@ -54,11 +55,8 @@ def should_enforce_csrf(request: Request) -> bool:
     if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
     path = request.url.path
-    if path.startswith("/proxy/"):
-        return False
     exempt_paths = {
         "/api/v1/enroll",
-        "/auth/microsoft",
         "/auth/microsoft/callback",
     }
     if path in exempt_paths:
@@ -67,7 +65,44 @@ def should_enforce_csrf(request: Request) -> bool:
         path.endswith("/heartbeat") or path.endswith("/backups")
     ):
         return False
-    return True
+    return not path.startswith("/proxy/")
+
+
+def _origin_matches_request(request: Request) -> bool:
+    origin = (request.headers.get("origin") or "").strip()
+    if not origin:
+        return False
+    try:
+        origin_url = urlparse(origin)
+    except ValueError:
+        return False
+    if origin_url.scheme not in {"http", "https"}:
+        return False
+    request_host = (
+        (request.headers.get("host") or request.url.netloc or "").strip().lower()
+    )
+    if not request_host:
+        return False
+    origin_host = (origin_url.netloc or "").strip().lower()
+    if origin_host == request_host:
+        return True
+    public_host = (urlparse(settings.public_url).netloc or "").strip().lower()
+    return bool(public_host and origin_host == public_host)
+
+
+def validate_proxy_unsafe_request(request: Request) -> None:
+    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return
+    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if sec_fetch_site == "cross-site":
+        raise HTTPException(status_code=403, detail="cross-site proxy request blocked")
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and not _origin_matches_request(request):
+        raise HTTPException(
+            status_code=403, detail="cross-origin proxy request blocked"
+        )
+    if not origin and sec_fetch_site not in {"", "same-origin", "same-site", "none"}:
+        raise HTTPException(status_code=403, detail="untrusted proxy request blocked")
 
 
 async def validate_csrf_request(request: Request) -> None:

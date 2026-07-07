@@ -1,3 +1,7 @@
+from uuid import uuid4
+
+from app.models import Device
+from app.routers.proxy import proxy_rewrite_location, validate_proxy_device_target
 from app.security import (
     generate_totp_secret,
     hash_secret,
@@ -9,6 +13,7 @@ from app.security import (
     verify_secret,
     verify_totp_code,
 )
+from app.security.csrf import should_enforce_csrf
 from app.security.request_context import (
     allowed_hosts,
     client_ip,
@@ -94,3 +99,64 @@ def test_client_ip_only_trusts_forwarded_header_from_trusted_proxy(monkeypatch):
     assert client_ip(direct_request) == "198.51.100.4"
     trusted_proxy_networks.cache_clear()
     allowed_hosts.cache_clear()
+
+
+def test_client_ip_uses_last_untrusted_hop_before_trusted_proxy_chain(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "127.0.0.1/32,10.0.0.0/8")
+    trusted_proxy_networks.cache_clear()
+    allowed_hosts.cache_clear()
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"198.51.100.99, 203.0.113.10, 10.0.0.2")],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+
+    assert client_ip(request) == "203.0.113.10"
+    trusted_proxy_networks.cache_clear()
+    allowed_hosts.cache_clear()
+
+
+def test_auth_microsoft_post_is_now_subject_to_csrf():
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/auth/microsoft",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+
+    assert should_enforce_csrf(request) is True
+
+
+def test_proxy_rewrite_location_rejects_off_origin_redirects():
+    assert (
+        proxy_rewrite_location(
+            "https://evil.example.com/admin",
+            uuid4(),
+            "https://100.96.0.10:443/",
+        )
+        is None
+    )
+
+
+def test_validate_proxy_device_target_rejects_ips_outside_wireguard_overlay():
+    device = Device(
+        company_id=None,
+        hostname="fw-1",
+        wg_public_key="A" * 43 + "=",
+        wg_tunnel_ip="127.0.0.1",
+        device_token_hash="hash",
+    )
+
+    try:
+        validate_proxy_device_target(device)
+    except ValueError as exc:
+        assert "outside HUB_WG_CIDR" in str(exc)
+    else:
+        raise AssertionError("expected invalid proxy target to be rejected")

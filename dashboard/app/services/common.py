@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -39,6 +40,14 @@ async def read_upload_limited(
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def content_disposition_attachment(
+    filename: str, fallback: str = "download.bin"
+) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", filename or "").strip(".-") or fallback
+    encoded = quote(safe)
+    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{encoded}"
 
 
 def get_or_create_integration_settings(db: Session) -> IntegrationSettings:

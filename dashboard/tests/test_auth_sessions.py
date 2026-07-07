@@ -178,6 +178,26 @@ def test_upsert_external_user_marks_auth_provider():
     assert any(isinstance(item, User) for item in db.added)
 
 
+def test_upsert_external_user_rejects_existing_local_account():
+    existing = User(
+        id=uuid4(),
+        email="local-user@example.org",
+        password_hash=hash_secret("StrongPassword123"),
+        role="administrator",
+    )
+    db = FakeDb(user=existing)
+
+    with pytest.raises(RuntimeError, match="must be explicitly linked"):
+        upsert_external_user(
+            cast(Session, db),
+            existing.email,
+            first_name="Local",
+            last_name="User",
+            role="administrator",
+            auth_provider="microsoft",
+        )
+
+
 def test_logout_revokes_session_and_clears_cookie():
     user = User(id=uuid4(), email="admin@example.org", password_hash="hash")
     token = "session-token"

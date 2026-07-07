@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 import uuid
 from http.cookies import SimpleCookie
 from typing import Annotated
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -13,14 +15,17 @@ from ..audit import log_security_warning, write_audit
 from ..database import get_db
 from ..deps import current_user, has_company_access
 from ..models import Device, User
-from ..services.firmware_scheduler import device_webgui_url
+from ..services.firmware_scheduler import device_webgui_url, tunnel_proxy_host
 from ..web import settings
+from ..wireguard import get_validated_hub_wireguard_config
 
 router = APIRouter()
 PROXY_REQUEST_HEADER_BLOCKLIST = {
+    "authorization",
     "connection",
     "content-length",
     "cookie",
+    "forwarded",
     "host",
     "keep-alive",
     "origin",
@@ -31,14 +36,29 @@ PROXY_REQUEST_HEADER_BLOCKLIST = {
     "trailer",
     "transfer-encoding",
     "upgrade",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-forwarded-port",
+    "x-real-ip",
+    "x-original-url",
+    "x-rewrite-url",
+    "x-http-method-override",
+    "x-method-override",
 }
 PROXY_RESPONSE_HEADER_BLOCKLIST = {
+    "connection",
     "content-encoding",
     "content-length",
-    "connection",
+    "keep-alive",
     "location",
+    "proxy-authenticate",
+    "proxy-authorization",
     "set-cookie",
+    "te",
+    "trailer",
     "transfer-encoding",
+    "upgrade",
 }
 
 
@@ -96,15 +116,58 @@ def proxy_downstream_set_cookie_headers(
     return rewritten
 
 
+def validate_proxy_device_target(device: Device) -> str:
+    proxy_host = tunnel_proxy_host(device.wg_tunnel_ip)
+    target_ip = ipaddress.ip_address(proxy_host)
+    validated = get_validated_hub_wireguard_config()
+    if not isinstance(target_ip, ipaddress.IPv4Address):
+        raise ValueError("proxy target must be an IPv4 address")
+    if target_ip not in validated.network:
+        raise ValueError(
+            f"proxy target {target_ip} is outside HUB_WG_CIDR {validated.network}"
+        )
+    if target_ip in {
+        validated.hub_ip,
+        validated.network.network_address,
+        validated.network.broadcast_address,
+    }:
+        raise ValueError(f"proxy target {target_ip} is not a valid device tunnel IP")
+    return str(target_ip)
+
+
 def proxy_rewrite_location(
     location: str, device_id: uuid.UUID, upstream_base: str
-) -> str:
+) -> str | None:
     path_prefix = proxy_path_prefix(device_id)
-    if location.startswith(upstream_base):
-        return path_prefix + "/" + location.removeprefix(upstream_base).lstrip("/")
     if location.startswith("/") and not location.startswith(path_prefix + "/"):
         return path_prefix + location
-    return location
+
+    parsed_location = urlparse(location)
+    if not parsed_location.scheme and not parsed_location.netloc:
+        return location
+
+    parsed_upstream = urlparse(upstream_base)
+    upstream_port = parsed_upstream.port or (
+        443 if parsed_upstream.scheme == "https" else 80
+    )
+    location_port = parsed_location.port or (
+        443 if parsed_location.scheme == "https" else 80
+    )
+    same_origin = (
+        parsed_location.scheme == parsed_upstream.scheme
+        and parsed_location.hostname == parsed_upstream.hostname
+        and location_port == upstream_port
+    )
+    if not same_origin:
+        return None
+
+    rewritten_path = parsed_location.path or "/"
+    rewritten = path_prefix + rewritten_path
+    if parsed_location.query:
+        rewritten += f"?{parsed_location.query}"
+    if parsed_location.fragment:
+        rewritten += f"#{parsed_location.fragment}"
+    return rewritten
 
 
 def proxy_rewrite_absolute_path(match: re.Match[str], path_prefix: str) -> str:
@@ -211,6 +274,7 @@ async def proxy_device(
         )
         db.commit()
     try:
+        validate_proxy_device_target(device)
         url = device_webgui_url(device) + path
         if request.url.query:
             url += "?" + request.url.query
@@ -248,9 +312,15 @@ async def proxy_device(
                     if k.lower() not in PROXY_RESPONSE_HEADER_BLOCKLIST
                 }
                 if location := proxied.headers.get("location"):
-                    response_headers["location"] = proxy_rewrite_location(
+                    rewritten_location = proxy_rewrite_location(
                         location, device_id, device_webgui_url(device)
                     )
+                    if rewritten_location is None:
+                        raise HTTPException(
+                            status_code=502,
+                            detail="The proxied OPNsense UI returned a redirect to an unexpected origin",
+                        )
+                    response_headers["location"] = rewritten_location
                 response = Response(
                     content=proxy_rewrite_body(
                         content, proxied.headers.get("content-type", ""), device_id
@@ -263,6 +333,18 @@ async def proxy_device(
                 ):
                     response.headers.append("set-cookie", cookie)
                 return response
+    except HTTPException as exc:
+        write_audit(
+            db,
+            request,
+            "device.proxy.failed",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
+        log_security_warning("device.proxy.failed", detail=str(exc.detail))
+        raise exc
     except ProxyResponseTooLarge as exc:
         write_audit(
             db,

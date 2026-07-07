@@ -31,6 +31,7 @@ from ..security import hash_secret, random_token, utc_now
 from ..security.rate_limit import apply_rate_limit
 from ..services.common import (
     clean_optional,
+    content_disposition_attachment,
     get_or_create_integration_settings,
     is_valid_email_address,
 )
@@ -872,7 +873,12 @@ def download_device_backup(
     backup = db.get(DeviceBackup, backup_id)
     if not backup or backup.device_id != device.id:
         raise HTTPException(status_code=404)
-    headers = {"Content-Disposition": f'attachment; filename="{backup.filename}"'}
+    headers = {
+        "Content-Disposition": content_disposition_attachment(
+            backup.filename,
+            fallback="firewall-backup.xml",
+        )
+    }
     return Response(
         content=backup.content.encode("utf-8"),
         media_type="application/xml",

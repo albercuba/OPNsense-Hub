@@ -44,6 +44,8 @@ PNG_BYTES = (
 )
 VALID_WG_PUBLIC_KEY = "A" * 43 + "="
 VALID_WG_PUBLIC_KEY_2 = "B" * 43 + "="
+VALID_WG_PRIVATE_KEY = "C" * 43 + "="
+VALID_WG_PRIVATE_KEY_2 = "D" * 43 + "="
 
 
 async def noop():
@@ -232,7 +234,7 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
     (branding_dir / "logo.png").write_bytes(PNG_BYTES)
     wg_key_path = tmp_path / "wireguard-source" / "server.key"
     wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    wg_key_path.write_text("test-private-key\n")
+    wg_key_path.write_text(VALID_WG_PRIVATE_KEY + "\n")
     monkeypatch.setattr(settings, "branding_upload_dir", str(branding_dir))
     monkeypatch.setattr(settings, "wg_server_private_key_path", str(wg_key_path))
 
@@ -271,7 +273,21 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
     assert data["companies"][0]["name"] == "Acme"
     assert data["devices"][0]["hostname"] == "fw-acme-1"
     assert data["device_backups"][0]["filename"] == "config.xml"
-    assert exported_key == "test-private-key"
+    assert exported_key == VALID_WG_PRIVATE_KEY
+
+
+def rewrite_backup_bundle(bundle: bytes, mutate):
+    source = io.BytesIO(bundle)
+    output = io.BytesIO()
+    with (
+        zipfile.ZipFile(source) as archive,
+        zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as rewritten,
+    ):
+        members = {name: archive.read(name) for name in archive.namelist()}
+        mutate(members)
+        for name, content in members.items():
+            rewritten.writestr(name, content)
+    return output.getvalue()
 
 
 def test_backup_verification_reports_structural_integrity(monkeypatch, tmp_path):
@@ -280,7 +296,7 @@ def test_backup_verification_reports_structural_integrity(monkeypatch, tmp_path)
     (branding_dir / "logo.png").write_bytes(PNG_BYTES)
     wg_key_path = tmp_path / "wireguard-verify" / "server.key"
     wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    wg_key_path.write_text("verify-private-key\n")
+    wg_key_path.write_text(VALID_WG_PRIVATE_KEY + "\n")
     monkeypatch.setattr(settings, "branding_upload_dir", str(branding_dir))
     monkeypatch.setattr(settings, "wg_server_private_key_path", str(wg_key_path))
 
@@ -776,6 +792,84 @@ def test_parse_backup_bundle_rejects_archives_with_too_many_members(monkeypatch)
         assert "too many files" in str(getattr(exc, "detail", exc))
 
 
+def test_parse_backup_bundle_rejects_unexpected_archive_members(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-extra")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-extra" / "server.key"),
+    )
+    with sqlite_session(tmp_path, "backup_unexpected_member") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    mutated = rewrite_backup_bundle(
+        bundle,
+        lambda members: members.__setitem__("evil.txt", b"nope"),
+    )
+
+    try:
+        parse_backup_bundle(mutated)
+        assert False, "expected unexpected archive member to be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "unexpected files" in str(getattr(exc, "detail", exc))
+
+
+def test_parse_backup_bundle_rejects_string_boolean_values(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-bool")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-bool" / "server.key"),
+    )
+    with sqlite_session(tmp_path, "backup_invalid_boolean") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    def mutate(members):
+        payload = json.loads(members["data.json"])
+        payload["users"][0]["mfa_enabled"] = "false"
+        members["data.json"] = json.dumps(payload).encode("utf-8")
+
+    mutated = rewrite_backup_bundle(bundle, mutate)
+
+    try:
+        parse_backup_bundle(mutated)
+        assert False, "expected invalid boolean value to be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "invalid boolean" in str(getattr(exc, "detail", exc)).lower()
+
+
+def test_download_device_backup_sanitizes_content_disposition_filename(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "download_backup_filename") as session:
+        admin = seed_backup_source(session)
+        device = session.scalars(select(Device)).first()
+        backup = session.scalars(select(DeviceBackup)).first()
+        assert device is not None
+        assert backup is not None
+        backup.filename = 'bad";\r\nX-Test: injected.xml'
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.get(f"/devices/{device.id}/backups/{backup.id}/download")
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    disposition = response.headers["content-disposition"]
+    assert disposition.startswith("attachment; filename=")
+    assert "\r" not in disposition
+    assert "\n" not in disposition
+    assert '";\r\n' not in disposition
+
+
 def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "admin_manage_user_mfa") as session:
         admin = seed_backup_source(session)
@@ -1015,7 +1109,7 @@ def test_backup_restore_shows_error_when_wireguard_reinit_fails(monkeypatch, tmp
     (source_branding_dir / "logo.png").write_bytes(PNG_BYTES)
     source_wg_key_path = tmp_path / "wireguard-source-restore-fail" / "server.key"
     source_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    source_wg_key_path.write_text("restored-private-key\n")
+    source_wg_key_path.write_text(VALID_WG_PRIVATE_KEY + "\n")
 
     with sqlite_session(tmp_path, "source_restore_fail") as source_session:
         seed_backup_source(source_session)
@@ -1029,7 +1123,7 @@ def test_backup_restore_shows_error_when_wireguard_reinit_fails(monkeypatch, tmp
     target_branding_dir.mkdir(parents=True, exist_ok=True)
     target_wg_key_path = tmp_path / "wireguard-target-restore-fail" / "server.key"
     target_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    target_wg_key_path.write_text("old-private-key\n")
+    target_wg_key_path.write_text(VALID_WG_PRIVATE_KEY_2 + "\n")
     monkeypatch.setattr(settings, "branding_upload_dir", str(target_branding_dir))
     monkeypatch.setattr(settings, "wg_server_private_key_path", str(target_wg_key_path))
     monkeypatch.setattr(
@@ -1063,7 +1157,7 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     (source_branding_dir / "logo.png").write_bytes(PNG_BYTES)
     source_wg_key_path = tmp_path / "wireguard-source-restore" / "server.key"
     source_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    source_wg_key_path.write_text("restored-private-key\n")
+    source_wg_key_path.write_text(VALID_WG_PRIVATE_KEY + "\n")
 
     with sqlite_session(tmp_path, "source_restore") as source_session:
         seed_backup_source(source_session)
@@ -1078,7 +1172,7 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     (target_branding_dir / "logo.png").write_bytes(PNG_BYTES)
     target_wg_key_path = tmp_path / "wireguard-target-restore" / "server.key"
     target_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
-    target_wg_key_path.write_text("old-private-key\n")
+    target_wg_key_path.write_text(VALID_WG_PRIVATE_KEY_2 + "\n")
     monkeypatch.setattr(settings, "branding_upload_dir", str(target_branding_dir))
     monkeypatch.setattr(settings, "wg_server_private_key_path", str(target_wg_key_path))
 
@@ -1120,7 +1214,7 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     assert restored_settings is not None
     assert restored_settings.smtp_host == "smtp.example.com"
     assert (target_branding_dir / "logo.png").read_bytes() == PNG_BYTES
-    assert target_wg_key_path.read_text().strip() == "restored-private-key"
+    assert target_wg_key_path.read_text().strip() == VALID_WG_PRIVATE_KEY
 
 
 def test_email_settings_save_updates_transport_without_touching_legacy_rules(

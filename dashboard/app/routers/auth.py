@@ -608,14 +608,26 @@ def microsoft_callback(
         response.delete_cookie("opnhub_ms_state")
         response.delete_cookie("opnhub_ms_verifier")
         return response
-    user = upsert_external_user(
-        db,
-        email,
-        first_name=first_name,
-        last_name=last_name,
-        role=role,
-        auth_provider="microsoft",
-    )
+    try:
+        user = upsert_external_user(
+            db,
+            email,
+            first_name=first_name,
+            last_name=last_name,
+            role=role,
+            auth_provider="microsoft",
+        )
+    except RuntimeError as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail=str(exc),
+        )
+        response = render_login_template(db, request, error=str(exc), status_code=403)
+        response.delete_cookie("opnhub_ms_state")
+        response.delete_cookie("opnhub_ms_verifier")
+        return response
     if not admin_login_ip_allowed(integration_settings, request, user):
         audit_failure(
             db,
@@ -688,14 +700,23 @@ def microsoft_login(
             status_code=403,
             detail="Microsoft account is not mapped to an allowed Entra group",
         )
-    user = upsert_external_user(
-        db,
-        email,
-        first_name=first_name,
-        last_name=last_name,
-        role=role,
-        auth_provider="microsoft",
-    )
+    try:
+        user = upsert_external_user(
+            db,
+            email,
+            first_name=first_name,
+            last_name=last_name,
+            role=role,
+            auth_provider="microsoft",
+        )
+    except RuntimeError as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.microsoft.failed",
+            detail=str(exc),
+        )
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     if not admin_login_ip_allowed(integration_settings, request, user):
         audit_failure(
             db,
@@ -762,14 +783,23 @@ def local_ad_login(
         return render_login_template(db, request, error=str(exc), status_code=401)
     existing = db.scalar(select(User).where(User.email == resolved_email.lower()))
     role = existing.role if existing else "user"
-    user = upsert_external_user(
-        db,
-        resolved_email,
-        first_name=first_name,
-        last_name=last_name,
-        role=role,
-        auth_provider="local_ad",
-    )
+    try:
+        user = upsert_external_user(
+            db,
+            resolved_email,
+            first_name=first_name,
+            last_name=last_name,
+            role=role,
+            auth_provider="local_ad",
+        )
+    except RuntimeError as exc:
+        audit_failure(
+            db,
+            request,
+            "auth.local_ad.failed",
+            detail=str(exc),
+        )
+        return render_login_template(db, request, error=str(exc), status_code=403)
     if not admin_login_ip_allowed(integration_settings, request, user):
         audit_failure(
             db,
