@@ -546,15 +546,6 @@ textarea:focus {
 .icon-button:hover {
     color: var(--accent);
 }
-.danger-text {
-    background: var(--danger);
-    color: #fff;
-    border: 1px solid var(--danger);
-}
-.danger-text:hover {
-    background: color-mix(in srgb, var(--danger) 85%, black);
-    border-color: color-mix(in srgb, var(--danger) 85%, black);
-}
 .text-muted {
     color: var(--muted);
 }
