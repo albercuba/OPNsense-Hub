@@ -102,12 +102,96 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  const closeConfirmationDialog = () => {
+    document.querySelector("[data-confirm-dialog]")?.remove();
+  };
+
+  const showConfirmationDialog = ({
+    title,
+    message,
+    confirmLabel = "Delete",
+    cancelLabel = "Cancel",
+    onConfirm,
+  }) => {
+    closeConfirmationDialog();
+    const dialog = document.createElement("div");
+    dialog.className = "modal-backdrop";
+    dialog.dataset.confirmDialog = "true";
+    dialog.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+        <button class="modal-close" type="button" data-close-confirm-dialog aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        <p class="eyebrow">Confirmation</p>
+        <h2 id="confirm-dialog-title">${escapeHtml(title || "Confirm action")}</h2>
+        <p class="muted">${escapeHtml(message || "Are you sure you want to continue?")}</p>
+        <div class="login-actions">
+          <button class="button secondary" type="button" data-cancel-confirm-dialog>${escapeHtml(cancelLabel)}</button>
+          <button class="button danger-text" type="button" data-confirm-dialog-submit>${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+    const close = () => closeConfirmationDialog();
+    dialog.addEventListener("click", (event) => {
+      if (
+        event.target === dialog ||
+        event.target.closest("[data-close-confirm-dialog]") ||
+        event.target.closest("[data-cancel-confirm-dialog]")
+      ) {
+        close();
+      }
+    });
+    dialog
+      .querySelector("[data-confirm-dialog-submit]")
+      ?.addEventListener("click", () => {
+        close();
+        onConfirm?.();
+      });
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape") {
+          close();
+        }
+      },
+      { once: true },
+    );
+    document.body.appendChild(dialog);
+    dialog.querySelector("[data-confirm-dialog-submit]")?.focus();
+  };
+
   document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
     form.addEventListener("submit", (event) => {
-      const message = form.dataset.confirmMessage;
-      if (message && !window.confirm(message)) {
-        event.preventDefault();
+      if (form.dataset.confirmedSubmit === "true") {
+        delete form.dataset.confirmedSubmit;
+        return;
       }
+      const message = form.dataset.confirmMessage;
+      if (!message) {
+        return;
+      }
+      event.preventDefault();
+      const submitter =
+        event.submitter ||
+        form.querySelector("button[type='submit'], input[type='submit']");
+      const actionLabel =
+        submitter?.getAttribute("aria-label") ||
+        submitter?.getAttribute("title") ||
+        "Confirm action";
+      const confirmLabel = /delete|remove|revoke/i.test(actionLabel)
+        ? actionLabel
+        : "Confirm";
+      showConfirmationDialog({
+        title: actionLabel,
+        message,
+        confirmLabel,
+        onConfirm: () => {
+          form.dataset.confirmedSubmit = "true";
+          if (submitter instanceof HTMLElement) {
+            form.requestSubmit(submitter);
+          } else {
+            form.requestSubmit();
+          }
+        },
+      });
     });
   });
 
