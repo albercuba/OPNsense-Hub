@@ -918,6 +918,7 @@ th {
 }
 .user-filter-form {
     align-items: end;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 .user-filter-empty {
     margin: 0 0 0.75rem;
