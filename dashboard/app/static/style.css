@@ -1186,7 +1186,21 @@ tr[data-user-hidden="true"] {
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.health-detail-head > .muted {
+    flex: 1 1 120px;
+    min-width: 0;
+}
+
+.health-detail-head .health-status {
+    flex: 0 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .health-status.health-status-success {
