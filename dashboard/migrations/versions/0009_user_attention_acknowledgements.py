@@ -1,6 +1,6 @@
 """Add user dashboard attention acknowledgements
 
-Revision ID: 0009_user_attention_acknowledgements
+Revision ID: 0009_attention_acks
 Revises: 0008_device_email_rule_overrides
 Create Date: 2026-07-07 00:00:05
 """
@@ -11,7 +11,7 @@ from importlib import import_module
 
 op = import_module("alembic.op")
 
-revision = "0009_user_attention_acknowledgements"
+revision = "0009_attention_acks"
 down_revision = "0008_device_email_rule_overrides"
 branch_labels = None
 depends_on = None
