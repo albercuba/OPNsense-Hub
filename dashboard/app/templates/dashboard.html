@@ -452,7 +452,7 @@
                     <th>Firewall</th>
                     <th>Company</th>
                     <th>Description</th>
-                    <th>Suggested action</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -469,11 +469,44 @@
                     <td>{{ item.company }}</td>
                     <td>{{ item.description }}</td>
                     <td>
-                        <a
-                            class="button button-outline button-small"
-                            href="{{ item.link }}"
-                            >{{ item.action }}</a
-                        >
+                        <div class="inline-field-group">
+                            <a
+                                class="button button-outline button-small"
+                                href="{{ item.link }}"
+                                >{{ item.action }}</a
+                            >
+                            <form
+                                method="post"
+                                action="/dashboard/attention/acknowledge"
+                            >
+                                <input
+                                    type="hidden"
+                                    name="csrf_token"
+                                    value="{{ csrf_token }}"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="attention_key"
+                                    value="{{ item.key }}"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="company_id"
+                                    value="{{ filters.company_id }}"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="status"
+                                    value="{{ filters.status }}"
+                                />
+                                <button
+                                    class="button button-small"
+                                    type="submit"
+                                >
+                                    Acknowledge
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 {% else %}

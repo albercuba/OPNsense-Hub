@@ -198,6 +198,26 @@ class UserDashboardFilter(Base):
     company: Mapped[Company | None] = relationship()
 
 
+class UserAttentionAcknowledgement(Base):
+    __tablename__ = "user_attention_acknowledgements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "attention_key", name="uq_user_attention_ack"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    attention_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+
+    user: Mapped[User] = relationship()
+
+
 class EnrollmentCode(Base):
     __tablename__ = "enrollment_codes"
 

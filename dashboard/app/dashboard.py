@@ -16,6 +16,7 @@ from .models import (
     DeviceEvent,
     IntegrationSettings,
     User,
+    UserAttentionAcknowledgement,
     UserDashboardFilter,
 )
 from .rbac import is_global_admin
@@ -202,7 +203,27 @@ def device_supports_email_notifications() -> bool:
     return hasattr(Device, "email_notifications_enabled")
 
 
+def _attention_key_part(value: object | None) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, datetime):
+        normalized = (
+            value.astimezone(timezone.utc)
+            if value.tzinfo
+            else value.replace(tzinfo=timezone.utc)
+        )
+        return normalized.isoformat()
+    return str(value)
+
+
+def attention_key(*parts: object | None) -> str:
+    return ":".join(_attention_key_part(part) for part in parts)
+
+
 def build_attention_item(
+    key: str,
     severity: str,
     category: str,
     firewall: str | None,
@@ -212,6 +233,7 @@ def build_attention_item(
     link: str,
 ) -> dict[str, str]:
     return {
+        "key": key,
         "severity": severity,
         "category": category,
         "firewall": firewall or "-",
@@ -305,6 +327,16 @@ def dashboard_revision_token(
     )
     if latest_saved_filter is not None:
         timestamps.append(latest_saved_filter)
+    latest_attention_acknowledgement = _timestamp_value(
+        db.scalar(
+            select(UserAttentionAcknowledgement.created_at)
+            .where(UserAttentionAcknowledgement.user_id == user.id)
+            .order_by(UserAttentionAcknowledgement.created_at.desc())
+            .limit(1)
+        )
+    )
+    if latest_attention_acknowledgement is not None:
+        timestamps.append(latest_attention_acknowledgement)
     if not timestamps:
         return "0"
     latest = max(
@@ -504,6 +536,14 @@ def build_dashboard_context(
             .order_by(DeviceEvent.created_at.desc())
         )
 
+    acknowledged_attention_keys = set(
+        db.scalars(
+            select(UserAttentionAcknowledgement.attention_key).where(
+                UserAttentionAcknowledgement.user_id == user.id
+            )
+        ).all()
+    )
+
     device_lookup = {device.id: device for device in devices}
     recent_events = []
     for event in events:
@@ -554,6 +594,7 @@ def build_dashboard_context(
         status = normalized_status(device)
         attention_items.append(
             build_attention_item(
+                attention_key("health", device.id, status),
                 "critical" if status == "critical" else "warning",
                 "Health",
                 device.hostname,
@@ -568,6 +609,12 @@ def build_dashboard_context(
             continue
         attention_items.append(
             build_attention_item(
+                attention_key(
+                    "backup",
+                    row["device"].id,
+                    row["backup_status"]["label"],
+                    row["device"].backup_last_uploaded_at,
+                ),
                 "warning" if row["backup_status"]["label"] == "Overdue" else "info",
                 "Backups",
                 row["device"].hostname,
@@ -589,6 +636,13 @@ def build_dashboard_context(
             severity = "info"
         attention_items.append(
             build_attention_item(
+                attention_key(
+                    "firmware",
+                    row["device"].id,
+                    row["device"].firmware_status,
+                    row["device"].firmware_available_version,
+                    row["device"].firmware_reboot_required,
+                ),
                 severity,
                 "Firmware",
                 row["device"].hostname,
@@ -602,6 +656,12 @@ def build_dashboard_context(
         days_left = row["license_status"]["days_left"]
         attention_items.append(
             build_attention_item(
+                attention_key(
+                    "license",
+                    row["device"].id,
+                    row["device"].license_expires_at,
+                    row["license_status"]["expired"],
+                ),
                 "critical" if row["license_status"]["expired"] else "warning",
                 "License",
                 row["device"].hostname,
@@ -617,6 +677,7 @@ def build_dashboard_context(
         if device.last_seen_at is None:
             attention_items.append(
                 build_attention_item(
+                    attention_key("enrollment", device.id, "never-seen"),
                     "info",
                     "Enrollment",
                     device.hostname,
@@ -638,6 +699,11 @@ def build_dashboard_context(
         if enabled_notification_devices and not email_ready:
             attention_items.append(
                 build_attention_item(
+                    attention_key(
+                        "notifications",
+                        "hub-email-settings-missing",
+                        len(enabled_notification_devices),
+                    ),
                     "warning",
                     "Notifications",
                     None,
@@ -648,8 +714,15 @@ def build_dashboard_context(
                 )
             )
     if event_failures_count:
+        latest_failure_created_at = all_notification_failures[0].created_at
         attention_items.append(
             build_attention_item(
+                attention_key(
+                    "notifications",
+                    "email-failures",
+                    event_failures_count,
+                    latest_failure_created_at,
+                ),
                 "warning",
                 "Notifications",
                 None,
@@ -659,6 +732,11 @@ def build_dashboard_context(
                 "#dashboard-recent-events-card",
             )
         )
+    attention_items = [
+        item
+        for item in attention_items
+        if item["key"] not in acknowledged_attention_keys
+    ]
     attention_items.sort(
         key=lambda item: (
             ATTENTION_SEVERITY_ORDER[item["severity"]],

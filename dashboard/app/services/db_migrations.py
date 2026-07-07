@@ -158,6 +158,15 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created_at ON audit_logs(action, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_device_created_at ON audit_logs(device_id, created_at DESC)",
+            """
+            CREATE TABLE IF NOT EXISTS user_attention_acknowledgements (
+              id uuid PRIMARY KEY,
+              user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              attention_key text NOT NULL,
+              created_at timestamptz NOT NULL DEFAULT now()
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_attention_ack_unique ON user_attention_acknowledgements(user_id, attention_key)",
         ]
         for statement in statements:
             conn.execute(text(statement))

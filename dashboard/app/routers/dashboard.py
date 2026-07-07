@@ -21,7 +21,14 @@ from ..dashboard import (
 )
 from ..database import get_db
 from ..deps import current_user, has_company_access, require_admin
-from ..models import AuditLog, Company, Device, User, UserDashboardFilter
+from ..models import (
+    AuditLog,
+    Company,
+    Device,
+    User,
+    UserAttentionAcknowledgement,
+    UserDashboardFilter,
+)
 from ..security import utc_now
 from ..services.firmware_scheduler import device_license_label
 from ..web import render_template
@@ -34,6 +41,7 @@ AUDIT_ACTION_LABELS = {
     "device.delete_revoked": "Firewall removed",
     "device.view": "Firewall viewed",
     "device.proxy.open": "Firewall UI opened",
+    "dashboard.attention.acknowledge": "Dashboard attention acknowledged",
 }
 
 
@@ -92,6 +100,8 @@ def dashboard_page(
                 if result == "filter-deleted"
                 else {"message": "Dashboard export ready.", "level": "info"}
                 if result == "devices-exported"
+                else {"message": "Attention item acknowledged.", "level": "success"}
+                if result == "attention-acknowledged"
                 else None
             ),
         }
@@ -184,6 +194,46 @@ def delete_dashboard_filter(
             company_id=company_id,
             status=status,
             result="filter-deleted",
+        ),
+        status_code=303,
+    )
+
+
+@router.post("/dashboard/attention/acknowledge")
+def acknowledge_dashboard_attention(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    attention_key: str = Form(...),
+    company_id: str = Form(""),
+    status: str = Form(""),
+):
+    normalized_key = attention_key.strip()[:255]
+    if not normalized_key:
+        raise HTTPException(status_code=400, detail="attention key is required")
+    existing = db.scalar(
+        select(UserAttentionAcknowledgement)
+        .where(
+            UserAttentionAcknowledgement.user_id == user.id,
+            UserAttentionAcknowledgement.attention_key == normalized_key,
+        )
+        .limit(1)
+    )
+    if existing is None:
+        db.add(
+            UserAttentionAcknowledgement(
+                user_id=user.id,
+                attention_key=normalized_key,
+            )
+        )
+    write_audit(db, request, "dashboard.attention.acknowledge", user=user)
+    db.commit()
+    return RedirectResponse(
+        _query_url(
+            "/dashboard",
+            company_id=company_id.strip() or None,
+            status=status.strip().lower() or None,
+            result="attention-acknowledged",
         ),
         status_code=303,
     )

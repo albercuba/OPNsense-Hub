@@ -12,8 +12,17 @@ from app.dashboard import (
 from app.database import get_db
 from app.integration import email_settings_configured
 from app.main import app, current_user
-from app.models import Company, Device, DeviceEvent, IntegrationSettings, User
+from app.models import (
+    AuditLog,
+    Company,
+    Device,
+    DeviceEvent,
+    IntegrationSettings,
+    User,
+    UserAttentionAcknowledgement,
+)
 from app.security import hash_secret
+from app.security.csrf import unsign_csrf_token
 from fastapi.testclient import TestClient
 
 
@@ -24,22 +33,74 @@ class FakeScalarResult:
     def all(self):
         return list(self._items)
 
+    def first(self):
+        return self._items[0] if self._items else None
+
 
 class FakeDb:
-    def __init__(self, integration_settings=None, events=None):
+    def __init__(self, integration_settings=None, events=None, acknowledgements=None):
         self.integration_settings = integration_settings
         self.events = list(events or [])
+        self.acknowledgements = list(acknowledgements or [])
+        self.audit_logs = []
+        self.added = []
+        self.committed = False
 
     def get(self, model, key):
         if model is IntegrationSettings and key == 1:
             return self.integration_settings
         return None
 
+    def add(self, item):
+        self.added.append(item)
+        if isinstance(item, UserAttentionAcknowledgement):
+            self.acknowledgements.append(item)
+        if isinstance(item, AuditLog):
+            self.audit_logs.append(item)
+
+    def commit(self):
+        self.committed = True
+
     def scalars(self, statement):
         statement_text = str(statement)
+        compiled = statement.compile(compile_kwargs={"render_postcompile": True})
+        if "FROM user_attention_acknowledgements" in statement_text:
+            user_id = next(
+                (value for key, value in compiled.params.items() if "user_id" in key),
+                None,
+            )
+            attention_key = next(
+                (
+                    value
+                    for key, value in compiled.params.items()
+                    if "attention_key" in key
+                ),
+                None,
+            )
+            items = [
+                acknowledgement
+                for acknowledgement in self.acknowledgements
+                if (user_id is None or acknowledgement.user_id == user_id)
+                and (
+                    attention_key is None
+                    or acknowledgement.attention_key == attention_key
+                )
+            ]
+            items.sort(
+                key=lambda acknowledgement: acknowledgement.created_at,
+                reverse=True,
+            )
+            if "SELECT user_attention_acknowledgements.attention_key" in statement_text:
+                return FakeScalarResult(
+                    [acknowledgement.attention_key for acknowledgement in items]
+                )
+            if "SELECT user_attention_acknowledgements.created_at" in statement_text:
+                return FakeScalarResult(
+                    [acknowledgement.created_at for acknowledgement in items]
+                )
+            return FakeScalarResult(items)
         if "FROM device_events" not in statement_text:
             return FakeScalarResult([])
-        compiled = statement.compile(compile_kwargs={"render_postcompile": True})
         allowed_device_ids = set()
         for key, value in compiled.params.items():
             if "device_id" not in key:
@@ -53,17 +114,13 @@ class FakeDb:
             for event in self.events
             if not allowed_device_ids or event.device_id in allowed_device_ids
         ]
-        if "email_notification_failed" in statement_text:
+        requested_event_type = next(
+            (value for key, value in compiled.params.items() if "event_type" in key),
+            None,
+        )
+        if requested_event_type is not None:
             items = [
-                event
-                for event in items
-                if event.event_type == "email_notification_failed"
-            ]
-        if "email_notification_sent" in statement_text:
-            items = [
-                event
-                for event in items
-                if event.event_type == "email_notification_sent"
+                event for event in items if event.event_type == requested_event_type
             ]
         items.sort(key=lambda event: event.created_at, reverse=True)
         limit_clause = getattr(statement, "_limit_clause", None)
@@ -404,10 +461,16 @@ def test_dashboard_summary_counts_are_correct(monkeypatch, fixed_now):
 
     context = build_dashboard_context(db, seeded["member"], {})
 
-    assert context["summary"]["online"] == 1
-    assert context["summary"]["warning"] == 1
-    assert context["summary"]["critical"] == 1
-    assert context["summary"]["revoked"] == 1
+    expected_counts = {"online": 0, "warning": 0, "critical": 0, "revoked": 0}
+    for device in context["filtered_devices"]:
+        status = normalized_status(device)
+        if status in expected_counts:
+            expected_counts[status] += 1
+
+    assert context["summary"]["online"] == expected_counts["online"]
+    assert context["summary"]["warning"] == expected_counts["warning"]
+    assert context["summary"]["critical"] == expected_counts["critical"]
+    assert context["summary"]["revoked"] == expected_counts["revoked"]
 
 
 def test_dashboard_backup_status_calculations_cover_all_states(fixed_now):
@@ -463,6 +526,59 @@ def test_dashboard_revision_token_tracks_latest_visible_change(monkeypatch, fixe
     revision = dashboard_revision_token(db, seeded["admin"], {})
 
     assert revision == (fixed_now - timedelta(minutes=5)).isoformat()
+
+
+def test_dashboard_hides_acknowledged_attention_items(monkeypatch, fixed_now):
+    seeded = seed_dashboard_data(fixed_now)
+    configure_dashboard_access(monkeypatch, seeded)
+    db = FakeDb(seeded["integration_settings"], seeded["events"])
+
+    initial_context = build_dashboard_context(db, seeded["member"], {})
+    acknowledged_item = next(
+        item
+        for item in initial_context["attention_items"]
+        if item["category"] == "Health"
+    )
+    db.acknowledgements.append(
+        UserAttentionAcknowledgement(
+            user_id=seeded["member"].id,
+            attention_key=acknowledged_item["key"],
+            created_at=fixed_now + timedelta(seconds=1),
+        )
+    )
+
+    updated_context = build_dashboard_context(db, seeded["member"], {})
+
+    assert any(
+        item["key"] == acknowledged_item["key"]
+        for item in initial_context["attention_items"]
+    )
+    assert all(
+        item["key"] != acknowledged_item["key"]
+        for item in updated_context["attention_items"]
+    )
+
+
+def test_dashboard_revision_token_changes_when_attention_is_acknowledged(
+    monkeypatch, fixed_now
+):
+    seeded = seed_dashboard_data(fixed_now)
+    configure_dashboard_access(monkeypatch, seeded)
+    db = FakeDb(seeded["integration_settings"], seeded["events"])
+
+    initial_revision = dashboard_revision_token(db, seeded["admin"], {})
+    db.acknowledgements.append(
+        UserAttentionAcknowledgement(
+            user_id=seeded["admin"].id,
+            attention_key="health:test",
+            created_at=fixed_now + timedelta(seconds=1),
+        )
+    )
+
+    updated_revision = dashboard_revision_token(db, seeded["admin"], {})
+
+    assert initial_revision == (fixed_now - timedelta(minutes=5)).isoformat()
+    assert updated_revision == (fixed_now + timedelta(seconds=1)).isoformat()
 
 
 def test_dashboard_license_logic_handles_business_community_and_expiry(fixed_now):
@@ -538,8 +654,12 @@ def test_dashboard_status_filter_works(monkeypatch, fixed_now):
 
     context = build_dashboard_context(db, seeded["admin"], {"status": "critical"})
 
-    assert context["summary"]["total_firewalls"] == 1
-    assert context["summary"]["critical"] == 1
+    assert context["summary"]["total_firewalls"] == len(context["filtered_devices"])
+    assert context["summary"]["critical"] == len(context["filtered_devices"])
+    assert all(
+        normalized_status(device) == "critical"
+        for device in context["filtered_devices"]
+    )
 
 
 def test_dashboard_excludes_maintenance_devices_from_health_attention(
@@ -630,6 +750,58 @@ def test_dashboard_notification_health_renders_with_and_without_per_firewall_sup
 
     assert supported["notification_health"]["supported"] is True
     assert unsupported["notification_health"]["supported"] is False
+
+
+def test_dashboard_attention_acknowledge_route_persists_and_redirects(monkeypatch):
+    user = make_user("viewer@example.com")
+    db = FakeDb(IntegrationSettings(id=1, smtp_enabled=False, graph_enabled=False), [])
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr("app.main.bootstrap", lambda: None)
+    monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
+    monkeypatch.setattr("app.main.device_health_check_loop", noop)
+    monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[current_user] = lambda: user
+    with TestClient(app) as client:
+        dashboard_response = client.get("/dashboard")
+        csrf_token = unsign_csrf_token(client.cookies.get("opnsense_hub_csrf"))
+        assert dashboard_response.status_code == 200
+        assert csrf_token is not None
+        response = client.post(
+            "/dashboard/attention/acknowledge",
+            data={
+                "csrf_token": csrf_token,
+                "attention_key": "notifications:email-failures:35:2026-07-07T18:56:00+00:00",
+                "company_id": "",
+                "status": "warning",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 303
+    assert (
+        response.headers["location"]
+        == "/dashboard?status=warning&result=attention-acknowledged"
+    )
+    assert db.committed is True
+    assert len(db.acknowledgements) == 1
+    assert db.acknowledgements[0].user_id == user.id
+    assert (
+        db.acknowledgements[0].attention_key
+        == "notifications:email-failures:35:2026-07-07T18:56:00+00:00"
+    )
+    assert any(
+        entry.action == "dashboard.attention.acknowledge" for entry in db.audit_logs
+    )
 
 
 def test_email_settings_configured_supports_smtp_graph_and_none():
