@@ -1,5 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const themeToggle = document.querySelector("#theme-toggle");
+  const densityButtons = Array.from(
+    document.querySelectorAll("[data-density-set]"),
+  );
   const root = document.documentElement;
   const storedTheme = window.localStorage.getItem("opnsense-hub-theme");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -9,6 +12,10 @@ document.addEventListener("DOMContentLoaded", () => {
       : prefersDark
         ? "dark"
         : "light";
+  const initialDensity =
+    window.localStorage.getItem("opnsense-hub-density") === "compact"
+      ? "compact"
+      : "comfortable";
 
   const applyTheme = (theme, persist = true) => {
     root.dataset.theme = theme;
@@ -21,9 +28,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const applyDensity = (density, persist = true) => {
+    const nextDensity = density === "compact" ? "compact" : "comfortable";
+    root.dataset.density = nextDensity;
+    densityButtons.forEach((button) => {
+      const active = button.dataset.densitySet === nextDensity;
+      button.setAttribute("aria-pressed", String(active));
+      button.classList.toggle("is-active", active);
+    });
+    if (persist) {
+      window.localStorage.setItem("opnsense-hub-density", nextDensity);
+    }
+  };
+
   applyTheme(initialTheme, false);
+  applyDensity(initialDensity, false);
   themeToggle?.addEventListener("change", () => {
     applyTheme(themeToggle.checked ? "dark" : "light");
+  });
+  densityButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      applyDensity(button.dataset.densitySet);
+    });
   });
 
   document.querySelectorAll("[data-toast]").forEach((toast) => {

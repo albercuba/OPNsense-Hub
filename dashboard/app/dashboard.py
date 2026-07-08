@@ -27,11 +27,11 @@ DASHBOARD_EVENT_LIMIT = 25
 HEALTH_LIST_LIMIT = 5
 ATTENTION_SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 STATUS_COLORS = {
-    "online": "#1f9d63",
-    "warning": "#ff8a1f",
-    "critical": "#d64545",
-    "revoked": "#6c7a8e",
-    "other": "#2f7de1",
+    "online": "var(--chart-success)",
+    "warning": "var(--chart-warning)",
+    "critical": "var(--chart-danger)",
+    "revoked": "var(--chart-neutral)",
+    "other": "var(--chart-info)",
 }
 settings = get_settings()
 

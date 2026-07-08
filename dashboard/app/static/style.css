@@ -19,6 +19,24 @@
     --ok: #1f9d63;
     --info: #2f7de1;
     --warning: #ff8a1f;
+    --chart-success: var(--ok);
+    --chart-warning: var(--warning);
+    --chart-danger: var(--danger);
+    --chart-info: var(--info);
+    --chart-neutral: #6c7a8e;
+    --surface-hover: #f3f8ff;
+    --surface-hover-strong: #e9f2ff;
+    --surface-subtle: #f5f8fc;
+    --focus-ring: rgba(47, 125, 225, 0.26);
+    --motion-fast: 0.16s;
+    --motion-normal: 0.2s;
+    --motion-slow: 0.32s;
+    --density-card-padding: 1rem 1.1rem;
+    --density-card-gap: 1rem;
+    --density-table-cell-padding: 0.7rem 0.8rem;
+    --density-summary-gap: 0.9rem;
+    --density-shell-margin: 0.75rem;
+    --density-summary-number: 30px;
     --status-bg: #eef3f9;
     --status-ok-bg: #e9f8f0;
     --status-warning-bg: #fff8e6;
@@ -63,6 +81,15 @@
     --ok: #56d492;
     --info: #7db7ff;
     --warning: #ffb04d;
+    --chart-success: #56d492;
+    --chart-warning: #ffb04d;
+    --chart-danger: #ff7a7a;
+    --chart-info: #7db7ff;
+    --chart-neutral: #8ea3bf;
+    --surface-hover: #1a2b43;
+    --surface-hover-strong: #223754;
+    --surface-subtle: #132033;
+    --focus-ring: rgba(104, 168, 255, 0.34);
     --status-bg: #1a2739;
     --status-ok-bg: #143326;
     --status-warning-bg: #3a2c13;
@@ -103,8 +130,8 @@ body {
         var(--bg) 42%
     );
     transition:
-        background 0.2s ease,
-        color 0.2s ease;
+        background var(--motion-normal) ease,
+        color var(--motion-normal) ease;
 }
 
 :root[data-theme="dark"] body {
@@ -179,6 +206,49 @@ a {
     display: inline-flex;
     align-items: center;
 }
+.topbar-display-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+.density-toggle-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.18rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel-elevated);
+}
+.density-toggle-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    padding: 0.42rem 0.72rem;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        color var(--motion-fast) ease,
+        background-color var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease;
+}
+.density-toggle-button:hover,
+.density-toggle-button:focus-visible {
+    color: var(--info);
+    background: var(--surface-hover);
+}
+.density-toggle-button.is-active,
+.density-toggle-button[aria-pressed="true"] {
+    color: var(--info);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--button-secondary-border);
+}
 .theme-toggle-input {
     position: absolute;
     opacity: 0;
@@ -205,15 +275,15 @@ a {
     background: var(--toggle-day-bg);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     transition:
-        background 500ms ease-in-out,
-        border-color 200ms ease,
-        box-shadow 200ms ease;
+        background var(--motion-slow) ease-in-out,
+        border-color var(--motion-normal) ease,
+        box-shadow var(--motion-normal) ease;
 }
 .moon {
     position: absolute;
     display: block;
     border-radius: 50%;
-    transition: all 400ms ease-in-out;
+    transition: all var(--motion-slow) ease-in-out;
     top: 0.44rem;
     left: 2.02rem;
     transform: rotate(0deg);
@@ -254,7 +324,7 @@ a {
         rgba(255, 255, 255, 0.1) -0.12rem 1.1rem 0 -0.52rem;
 }
 .theme-toggle-input:focus-visible + .tdnn {
-    outline: 2px solid rgba(47, 125, 225, 0.28);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
 }
 
@@ -316,7 +386,7 @@ a {
 .side-menu-link.active,
 .side-menu-sublink.active {
     color: var(--accent);
-    background: var(--accent-soft);
+    background: var(--surface-hover);
 }
 .side-menu-group {
     display: grid;
@@ -363,8 +433,8 @@ a {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 1.25rem;
-    margin-bottom: 1rem;
+    padding: var(--density-card-padding);
+    margin-bottom: var(--density-card-gap);
 }
 .grid {
     display: grid;
@@ -487,7 +557,7 @@ select {
 input:focus,
 select:focus,
 textarea:focus {
-    outline: 2px solid rgba(47, 125, 225, 0.22);
+    outline: 2px solid var(--focus-ring);
     border-color: var(--accent);
 }
 .button {
@@ -1487,6 +1557,53 @@ tr[data-user-hidden="true"] {
     border-color: var(--button-outline-hover-border);
 }
 
+:root[data-density="compact"] {
+    --density-card-padding: 0.78rem 0.88rem;
+    --density-card-gap: 0.7rem;
+    --density-table-cell-padding: 0.5rem 0.6rem;
+    --density-summary-gap: 0.7rem;
+    --density-shell-margin: 0.55rem;
+    --density-summary-number: 26px;
+}
+
+:root[data-density="compact"] .shell {
+    margin: var(--density-shell-margin) auto;
+}
+
+:root[data-density="compact"] .dashboard-section-spaced {
+    margin-top: 1rem;
+}
+
+:root[data-density="compact"] .dashboard-top-grid,
+:root[data-density="compact"] .dashboard-chart-layout,
+:root[data-density="compact"] .dashboard-notification-grid,
+:root[data-density="compact"] .dashboard-filters-card,
+:root[data-density="compact"] .dashboard-filters-form,
+:root[data-density="compact"] .dashboard-filter-actions,
+:root[data-density="compact"] .dashboard-header-actions,
+:root[data-density="compact"] .dashboard-section-tools,
+:root[data-density="compact"] .dashboard-events-tools {
+    gap: 0.75rem;
+}
+
+:root[data-density="compact"] .dashboard-card .responsive-table {
+    max-height: 29rem;
+}
+
+:root[data-density="compact"] .status {
+    min-height: 22px;
+    padding: 0.22rem 0.52rem;
+}
+
+:root[data-density="compact"] .button-small {
+    padding: 0.38rem 0.62rem;
+}
+
+:root[data-density="compact"] .dashboard-collapsible-card summary,
+:root[data-density="compact"] .dashboard-accordion-item summary {
+    padding: 0.8rem 0.9rem;
+}
+
 @media (max-width: 900px) {
     .topbar {
         padding: 1rem;
@@ -1497,6 +1614,12 @@ tr[data-user-hidden="true"] {
     .login-theme-toggle-wrap {
         top: 0.75rem;
         right: 0.75rem;
+    }
+    .topbar-display-controls {
+        gap: 0.45rem;
+    }
+    .density-toggle-button span {
+        display: none;
     }
     .tdnn {
         --toggle-height: 1.7rem;
@@ -1571,7 +1694,7 @@ th,
     font-size: 1rem;
 }
 .shell {
-    margin: 0.75rem auto;
+    margin: var(--density-shell-margin) auto;
 }
 .card {
     padding: 0.75rem;
@@ -1762,11 +1885,11 @@ a {
     text-decoration-thickness: 1px;
     text-underline-offset: 0.16em;
     transition:
-        color 0.16s ease,
-        background-color 0.16s ease,
-        border-color 0.16s ease,
-        box-shadow 0.16s ease,
-        transform 0.16s ease;
+        color var(--motion-fast) ease,
+        background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease,
+        transform var(--motion-fast) ease;
 }
 
 a:hover {
@@ -1774,7 +1897,7 @@ a:hover {
 }
 
 .card {
-    padding: 1rem 1.1rem;
+    padding: var(--density-card-padding);
 }
 
 .dashboard-card {
@@ -1816,6 +1939,19 @@ th,
     background: var(--button-hover-bg);
     color: #fff;
     transform: translateY(-1px);
+}
+
+.button:focus-visible,
+.icon-button:focus-visible,
+.link-button:focus-visible,
+.side-menu-link:focus-visible,
+.side-menu-sublink:focus-visible,
+summary:focus-visible,
+.dashboard-summary-button:focus-visible,
+.dashboard-sort-button:focus-visible,
+.density-toggle-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
 }
 
 .button.secondary {
@@ -1881,11 +2017,11 @@ summary,
 .dashboard-summary-button,
 .dashboard-sort-button {
     transition:
-        color 0.16s ease,
-        background-color 0.16s ease,
-        border-color 0.16s ease,
-        box-shadow 0.16s ease,
-        transform 0.16s ease;
+        color var(--motion-fast) ease,
+        background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease,
+        transform var(--motion-fast) ease;
 }
 
 .dashboard-page-header,
@@ -1904,7 +2040,7 @@ summary,
 
 .dashboard-summary-grid {
     grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
-    gap: 0.9rem;
+    gap: var(--density-summary-gap);
     margin: 1.35rem 0;
 }
 
@@ -1932,7 +2068,7 @@ summary,
 }
 
 .dashboard-summary-button strong {
-    font-size: 30px;
+    font-size: var(--density-summary-number);
     line-height: 1;
     font-weight: 700;
 }
@@ -1968,7 +2104,7 @@ summary,
 
 .dashboard-summary-button:hover,
 .dashboard-summary-button:focus-visible {
-    background: var(--accent-soft);
+    background: var(--surface-hover);
     border-color: var(--line);
     box-shadow: 0 14px 30px rgba(20, 32, 51, 0.1);
     transform: translateY(-2px);
@@ -2015,7 +2151,7 @@ summary,
     content: "▸";
     color: var(--muted);
     font-size: 14px;
-    transition: transform 0.16s ease;
+    transition: transform var(--motion-fast) ease;
 }
 
 .dashboard-collapsible-card[open] summary::after {
@@ -2023,7 +2159,7 @@ summary,
 }
 
 .dashboard-collapsible-card summary:hover {
-    background: var(--accent-soft);
+    background: var(--surface-hover);
 }
 
 .dashboard-collapsible-card[open] summary {
@@ -2031,7 +2167,7 @@ summary,
 }
 
 .dashboard-collapsible-body {
-    padding: 1rem 1.1rem 1.1rem;
+    padding: var(--density-card-padding);
 }
 
 .dashboard-collapsible-body .admin-card-header {
@@ -2075,7 +2211,7 @@ summary,
 }
 
 .dashboard-accordion-item summary:hover {
-    background: var(--accent-soft);
+    background: var(--surface-hover);
 }
 
 .dashboard-accordion-item[open] summary {
@@ -2138,7 +2274,7 @@ thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--bg);
+    background: var(--surface-subtle);
     font-size: 12px;
     font-weight: 700;
     box-shadow: inset 0 -1px 0 var(--line);
@@ -2149,12 +2285,12 @@ tbody tr:nth-child(even) {
 }
 
 tr:hover {
-    background: var(--accent-soft);
+    background: var(--surface-hover);
 }
 
 th,
 td {
-    padding: 0.7rem 0.8rem;
+    padding: var(--density-table-cell-padding);
 }
 
 .dashboard-sort-button {
@@ -2252,11 +2388,20 @@ td {
     min-height: 120px;
     padding: 1rem;
     text-align: left;
+    border-radius: calc(var(--radius) - 2px);
+    background: linear-gradient(180deg, var(--surface-subtle), transparent);
 }
 
 .table-empty-state i {
-    font-size: 1.5rem;
+    display: inline-grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 999px;
+    font-size: 1.1rem;
     color: var(--muted);
+    background: var(--panel-elevated);
+    border: 1px solid var(--line);
 }
 
 .table-empty-state strong {
@@ -2546,7 +2691,7 @@ select option {
 .dashboard-inline-filter select:focus {
     border-color: var(--accent);
     box-shadow:
-        0 0 0 3px rgba(47, 125, 225, 0.12),
+        0 0 0 3px var(--focus-ring),
         0 1px 2px rgba(20, 32, 51, 0.04);
 }
 .protected-user {
@@ -2562,12 +2707,12 @@ select option {
 }
 .company-row:hover,
 .company-row:focus {
-    background: var(--accent-soft);
+    background: var(--surface-hover);
 }
 .row-toggle-icon {
     width: 1rem;
     color: var(--muted);
-    transition: transform 0.16s ease;
+    transition: transform var(--motion-fast) ease;
 }
 .company-row[aria-expanded="true"] .row-toggle-icon {
     transform: rotate(90deg);
@@ -2609,4 +2754,43 @@ select option {
 .nested-table-wrap {
     border-radius: var(--radius);
     border: 0px;
+}
+
+.button i,
+.icon-button i,
+.link-button i,
+.side-menu-link i,
+.side-menu-sublink i,
+.user-summary i,
+.brand-mark i,
+.density-toggle-button i,
+.toast-body i,
+.dashboard-metric-icon i,
+.table-empty-state i,
+.dashboard-empty-inline i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    line-height: 1;
+}
+
+.button i,
+.link-button i,
+.side-menu-link i,
+.side-menu-sublink i,
+.user-summary i,
+.density-toggle-button i,
+.toast-body i {
+    font-size: 0.95rem;
+}
+
+.icon-button i {
+    font-size: 1rem;
+}
+
+.dashboard-metric-icon i,
+.brand-mark i {
+    font-size: 1.05rem;
 }

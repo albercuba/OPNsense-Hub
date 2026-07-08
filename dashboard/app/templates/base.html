@@ -6,12 +6,15 @@
         <title>OPNsense Hub</title>
         <script>
             (() => {
+                const root = document.documentElement;
                 const storedTheme = window.localStorage.getItem("opnsense-hub-theme");
                 const preferredDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
                 const theme = storedTheme === "dark" || storedTheme === "light"
                     ? storedTheme
                     : (preferredDark ? "dark" : "light");
-                document.documentElement.dataset.theme = theme;
+                const storedDensity = window.localStorage.getItem("opnsense-hub-density");
+                root.dataset.theme = theme;
+                root.dataset.density = storedDensity === "compact" ? "compact" : "comfortable";
             })();
         </script>
         {% if brand_logo_url %}
@@ -46,17 +49,39 @@
             </div>
             </div>
             <nav class="nav">
-                <div class="theme-toggle-wrap">
-                    <input
-                        class="theme-toggle-input"
-                        id="theme-toggle"
-                        type="checkbox"
-                        role="switch"
-                        aria-label="Toggle dark mode"
-                    />
-                    <label class="theme-toggle tdnn" for="theme-toggle" aria-hidden="true">
-                        <span class="theme-toggle-knob moon"></span>
-                    </label>
+                <div class="topbar-display-controls" aria-label="Display preferences">
+                    <div class="theme-toggle-wrap">
+                        <input
+                            class="theme-toggle-input"
+                            id="theme-toggle"
+                            type="checkbox"
+                            role="switch"
+                            aria-label="Toggle dark mode"
+                        />
+                        <label class="theme-toggle tdnn" for="theme-toggle" aria-hidden="true">
+                            <span class="theme-toggle-knob moon"></span>
+                        </label>
+                    </div>
+                    <div class="density-toggle-group" role="group" aria-label="Card density">
+                        <button
+                            class="density-toggle-button"
+                            type="button"
+                            data-density-set="comfortable"
+                            aria-pressed="false"
+                        >
+                            <i class="fa-solid fa-table-cells-large"></i>
+                            <span>Comfortable</span>
+                        </button>
+                        <button
+                            class="density-toggle-button"
+                            type="button"
+                            data-density-set="compact"
+                            aria-pressed="false"
+                        >
+                            <i class="fa-solid fa-table-list"></i>
+                            <span>Compact</span>
+                        </button>
+                    </div>
                 </div>
                 {% if user %}
                 <span class="user-summary"
