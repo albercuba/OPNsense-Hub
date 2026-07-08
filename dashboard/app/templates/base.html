@@ -12,9 +12,8 @@
                 const theme = storedTheme === "dark" || storedTheme === "light"
                     ? storedTheme
                     : (preferredDark ? "dark" : "light");
-                const storedDensity = window.localStorage.getItem("opnsense-hub-density");
                 root.dataset.theme = theme;
-                root.dataset.density = storedDensity === "compact" ? "compact" : "comfortable";
+                root.dataset.density = "compact";
             })();
         </script>
         {% if brand_logo_url %}
@@ -61,26 +60,6 @@
                         <label class="theme-toggle tdnn" for="theme-toggle" aria-hidden="true">
                             <span class="theme-toggle-knob moon"></span>
                         </label>
-                    </div>
-                    <div class="density-toggle-group" role="group" aria-label="Card density">
-                        <button
-                            class="density-toggle-button"
-                            type="button"
-                            data-density-set="comfortable"
-                            aria-pressed="false"
-                        >
-                            <i class="fa-solid fa-table-cells-large"></i>
-                            <span>Comfortable</span>
-                        </button>
-                        <button
-                            class="density-toggle-button"
-                            type="button"
-                            data-density-set="compact"
-                            aria-pressed="false"
-                        >
-                            <i class="fa-solid fa-table-list"></i>
-                            <span>Compact</span>
-                        </button>
                     </div>
                 </div>
                 {% if user %}

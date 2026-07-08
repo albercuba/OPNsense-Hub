@@ -211,44 +211,6 @@ a {
     align-items: center;
     gap: 0.65rem;
 }
-.density-toggle-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.18rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--panel-elevated);
-}
-.density-toggle-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    padding: 0.42rem 0.72rem;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-        color var(--motion-fast) ease,
-        background-color var(--motion-fast) ease,
-        box-shadow var(--motion-fast) ease;
-}
-.density-toggle-button:hover,
-.density-toggle-button:focus-visible {
-    color: var(--info);
-    background: var(--surface-hover);
-}
-.density-toggle-button.is-active,
-.density-toggle-button[aria-pressed="true"] {
-    color: var(--info);
-    background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--button-secondary-border);
-}
 .theme-toggle-input {
     position: absolute;
     opacity: 0;
@@ -1618,9 +1580,6 @@ tr[data-user-hidden="true"] {
     .topbar-display-controls {
         gap: 0.45rem;
     }
-    .density-toggle-button span {
-        display: none;
-    }
     .tdnn {
         --toggle-height: 1.7rem;
         --toggle-width: 3.2rem;
@@ -1948,8 +1907,7 @@ th,
 .side-menu-sublink:focus-visible,
 summary:focus-visible,
 .dashboard-summary-button:focus-visible,
-.dashboard-sort-button:focus-visible,
-.density-toggle-button:focus-visible {
+.dashboard-sort-button:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
 }
@@ -2781,7 +2739,6 @@ select option {
 .side-menu-link i,
 .side-menu-sublink i,
 .user-summary i,
-.density-toggle-button i,
 .toast-body i {
     font-size: 0.95rem;
 }
