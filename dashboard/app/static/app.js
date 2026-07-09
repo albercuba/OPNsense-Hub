@@ -638,8 +638,32 @@ document.addEventListener("DOMContentLoaded", () => {
   filterForm?.addEventListener("submit", syncDashboardFilterInputs);
   syncDashboardFilterInputs();
 
+  const dashboardUiStateKey = `opnsense-hub-dashboard-ui:${window.location.pathname}${window.location.search}`;
+  const readDashboardUiState = () => {
+    try {
+      return JSON.parse(
+        window.sessionStorage.getItem(dashboardUiStateKey) || "{}",
+      );
+    } catch (_error) {
+      return {};
+    }
+  };
+  const writeDashboardUiState = (nextState) => {
+    const currentState = readDashboardUiState();
+    window.sessionStorage.setItem(
+      dashboardUiStateKey,
+      JSON.stringify({ ...currentState, ...nextState }),
+    );
+  };
+  const detailsStateKey = (details, index) =>
+    details.id ||
+    details.dataset.dashboardStateKey ||
+    details.querySelector("summary")?.textContent?.trim() ||
+    `details-${index}`;
+
   const closeNotificationFailuresDialog = () => {
     document.querySelector("[data-notification-failures-dialog]")?.remove();
+    writeDashboardUiState({ notificationFailuresDialogOpen: false });
   };
 
   const showNotificationFailuresDialog = () => {
@@ -672,6 +696,14 @@ document.addEventListener("DOMContentLoaded", () => {
       { once: true },
     );
     document.body.appendChild(dialog);
+    writeDashboardUiState({ notificationFailuresDialogOpen: true });
+    dialog
+      .querySelectorAll("form[action='/dashboard/attention/acknowledge']")
+      .forEach((form) => {
+        form.addEventListener("submit", () => {
+          writeDashboardUiState({ notificationFailuresDialogOpen: true });
+        });
+      });
     dialog.querySelector("[data-close-notification-failures-dialog]")?.focus();
   };
 
@@ -740,6 +772,23 @@ document.addEventListener("DOMContentLoaded", () => {
       showNotificationFailuresDialog();
     }
   });
+
+  const dashboardUiState = readDashboardUiState();
+  document
+    .querySelectorAll("details[data-dashboard-collapsible], .dashboard-health-accordion details")
+    .forEach((details, index) => {
+      const stateKey = detailsStateKey(details, index);
+      details.dataset.dashboardStateKey = stateKey;
+      if (Object.prototype.hasOwnProperty.call(dashboardUiState, stateKey)) {
+        details.open = Boolean(dashboardUiState[stateKey]);
+      }
+      details.addEventListener("toggle", () => {
+        writeDashboardUiState({ [stateKey]: details.open });
+      });
+    });
+  if (dashboardUiState.notificationFailuresDialogOpen) {
+    showNotificationFailuresDialog();
+  }
 
   const userFiltersForm = document.querySelector("[data-user-filters]");
   const userTable = document.querySelector("[data-user-table]");
