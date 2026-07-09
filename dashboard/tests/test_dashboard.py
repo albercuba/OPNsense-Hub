@@ -535,9 +535,7 @@ def test_dashboard_hides_acknowledged_attention_items(monkeypatch, fixed_now):
 
     initial_context = build_dashboard_context(db, seeded["member"], {})
     acknowledged_item = next(
-        item
-        for item in initial_context["attention_items"]
-        if item["category"] == "Health"
+        item for item in initial_context["attention_items"] if item["category"] == "Health"
     )
     db.acknowledgements.append(
         UserAttentionAcknowledgement(
@@ -557,6 +555,33 @@ def test_dashboard_hides_acknowledged_attention_items(monkeypatch, fixed_now):
         item["key"] != acknowledged_item["key"]
         for item in updated_context["attention_items"]
     )
+
+
+
+def test_dashboard_notification_failures_exclude_acknowledged_events(
+    monkeypatch, fixed_now
+):
+    seeded = seed_dashboard_data(fixed_now)
+    configure_dashboard_access(monkeypatch, seeded)
+    db = FakeDb(seeded["integration_settings"], seeded["events"])
+
+    initial_context = build_dashboard_context(db, seeded["admin"], {})
+    failure_row = initial_context["notification_health"]["failure_rows"][0]
+    db.acknowledgements.append(
+        UserAttentionAcknowledgement(
+            user_id=seeded["admin"].id,
+            attention_key=failure_row["acknowledgement_key"],
+            created_at=fixed_now + timedelta(seconds=1),
+        )
+    )
+
+    updated_context = build_dashboard_context(db, seeded["admin"], {})
+
+    assert initial_context["notification_health"]["failure_count"] == 1
+    assert updated_context["notification_health"]["failure_count"] == 0
+    assert updated_context["summary"]["email_notification_failures"] == 0
+    assert updated_context["notification_health"]["failure_rows"] == []
+
 
 
 def test_dashboard_revision_token_changes_when_attention_is_acknowledged(

@@ -284,11 +284,7 @@
     <button
         type="button"
         class="card dashboard-card dashboard-summary-tile dashboard-summary-button"
-        data-dashboard-card-kind="table"
-        data-target-table="#recent-events-table"
-        data-filter-column="event-type"
-        data-filter-value="email_notification_failed"
-        data-dashboard-scroll="#dashboard-recent-events-card"
+        data-dashboard-card-kind="notification-failures"
         data-state="{{ 'critical' if summary.email_notification_failures > 0 else 'success' }}"
     >
         <span class="muted">Notification failures</span>
@@ -1020,6 +1016,10 @@
             <article
                 class="dashboard-metric-card"
                 data-state="{{ 'critical' if notification_health.failure_count > 0 else 'success' }}"
+                data-notification-failures-trigger
+                tabindex="0"
+                role="button"
+                aria-label="Open notification failures"
             >
                 <div class="dashboard-metric-icon">
                     <i class="fa-solid fa-triangle-exclamation"></i>
@@ -1040,6 +1040,63 @@
             >
         </div>
         {% endif %}
+        <template id="dashboard-notification-failures-template">
+            <div class="modal-card dashboard-modal-card dashboard-notification-failures-modal" role="dialog" aria-modal="true" aria-labelledby="notification-failures-dialog-title">
+                <button class="modal-close" type="button" data-close-notification-failures-dialog aria-label="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <p class="eyebrow">Dashboard</p>
+                <h2 id="notification-failures-dialog-title">Notification failures</h2>
+                <p class="muted">These are the visible email notification send failures for the current dashboard view. Acknowledging one hides it from this card for your user, but keeps the event in system logs.</p>
+                <div class="responsive-table dashboard-modal-table-wrap">
+                    <table data-enhanced-table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Firewall</th>
+                                <th>Company</th>
+                                <th>Message</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in notification_health.failure_rows %}
+                            <tr>
+                                <td data-sort-value="{{ row.event.created_at.isoformat() if row.event.created_at else '' }}">{{ format_datetime(row.event.created_at) }}</td>
+                                <td><a href="{{ row.link }}">{{ row.device.hostname }}</a></td>
+                                <td>{{ row.company.name if row.company else '-' }}</td>
+                                <td>{{ row.event.message or '-' }}</td>
+                                <td>
+                                    <div class="inline-field-group">
+                                        <a class="button button-outline button-small" href="{{ row.link }}">Review</a>
+                                        <form method="post" action="/dashboard/attention/acknowledge">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                                            <input type="hidden" name="attention_key" value="{{ row.acknowledgement_key }}" />
+                                            <input type="hidden" name="company_id" value="{{ filters.company_id }}" />
+                                            <input type="hidden" name="status" value="{{ filters.status }}" />
+                                            <button class="button button-small" type="submit">Acknowledge</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5">
+                                    <div class="table-empty-state">
+                                        <i class="fa-regular fa-circle-check"></i>
+                                        <div>
+                                            <strong>No notification failures in this view</strong>
+                                            <p class="muted">There are no unacknowledged email notification send failures matching the current dashboard filters.</p>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </template>
         <p class="muted dashboard-section-note">
             {% if notification_health.last_notification_sent %} Last
             notification sent at {{

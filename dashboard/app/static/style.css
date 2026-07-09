@@ -722,6 +722,15 @@ th {
     box-shadow: var(--shadow);
     padding: 1.25rem;
 }
+
+.dashboard-modal-card {
+    width: min(1100px, 100%);
+}
+
+.dashboard-modal-table-wrap {
+    margin-top: 1rem;
+    max-height: min(60vh, 36rem);
+}
 .modal-close {
     position: absolute;
     top: 0.8rem;
@@ -2385,6 +2394,16 @@ td {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--panel-elevated);
+}
+
+.dashboard-metric-card[data-notification-failures-trigger] {
+    cursor: pointer;
+}
+
+.dashboard-metric-card[data-notification-failures-trigger]:hover,
+.dashboard-metric-card[data-notification-failures-trigger]:focus-visible {
+    background: var(--surface-hover);
+    border-color: var(--button-secondary-border);
 }
 
 .dashboard-metric-icon {

@@ -509,6 +509,7 @@ def build_dashboard_context(
 
     device_ids = [device.id for device in filtered_devices]
     events = []
+    all_notification_failures = []
     event_failures_count = 0
     last_notification_sent = None
     if device_ids:
@@ -526,7 +527,6 @@ def build_dashboard_context(
             )
             .order_by(DeviceEvent.created_at.desc())
         ).all()
-        event_failures_count = len(all_notification_failures)
         last_notification_sent = db.scalar(
             select(DeviceEvent)
             .where(
@@ -545,6 +545,25 @@ def build_dashboard_context(
     )
 
     device_lookup = {device.id: device for device in devices}
+    notification_failure_rows = []
+    for event in all_notification_failures:
+        failure_key = attention_key("notifications", "email-failure-event", event.id)
+        if failure_key in acknowledged_attention_keys:
+            continue
+        device = device_lookup.get(event.device_id)
+        if device is None:
+            continue
+        notification_failure_rows.append(
+            {
+                "event": event,
+                "device": device,
+                "company": device.company,
+                "link": _device_link(device),
+                "acknowledgement_key": failure_key,
+            }
+        )
+    event_failures_count = len(notification_failure_rows)
+
     recent_events = []
     for event in events:
         device = device_lookup.get(event.device_id)
@@ -714,7 +733,7 @@ def build_dashboard_context(
                 )
             )
     if event_failures_count:
-        latest_failure_created_at = all_notification_failures[0].created_at
+        latest_failure_created_at = notification_failure_rows[0]["event"].created_at
         attention_items.append(
             build_attention_item(
                 attention_key(
@@ -823,6 +842,7 @@ def build_dashboard_context(
         "missing_recipient_count": missing_recipient_count,
         "last_notification_sent": last_notification_sent_row,
         "failure_count": event_failures_count,
+        "failure_rows": notification_failure_rows,
     }
 
     chart_style, chart_legend = build_status_chart(status_counts)

@@ -638,6 +638,43 @@ document.addEventListener("DOMContentLoaded", () => {
   filterForm?.addEventListener("submit", syncDashboardFilterInputs);
   syncDashboardFilterInputs();
 
+  const closeNotificationFailuresDialog = () => {
+    document.querySelector("[data-notification-failures-dialog]")?.remove();
+  };
+
+  const showNotificationFailuresDialog = () => {
+    closeNotificationFailuresDialog();
+    const template = document.querySelector(
+      "#dashboard-notification-failures-template",
+    );
+    if (!(template instanceof HTMLTemplateElement)) {
+      return;
+    }
+    const dialog = document.createElement("div");
+    dialog.className = "modal-backdrop";
+    dialog.dataset.notificationFailuresDialog = "true";
+    dialog.appendChild(template.content.cloneNode(true));
+    dialog.addEventListener("click", (event) => {
+      if (
+        event.target === dialog ||
+        event.target.closest("[data-close-notification-failures-dialog]")
+      ) {
+        closeNotificationFailuresDialog();
+      }
+    });
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape") {
+          closeNotificationFailuresDialog();
+        }
+      },
+      { once: true },
+    );
+    document.body.appendChild(dialog);
+    dialog.querySelector("[data-close-notification-failures-dialog]")?.focus();
+  };
+
   document.querySelectorAll("[data-dashboard-card-kind]").forEach((card) => {
     card.addEventListener("click", () => {
       const kind = card.dataset.dashboardCardKind;
@@ -664,6 +701,10 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
       }
+      if (kind === "notification-failures") {
+        showNotificationFailuresDialog();
+        return;
+      }
       if (kind === "table") {
         applyTableFilter(
           card.dataset.targetTable,
@@ -674,6 +715,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
+  document
+    .querySelectorAll("[data-notification-failures-trigger]")
+    .forEach((card) => {
+      const open = () => showNotificationFailuresDialog();
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
 
   const userFiltersForm = document.querySelector("[data-user-filters]");
   const userTable = document.querySelector("[data-user-table]");
