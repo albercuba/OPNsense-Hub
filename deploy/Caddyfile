@@ -3,5 +3,19 @@
 }
 
 hub.example.com {
+  @proxy_routes path /proxy /proxy/*
+  respond @proxy_routes 404
+
   reverse_proxy opnsense-hub-api:8083
+}
+
+proxy.example.com {
+  @proxy_routes path /proxy/bootstrap /proxy/devices/*
+  handle @proxy_routes {
+    reverse_proxy opnsense-hub-api:8083
+  }
+
+  handle {
+    respond 404
+  }
 }

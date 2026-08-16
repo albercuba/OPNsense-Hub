@@ -129,7 +129,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    - Install Docker Engine with the Compose plugin.
    - Ensure `/dev/net/tun` exists and the host allows containers to use `NET_ADMIN`.
    - Open inbound TCP `80`/`443` for the reverse proxy and UDP `51820` for WireGuard.
-   - Point your Hub DNS name, for example `hub.example.com`, at the Docker host.
+   - Point two DNS names, for example `hub.example.com` and `proxy.example.com`, at the Docker host. Both names require valid TLS certificates.
 
 2. Create and edit the environment file:
 
@@ -142,7 +142,8 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    ```text
    APP_ENV=production
    PUBLIC_URL=https://hub.example.com
-   ALLOWED_HOSTS=hub.example.com
+   PROXY_PUBLIC_URL=https://proxy.example.com
+   ALLOWED_HOSTS=hub.example.com,proxy.example.com
    TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
    RATE_LIMIT_BACKEND=redis
    RATE_LIMIT_REDIS_URL=redis://opnsense-hub-redis:6379/0
@@ -161,12 +162,14 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
 3. Configure the reverse proxy profile when using the bundled Caddy example:
 
-   - Edit `deploy/Caddyfile` and replace `hub.example.com` plus the email address.
+   - Edit `deploy/Caddyfile` and replace `hub.example.com`, `proxy.example.com`, and the email address.
    - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service.
+   - Keep `PUBLIC_URL` and `PROXY_PUBLIC_URL` on distinct HTTPS origins. The dashboard origin denies `/proxy/*`; the proxy origin serves only `/proxy/bootstrap` and `/proxy/devices/*` and returns `404` for dashboard and API routes.
 
-   Production-focused security/runtime variables in `.env.example` now also include:
+   Production-focused security/runtime variables include:
 
-   - `ALLOWED_HOSTS` — allowed incoming `Host` header values for the Hub UI.
+   - `PROXY_PUBLIC_URL` — dedicated HTTPS origin used only for the proxy bootstrap and device proxy paths; it must differ from `PUBLIC_URL`.
+   - `ALLOWED_HOSTS` — allowed incoming `Host` header values for the dashboard and proxy origins.
    - `TRUSTED_PROXY_CIDRS` — reverse proxy IPs/subnets whose `X-Forwarded-For` headers are trusted.
    - `RATE_LIMIT_BACKEND` — `memory`, `redis`, or `edge`.
    - `RATE_LIMIT_REDIS_URL` — required when `RATE_LIMIT_BACKEND=redis`.
@@ -253,10 +256,12 @@ Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can rea
 
 Required inbound ports for a typical deployment:
 
-- TCP `443` to the Hub reverse proxy for browser access and firewall enrollment API calls. If running the development compose file directly, TCP `8083` reaches the FastAPI app instead.
+- TCP `443` to the reverse proxy for both the dashboard and dedicated proxy DNS names. The dashboard host handles browser access and firewall enrollment API calls; the proxy host handles only proxy bootstrap/device traffic. If running the development compose file directly, TCP `8083` reaches the FastAPI app instead.
 - UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
 
-`Open OPNsense UI` uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT` which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`. In production, keep `PROXY_VERIFY_TLS=true` and provide certificate trust that matches how the Hub connects to the firewall.
+`Open OPNsense UI` sends a CSRF-protected POST to the dashboard origin. After session and company-scope authorization, the dashboard returns a minimal handoff page that makes a one-time POST containing a short-lived grant to `PROXY_PUBLIC_URL`. The proxy bootstrap consumes the grant and sets a host-only cookie scoped to `/proxy/devices/{device_id}` before opening that firewall path. The dashboard session cookie is not used on the proxy origin, and dashboard/API routes are unavailable there.
+
+The device proxy uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT`, which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`. In production, keep `PROXY_VERIFY_TLS=true` and provide certificate trust that matches how the Hub connects to the firewall.
 
 On connect, the OPNsense plugin provisions the firewall side for Hub access:
 
@@ -297,6 +302,7 @@ Set `APP_ENV=production` to enable strict startup validation. In production the 
 - `INITIAL_ADMIN_PASSWORD=change-me` or a weak password
 - `SESSION_SECURE=false`
 - `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
+- `PROXY_PUBLIC_URL` is not HTTPS, uses localhost, or is not a distinct origin from `PUBLIC_URL`
 - `PROXY_VERIFY_TLS=false` unless `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`
 
 In development the same conditions remain usable but are logged as warnings.
@@ -307,7 +313,7 @@ The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRAN
 
 ## CSRF protection
 
-Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions, and backup export/restore. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
+Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions (including `POST /devices/{device_id}/proxy/open`), and backup export/restore. The subsequent cross-origin proxy bootstrap uses the one-time handoff grant rather than the dashboard CSRF cookie. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
 
 ## Rate limiting
 
@@ -410,7 +416,7 @@ Restore behavior:
 - clears all active dashboard sessions and redirects back to the login page
 - restores the uploaded branding asset and Hub WireGuard private key from the archive when included
 
-Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
+Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `PROXY_PUBLIC_URL`, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
 
 ## OPNsense plugin build/install commands
 
@@ -484,7 +490,11 @@ Devices:
 - `POST /api/v1/devices/{device_id}/revoke`
 
 Proxy:
-- `GET/POST/PUT/PATCH/DELETE /proxy/devices/{device_id}/{path:path}`
+- Dashboard origin: `POST /devices/{device_id}/proxy/open`
+- Proxy origin: `POST /proxy/bootstrap`
+- Proxy origin: `GET/POST/PUT/PATCH/DELETE /proxy/devices/{device_id}/{path:path}`
+
+The proxy origin intentionally returns `404` for dashboard, settings, authentication, and API routes.
 
 ## Validation
 

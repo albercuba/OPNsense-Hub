@@ -8,7 +8,8 @@ from typing import Annotated
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..audit import log_security_warning, write_audit
@@ -16,7 +17,13 @@ from ..database import get_db
 from ..deps import current_user, has_company_access
 from ..models import Device, User
 from ..services.firmware_scheduler import device_webgui_url, tunnel_proxy_host
-from ..web import settings
+from ..services.proxy_auth import (
+    create_proxy_grant,
+    exchange_proxy_grant,
+    proxy_session_cookie_name,
+    validate_proxy_session,
+)
+from ..web import settings, templates
 from ..wireguard import get_validated_hub_wireguard_config
 
 router = APIRouter()
@@ -245,14 +252,10 @@ async def read_limited_proxy_response(
     return b"".join(chunks)
 
 
-@router.api_route(
-    "/proxy/devices/{device_id}/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-)
-async def proxy_device(
+@router.post("/devices/{device_id}/proxy/open", response_class=HTMLResponse)
+def open_device_proxy(
     request: Request,
     device_id: uuid.UUID,
-    path: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
 ):
@@ -263,16 +266,91 @@ async def proxy_device(
         or not has_company_access(db, user, device.company_id)
     ):
         raise HTTPException(status_code=404)
-    if request.method == "GET" and path == "":
-        write_audit(
-            db,
-            request,
-            "device.proxy.open",
-            user=user,
-            company_id=device.company_id,
-            device_id=device.id,
-        )
-        db.commit()
+    try:
+        configured_proxy_url = urlparse(settings.proxy_public_url)
+        _ = configured_proxy_url.port
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500, detail="PROXY_PUBLIC_URL is invalid"
+        ) from exc
+    if (
+        configured_proxy_url.scheme not in {"http", "https"}
+        or not configured_proxy_url.netloc
+        or configured_proxy_url.username is not None
+        or configured_proxy_url.password is not None
+    ):
+        raise HTTPException(status_code=500, detail="PROXY_PUBLIC_URL is invalid")
+    proxy_origin = (
+        f"{configured_proxy_url.scheme.lower()}://{configured_proxy_url.netloc.lower()}"
+    )
+    grant = create_proxy_grant(db, user, device)
+    write_audit(
+        db,
+        request,
+        "device.proxy.open",
+        user=user,
+        company_id=device.company_id,
+        device_id=device.id,
+    )
+    db.commit()
+
+    response = templates.TemplateResponse(
+        request,
+        "proxy_handoff.html",
+        {
+            "request": request,
+            "proxy_bootstrap_url": f"{proxy_origin}/proxy/bootstrap",
+            "grant": grant,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline'; "
+        f"form-action {proxy_origin}; base-uri 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
+@router.post("/proxy/bootstrap")
+def bootstrap_device_proxy(
+    db: Annotated[Session, Depends(get_db)],
+    grant: str = Form(...),
+):
+    session_token, proxy_session = exchange_proxy_grant(db, grant)
+    db.commit()
+    device_path = proxy_path_prefix(proxy_session.device_id)
+    response = RedirectResponse(f"{device_path}/", status_code=303)
+    response.set_cookie(
+        proxy_session_cookie_name(proxy_session.device_id),
+        session_token,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        max_age=settings.proxy_session_ttl_minutes * 60,
+        path=device_path,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@router.api_route(
+    "/proxy/devices/{device_id}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def proxy_device(
+    request: Request,
+    device_id: uuid.UUID,
+    path: str,
+    db: Annotated[Session, Depends(get_db)],
+):
+    session_token = request.cookies.get(proxy_session_cookie_name(device_id))
+    if not session_token:
+        raise HTTPException(status_code=401, detail="proxy authorization required")
+    _proxy_session, user, device = validate_proxy_session(
+        db, session_token, device_id
+    )
     try:
         validate_proxy_device_target(device)
         url = device_webgui_url(device) + path

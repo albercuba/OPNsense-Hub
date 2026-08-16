@@ -10,6 +10,8 @@ from .security import password_is_strong_enough
 
 MAX_LOG_RETENTION_DELETE_BATCH_SIZE = 20000
 MAX_LOG_RETENTION_SWEEP_INTERVAL_HOURS = 720
+MAX_PROXY_GRANT_TTL_SECONDS = 300
+MAX_PROXY_SESSION_TTL_MINUTES = 60
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,13 @@ def _configured_allowed_hosts(settings: Settings) -> set[str]:
         for item in settings.allowed_hosts.split(",")
         if item.strip()
     }
-    public_host = (urlparse(settings.public_url).hostname or "").strip().lower()
-    if public_host:
-        configured.add(public_host)
+    for configured_url in (settings.public_url, settings.proxy_public_url):
+        try:
+            configured_host = (urlparse(configured_url).hostname or "").strip().lower()
+        except ValueError:
+            configured_host = ""
+        if configured_host:
+            configured.add(configured_host)
     return configured
 
 
@@ -76,7 +82,16 @@ def isolation_invariant_errors(settings: Settings) -> list[str]:
 
 def runtime_validation_errors(settings: Settings) -> list[str]:
     errors: list[str] = []
-    public_url = urlparse(settings.public_url)
+    try:
+        public_url = urlparse(settings.public_url)
+        _ = public_url.port
+    except ValueError:
+        public_url = urlparse("")
+    try:
+        proxy_public_url = urlparse(settings.proxy_public_url)
+        _ = proxy_public_url.port
+    except ValueError:
+        proxy_public_url = urlparse("")
 
     if settings.secret_key == "change-me" or len(settings.secret_key) < 32:
         errors.append("Set SECRET_KEY to a random value at least 32 characters long")
@@ -100,6 +115,44 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         }
     ):
         errors.append("Set PUBLIC_URL to an HTTPS URL reachable by users in production")
+    if (
+        proxy_public_url.scheme != "https"
+        or not proxy_public_url.netloc
+        or not proxy_public_url.hostname
+    ):
+        errors.append("Set PROXY_PUBLIC_URL to a valid HTTPS URL in production")
+    if (
+        proxy_public_url.hostname
+        and public_url.hostname
+        and proxy_public_url.hostname.lower() == public_url.hostname.lower()
+    ):
+        errors.append("Set PROXY_PUBLIC_URL to a hostname distinct from PUBLIC_URL")
+    if proxy_public_url.username is not None or proxy_public_url.password is not None:
+        errors.append("Remove credentials from PROXY_PUBLIC_URL")
+    if proxy_public_url.path not in {"", "/"} or proxy_public_url.params:
+        errors.append("Remove the path from PROXY_PUBLIC_URL")
+    if proxy_public_url.query:
+        errors.append("Remove the query string from PROXY_PUBLIC_URL")
+    if proxy_public_url.fragment:
+        errors.append("Remove the fragment from PROXY_PUBLIC_URL")
+    if settings.proxy_grant_ttl_seconds <= 0:
+        errors.append("Set PROXY_GRANT_TTL_SECONDS to a positive value")
+    elif settings.proxy_grant_ttl_seconds > MAX_PROXY_GRANT_TTL_SECONDS:
+        errors.append(
+            f"Set PROXY_GRANT_TTL_SECONDS to {MAX_PROXY_GRANT_TTL_SECONDS} or less"
+        )
+    if settings.proxy_session_ttl_minutes <= 0:
+        errors.append("Set PROXY_SESSION_TTL_MINUTES to a positive value")
+    elif settings.proxy_session_ttl_minutes > MAX_PROXY_SESSION_TTL_MINUTES:
+        errors.append(
+            f"Set PROXY_SESSION_TTL_MINUTES to {MAX_PROXY_SESSION_TTL_MINUTES} or less"
+        )
+    if (
+        proxy_public_url.hostname
+        and proxy_public_url.hostname.lower()
+        not in _configured_allowed_hosts(settings)
+    ):
+        errors.append("Add the PROXY_PUBLIC_URL host to ALLOWED_HOSTS")
     if (
         not settings.proxy_verify_tls
         and not settings.allow_insecure_proxy_tls_in_production

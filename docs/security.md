@@ -13,7 +13,9 @@
 - The OPNsense plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the tunnel.
 - Hub disables IPv4 and IPv6 forwarding by default unless `HUB_ENABLE_IP_FORWARDING=true`.
 - When enabled, Hub startup installs an idempotent `wg0 -> wg0` forward-drop isolation rule using nftables or iptables so one firewall cannot talk to another through the Hub.
-- Dashboard RBAC checks happen before device detail, revoke, and proxy access.
+- Dashboard RBAC and CSRF checks happen before issuing a proxy handoff grant.
+- Proxy handoff grants are short-lived, single-use, and delivered by POST from the dashboard origin to a distinct proxy origin.
+- The proxy bootstrap establishes a host-only cookie scoped to `/proxy/devices/{device_id}`; it does not expose the dashboard session cookie to the proxy origin.
 - Proxy access and revocation are audit logged.
 - Revocation invalidates the stored device token hash and removes the WireGuard peer.
 - The Hub never stores OPNsense web UI credentials.
@@ -31,6 +33,17 @@ This is intentional:
 
 The `wg0 -> wg0` forward-drop rule is a defense-in-depth control that prevents firewall-to-firewall forwarding on the Hub even if OS forwarding or other host routing changes are introduced later. The runtime now hard-fails if unsafe forwarding/isolation settings are combined, and the `/32`-only peer-route invariant is covered by unit tests so customer LAN CIDRs are not added to peer routes by accident.
 
+## Proxy origin isolation
+
+Production deployments require two distinct HTTPS origins:
+
+- `PUBLIC_URL` serves the dashboard, authentication, settings, and API routes. Its reverse proxy must deny `/proxy/*`.
+- `PROXY_PUBLIC_URL` serves only `POST /proxy/bootstrap` and `/proxy/devices/*`. All dashboard, authentication, settings, and API paths must return `404` on this origin.
+
+The browser starts access with a CSRF-protected `POST /devices/{device_id}/proxy/open` on `PUBLIC_URL`. After session and company-scope authorization, a minimal handoff page POSTs a short-lived one-time grant to `PROXY_PUBLIC_URL`; the grant must not be placed in a URL or query string. The bootstrap consumes the grant and issues a host-only, device-path-scoped proxy cookie. This limits proxy credentials to one proxy host and one `/proxy/devices/{device_id}` path and prevents the dashboard session cookie from becoming proxy authorization.
+
+Both hostnames need DNS records pointing to the edge proxy and valid TLS certificates. Keep the origins distinct; do not deploy `PROXY_PUBLIC_URL` as a path beneath `PUBLIC_URL`.
+
 ## Redacted/sensitive fields
 
 Never log or display these values:
@@ -44,11 +57,12 @@ Never log or display these values:
 
 ## Production hardening checklist
 
-- `security: enforce HTTPS and secure cookies` — set `APP_ENV=production`, `SESSION_SECURE=true`, and deploy behind HTTPS.
+- `security: enforce HTTPS and secure cookies` — set `APP_ENV=production`, `SESSION_SECURE=true`, and deploy both `PUBLIC_URL` and the distinct `PROXY_PUBLIC_URL` behind HTTPS.
 - `security: replace default secrets` — set a long random `SECRET_KEY`, admin password, and database password.
 - `security: replace the default admin address` — set `INITIAL_ADMIN_EMAIL` to a real admin mailbox.
 - `security: verify firewall TLS` — set `PROXY_VERIFY_TLS=true` in production unless you explicitly accept the risk with `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`.
-- `security: restrict incoming hostnames` — set `ALLOWED_HOSTS` to the real Hub hostname(s) used by browsers and reverse proxies.
+- `security: restrict incoming hostnames` — set `ALLOWED_HOSTS` to the real dashboard and proxy hostnames used by browsers and reverse proxies.
+- `security: enforce proxy edge routes` — deny `/proxy/*` on the dashboard host; on the proxy host expose only `/proxy/bootstrap` and `/proxy/devices/*`, returning `404` for everything else.
 - `security: trust only known reverse proxies` — set `TRUSTED_PROXY_CIDRS` to the proxy IPs/subnets that are allowed to supply `X-Forwarded-For`.
 - `security: use a production rate-limit backend` — prefer `RATE_LIMIT_BACKEND=redis` with `RATE_LIMIT_REDIS_URL` configured, or enforce rate limits at the edge when using `RATE_LIMIT_BACKEND=edge`.
 - `security: keep MFA throttling enabled` — tune `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` conservatively for internet-facing deployments.

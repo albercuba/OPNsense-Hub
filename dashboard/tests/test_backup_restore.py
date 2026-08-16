@@ -1019,7 +1019,14 @@ def test_company_viewer_cannot_view_another_company_firewall_backup_or_proxy(
             backup_response = client.get(
                 f"/devices/{device.id}/backups/{backup.id}/download"
             )
-            proxy_response = client.get(f"/proxy/devices/{device.id}/")
+            csrf_marker = 'name="csrf_token" value="'
+            csrf_start = companies_response.text.index(csrf_marker) + len(csrf_marker)
+            csrf_end = companies_response.text.index('"', csrf_start)
+            proxy_response = client.post(
+                f"/devices/{device.id}/proxy/open",
+                data={"csrf_token": companies_response.text[csrf_start:csrf_end]},
+                follow_redirects=False,
+            )
         app.dependency_overrides.clear()
 
     assert companies_response.status_code == 200

@@ -39,6 +39,7 @@ from ..models import (
     Device,
     DeviceBackup,
     DeviceEvent,
+    DeviceProxySession,
     EnrollmentCode,
     IntegrationSettings,
     SessionToken,
@@ -71,6 +72,7 @@ BACKUP_TABLE_MODELS = (
     ("audit_logs", AuditLog),
 )
 BACKUP_RESTORE_DELETE_ORDER = (
+    DeviceProxySession,
     SessionToken,
     AuditLog,
     DeviceEvent,

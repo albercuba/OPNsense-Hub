@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -385,6 +386,42 @@ class Device(Base):
     backups: Mapped[list["DeviceBackup"]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
+
+
+class DeviceProxySession(Base):
+    __tablename__ = "device_proxy_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "phase IN ('grant', 'session')",
+            name="ck_device_proxy_sessions_phase",
+        ),
+        Index("idx_device_proxy_sessions_expires_at", "expires_at"),
+        Index("idx_device_proxy_sessions_device_id", "device_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    phase: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped[User] = relationship()
+    device: Mapped[Device] = relationship()
 
 
 class DeviceBackup(Base):

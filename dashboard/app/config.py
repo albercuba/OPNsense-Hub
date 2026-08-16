@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_timezone: str = "UTC"
     public_url: str = "http://localhost:8083"
+    proxy_public_url: str = "http://proxy.localhost:8083"
+    proxy_grant_ttl_seconds: int = 60
+    proxy_session_ttl_minutes: int = 15
+    proxy_session_cookie_prefix: str = "opnsense_hub_proxy_"
     database_url: str = (
         "postgresql+psycopg://opnsensehub:opnsensehub@db:5432/opnsensehub"
     )

@@ -11,13 +11,38 @@ from ..config import get_settings
 settings = get_settings()
 
 
+def _normalized_hostname(host: str | None) -> str:
+    if not host:
+        return ""
+    try:
+        parsed = urlparse(f"//{host.strip()}")
+        _ = parsed.port
+    except ValueError:
+        return ""
+    if parsed.path or parsed.params or parsed.query or parsed.fragment:
+        return ""
+    return (parsed.hostname or "").strip().lower()
+
+
+@lru_cache
+def proxy_hostname() -> str:
+    try:
+        return (urlparse(settings.proxy_public_url).hostname or "").strip().lower()
+    except ValueError:
+        return ""
+
+
 @lru_cache
 def allowed_hosts() -> tuple[str, ...]:
     configured = [item.strip().lower() for item in settings.allowed_hosts.split(",")]
     hosts = [item for item in configured if item]
-    public_host = (urlparse(settings.public_url).hostname or "").strip().lower()
-    if public_host and public_host not in hosts:
-        hosts.append(public_host)
+    for configured_url in (settings.public_url, settings.proxy_public_url):
+        try:
+            configured_host = (urlparse(configured_url).hostname or "").strip().lower()
+        except ValueError:
+            configured_host = ""
+        if configured_host and configured_host not in hosts:
+            hosts.append(configured_host)
     return tuple(hosts)
 
 
@@ -36,15 +61,34 @@ def trusted_proxy_networks() -> tuple[ipaddress._BaseNetwork, ...]:
 
 
 def host_is_allowed(host: str | None) -> bool:
-    if not host:
+    normalized = _normalized_hostname(host)
+    if not normalized:
         return False
-    normalized = host.split(":", 1)[0].strip().lower()
     hosts = allowed_hosts()
     if not hosts:
         return True
     if "*" in hosts:
         return True
     return normalized in hosts
+
+
+def is_proxy_path(path: str) -> bool:
+    return path == "/proxy/bootstrap" or path.startswith("/proxy/devices/")
+
+
+def ensure_host_path_boundary(request: Request) -> None:
+    host = _normalized_hostname(request.headers.get("host") or request.url.hostname)
+    path = request.url.path
+    if host == proxy_hostname():
+        if is_proxy_path(path):
+            return
+        raise HTTPException(status_code=404, detail="Not Found")
+    if is_proxy_path(path):
+        is_development_testserver = (
+            settings.app_env.strip().lower() != "production" and host == "testserver"
+        )
+        if not is_development_testserver:
+            raise HTTPException(status_code=404, detail="Not Found")
 
 
 def ensure_allowed_host(request: Request) -> None:

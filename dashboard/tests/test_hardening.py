@@ -1,6 +1,8 @@
 import pytest
 from app.config import Settings
 from app.hardening import (
+    MAX_PROXY_GRANT_TTL_SECONDS,
+    MAX_PROXY_SESSION_TTL_MINUTES,
     CommandResult,
     StartupHardeningError,
     configure_ip_forwarding,
@@ -15,6 +17,7 @@ def production_settings(**overrides):
     values = {
         "app_env": "production",
         "public_url": "https://hub.example.com",
+        "proxy_public_url": "https://proxy.example.com",
         "database_url": "sqlite:///test.db",
         "secret_key": "x" * 32,
         "initial_admin_email": "admin@hub.example.com",
@@ -47,6 +50,65 @@ def test_runtime_validation_errors_include_insecure_defaults():
     assert any("PUBLIC_URL" in error for error in errors)
     assert any("PROXY_VERIFY_TLS" in error for error in errors)
     assert any("RATE_LIMIT_BACKEND" in error for error in errors)
+
+
+def test_runtime_validation_accepts_secure_proxy_settings():
+    assert runtime_validation_errors(production_settings()) == []
+
+
+def test_runtime_validation_rejects_insecure_proxy_public_url():
+    errors = runtime_validation_errors(
+        production_settings(proxy_public_url="http://proxy.example.com")
+    )
+
+    assert any("PROXY_PUBLIC_URL" in error and "HTTPS" in error for error in errors)
+
+
+def test_runtime_validation_rejects_proxy_hostname_matching_public_url():
+    errors = runtime_validation_errors(
+        production_settings(proxy_public_url="https://hub.example.com")
+    )
+
+    assert any("distinct from PUBLIC_URL" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "proxy_public_url",
+    [
+        "https://user:password@proxy.example.com",
+        "https://proxy.example.com/admin",
+        "https://proxy.example.com?token=value",
+        "https://proxy.example.com#fragment",
+        "https://proxy.example.com:not-a-port",
+    ],
+)
+def test_runtime_validation_rejects_invalid_proxy_public_url(proxy_public_url):
+    errors = runtime_validation_errors(
+        production_settings(proxy_public_url=proxy_public_url)
+    )
+
+    assert any("PROXY_PUBLIC_URL" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "setting_name"),
+    [
+        ({"proxy_grant_ttl_seconds": 0}, "PROXY_GRANT_TTL_SECONDS"),
+        (
+            {"proxy_grant_ttl_seconds": MAX_PROXY_GRANT_TTL_SECONDS + 1},
+            "PROXY_GRANT_TTL_SECONDS",
+        ),
+        ({"proxy_session_ttl_minutes": 0}, "PROXY_SESSION_TTL_MINUTES"),
+        (
+            {"proxy_session_ttl_minutes": MAX_PROXY_SESSION_TTL_MINUTES + 1},
+            "PROXY_SESSION_TTL_MINUTES",
+        ),
+    ],
+)
+def test_runtime_validation_rejects_invalid_proxy_ttls(overrides, setting_name):
+    errors = runtime_validation_errors(production_settings(**overrides))
+
+    assert any(setting_name in error for error in errors)
 
 
 def test_isolation_invariant_errors_reject_unsafe_forwarding_combinations():

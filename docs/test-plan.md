@@ -29,7 +29,11 @@ Current coverage:
 7. Verify the enrolled device appears in the company firewall table.
 8. Send heartbeat using the returned device token.
 9. Revoke the device and verify later heartbeats fail.
-10. Click Open and verify an audit log entry is created, even if the tunnel target is unreachable.
+10. Click Open and verify the dashboard sends `POST /devices/{device_id}/proxy/open` with a valid CSRF token into a new tab.
+11. Verify the standalone handoff page automatically submits the grant with `POST` to `PROXY_PUBLIC_URL`; disable JavaScript and verify the visible manual submit button works.
+12. Verify `/proxy/bootstrap` accepts the grant only once, redirects to the selected `/proxy/devices/{device_id}/` path, and creates a host-only cookie scoped to that exact device path.
+13. Verify the cookie cannot authorize another device path and that the dashboard session cookie is not sent to the proxy origin.
+14. Verify a proxy-open audit log entry is created, even if the tunnel target is unreachable.
 
 ## Plugin lab tests
 
@@ -53,5 +57,10 @@ On a disposable OPNsense VM:
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
 - Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet.
 - Verify revocation removes the peer from `wg show`.
-- Verify company RBAC prevents cross-company proxy access.
-- Verify logs do not contain OTPs, device tokens, or private keys.
+- Verify company RBAC prevents cross-company proxy access and unauthorized users cannot obtain a handoff grant.
+- Verify expired, replayed, malformed, and wrong-device proxy grants fail closed.
+- Verify `PUBLIC_URL` and `PROXY_PUBLIC_URL` are distinct HTTPS origins with valid DNS and TLS.
+- Verify the dashboard host returns `404` for `/proxy/bootstrap` and `/proxy/devices/*`.
+- Verify the proxy host serves only `/proxy/bootstrap` and `/proxy/devices/*`, and returns `404` for `/`, dashboard, login, settings, and API routes.
+- Verify the proxy authorization cookie has no `Domain` attribute and has `Path=/proxy/devices/{device_id}`.
+- Verify logs do not contain OTPs, device tokens, proxy grants, dashboard/proxy cookies, or private keys.

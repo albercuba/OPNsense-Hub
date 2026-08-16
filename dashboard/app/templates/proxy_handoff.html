@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Opening OPNsense UI</title>
+    </head>
+    <body>
+        <main>
+            <h1>Opening OPNsense UI</h1>
+            <p>If the firewall UI does not open automatically, use the button below.</p>
+            <form id="proxy-handoff" action="{{ proxy_bootstrap_url }}" method="post">
+                <input type="hidden" name="grant" value="{{ grant }}" />
+                <button type="submit">Continue to OPNsense UI</button>
+            </form>
+        </main>
+        <script>
+            document.getElementById("proxy-handoff").submit();
+        </script>
+    </body>
+</html>

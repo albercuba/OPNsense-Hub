@@ -12,7 +12,8 @@ The platform focuses on secure enrollment, remote firewall access, company group
 ```mermaid
 sequenceDiagram
     participant Admin as Dashboard admin
-    participant Hub as OPNsense Hub
+    participant Hub as Dashboard origin
+    participant Proxy as Proxy origin
     participant Plugin as OPNsense plugin
     participant WG as WireGuard tunnel
     participant FW as OPNsense GUI
@@ -29,9 +30,13 @@ sequenceDiagram
     Plugin->>WG: Start client tunnel
     Plugin->>Hub: Heartbeat with device token
     Admin->>Hub: Log in and receive revocable session token
-    Admin->>Hub: Open firewall
+    Admin->>Hub: POST /devices/{id}/proxy/open with CSRF token
     Hub->>Hub: Check session, RBAC, and audit access
-    Hub->>FW: Reverse proxy through tunnel
+    Hub-->>Admin: Handoff page with short-lived one-time grant
+    Admin->>Proxy: POST /proxy/bootstrap with grant
+    Proxy->>Proxy: Consume grant and set host-only device-scoped cookie
+    Admin->>Proxy: Open /proxy/devices/{id}/
+    Proxy->>FW: Reverse proxy through tunnel
 ```
 
 ## Dashboard/control-plane
@@ -45,7 +50,11 @@ sequenceDiagram
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
 - Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
 - By default the Hub disables IPv4/IPv6 forwarding and installs an idempotent firewall rule that drops forwarded `wg0 -> wg0` traffic to preserve peer isolation.
-- Reverse proxying is implemented in FastAPI and proxies to `https://{device_tunnel_ip}:443` after RBAC checks.
+- `PUBLIC_URL` is the dashboard/control-plane origin and `PROXY_PUBLIC_URL` is a required, distinct proxy origin. Both require DNS and TLS in production.
+- Opening a firewall starts with a CSRF-protected POST on the dashboard origin. After session and company-scoped RBAC checks, the Hub renders a standalone handoff that automatically POSTs a short-lived, single-use grant to `/proxy/bootstrap` on the proxy origin.
+- The bootstrap consumes the grant and establishes a host-only proxy cookie whose path is scoped to `/proxy/devices/{device_id}`. The cookie authorizes only that device proxy path and is not shared with the dashboard origin.
+- Reverse proxying is implemented in FastAPI and proxies requests from `/proxy/devices/{device_id}/*` to `https://{device_tunnel_ip}:443`.
+- Edge routing enforces the origin split: the dashboard host denies `/proxy/*`, while the proxy host exposes only `/proxy/bootstrap` and `/proxy/devices/*`; dashboard, authentication, settings, and API routes return `404` on the proxy origin.
 - A lightweight background scheduler marks active, non-revoked devices for a firmware status check once per day at `23:00` in the Hub process timezone.
 - The Hub only stores and displays reported firmware status; it does not probe or install firewall updates itself.
 - Branding uploads are stored in a persistent directory and served back through `/branding/logo`, with uploaded assets taking precedence over any configured fallback logo URL.
@@ -73,7 +82,7 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - Device revocation removes the WireGuard peer and marks the device revoked.
 - Dashboard users are authorized at company scope through `company_users`.
 - The Hub never stores OPNsense administrator passwords.
-- Firewall access is reverse-proxied through WireGuard and audit logged.
+- Firewall access is authorized on the dashboard origin, handed off through a one-time POST grant, reverse-proxied on the dedicated proxy origin through WireGuard, and audit logged.
 - Firmware status reporting is local-first: the firewall plugin performs the check, the Hub stores the result, and no update is installed automatically.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
 - The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.

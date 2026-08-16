@@ -238,14 +238,27 @@
                         </button>
                     </form>
                     {% endif %} {% else %}
-                    <a
-                        class="icon-button"
-                        href="/proxy/devices/{{ device.id }}/"
-                        title="Open OPNsense UI"
+                    <form
+                        action="/devices/{{ device.id }}/proxy/open"
+                        method="post"
                         target="_blank"
                         rel="noopener noreferrer"
-                        ><i class="fa-solid fa-up-right-from-square"></i
-                    ></a>
+                        class="inline-action-form"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token }}"
+                        />
+                        <button
+                            class="icon-button"
+                            type="submit"
+                            title="Open OPNsense UI"
+                            aria-label="Open OPNsense UI"
+                        >
+                            <i class="fa-solid fa-up-right-from-square"></i>
+                        </button>
+                    </form>
                     {% if can_manage_company %}
                     <form
                         action="/api/v1/devices/{{ device.id }}/revoke"

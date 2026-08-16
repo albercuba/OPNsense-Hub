@@ -105,6 +105,7 @@ def test_login_sets_random_session_cookie_not_user_uuid(monkeypatch):
     cookie_header = response.headers["set-cookie"]
     assert str(user.id) not in cookie_header
     assert settings.session_cookie_name in cookie_header
+    assert "domain=" not in cookie_header.lower()
     assert any(isinstance(item, SessionToken) for item in db.added)
 
 

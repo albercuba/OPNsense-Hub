@@ -28,7 +28,7 @@ from .security.csrf import (
     validate_proxy_unsafe_request,
 )
 from .security.rate_limit import rate_limiter
-from .security.request_context import ensure_allowed_host
+from .security.request_context import ensure_allowed_host, ensure_host_path_boundary
 from .services import firmware_scheduler as firmware_scheduler_service
 from .services import notification_service as notification_service_module
 from .services.auth_service import session_from_request
@@ -92,6 +92,7 @@ app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="stati
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     try:
+        ensure_host_path_boundary(request)
         ensure_allowed_host(request)
     except HTTPException as exc:
         detail = exc.detail if exc.detail is not None else "Bad Request"
@@ -133,7 +134,9 @@ async def security_middleware(request: Request, call_next):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 401 and not request.url.path.startswith("/api/"):
+    if exc.status_code == 401 and not request.url.path.startswith(
+        ("/api/", "/proxy/")
+    ):
         response = RedirectResponse("/login", status_code=303)
         response.delete_cookie(settings.session_cookie_name)
         return response
