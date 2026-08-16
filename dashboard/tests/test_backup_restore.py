@@ -944,10 +944,10 @@ def test_admin_can_regenerate_local_user_mfa_from_manage_users(monkeypatch, tmp_
         app.dependency_overrides.clear()
 
 
-def test_non_admin_user_can_view_assigned_companies_and_firewalls(
+def test_company_viewer_can_view_assigned_company_and_firewalls(
     monkeypatch, tmp_path
 ):
-    with sqlite_session(tmp_path, "non_admin_company_visibility") as session:
+    with sqlite_session(tmp_path, "company_viewer_visibility") as session:
         seed_backup_source(session)
         company = session.scalar(select(Company).where(Company.name == "Acme"))
         assert company is not None
@@ -979,6 +979,63 @@ def test_non_admin_user_can_view_assigned_companies_and_firewalls(
     assert "Add Firewall" not in companies_response.text
     assert dashboard_response.status_code == 200
     assert "fw-acme-1" in dashboard_response.text
+
+
+def test_company_viewer_cannot_view_another_company_firewall_backup_or_proxy(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "cross_company_visibility") as session:
+        seed_backup_source(session)
+        company = session.scalar(select(Company).where(Company.name == "Acme"))
+        device = session.scalar(select(Device).where(Device.hostname == "fw-acme-1"))
+        assert company is not None
+        assert device is not None
+        backup = session.scalar(
+            select(DeviceBackup).where(DeviceBackup.device_id == device.id)
+        )
+        assert backup is not None
+        member = User(
+            id=uuid4(),
+            email="other-company-viewer@example.com",
+            password_hash=hash_secret("MemberPassword123"),
+            role="user",
+        )
+        other_company = Company(id=uuid4(), name="Other Company")
+        session.add_all([member, other_company])
+        session.flush()
+        session.add(
+            CompanyUser(
+                company_id=other_company.id, user_id=member.id, role="viewer"
+            )
+        )
+        session.commit()
+        configure_test_client(monkeypatch, session, member)
+        with TestClient(app) as client:
+            companies_response = client.get("/companies")
+            dashboard_response = client.get("/dashboard")
+            api_companies_response = client.get("/api/v1/companies")
+            company_response = client.get(f"/companies/{company.id}")
+            device_response = client.get(f"/api/v1/devices/{device.id}")
+            backup_response = client.get(
+                f"/devices/{device.id}/backups/{backup.id}/download"
+            )
+            proxy_response = client.get(f"/proxy/devices/{device.id}/")
+        app.dependency_overrides.clear()
+
+    assert companies_response.status_code == 200
+    assert "Other Company" in companies_response.text
+    assert "Acme" not in companies_response.text
+    assert "fw-acme-1" not in companies_response.text
+    assert dashboard_response.status_code == 200
+    assert "fw-acme-1" not in dashboard_response.text
+    assert api_companies_response.status_code == 200
+    assert [company["name"] for company in api_companies_response.json()] == [
+        "Other Company"
+    ]
+    assert company_response.status_code == 404
+    assert device_response.status_code == 404
+    assert backup_response.status_code == 404
+    assert proxy_response.status_code == 404
 
 
 def test_backup_export_requires_admin(monkeypatch, tmp_path):

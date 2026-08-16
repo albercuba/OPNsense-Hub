@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 from app.database import Base
+from app.deps import has_company_access as dependency_has_company_access
 from app.models import Company, CompanyUser, User
 from app.rbac import ROLE_ORDER, has_company_access
 from app.routers.companies import create_company
@@ -9,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
@@ -70,6 +71,18 @@ def test_viewer_access_requires_company_membership():
         assert has_company_access(session, member, company.id, "viewer") is True
         assert has_company_access(session, outsider, company.id, "viewer") is False
         assert has_company_access(session, admin, company.id, "viewer") is True
+        assert (
+            dependency_has_company_access(session, member, company.id, "viewer")
+            is True
+        )
+        assert (
+            dependency_has_company_access(session, outsider, company.id, "viewer")
+            is False
+        )
+        assert (
+            dependency_has_company_access(session, admin, company.id, "viewer")
+            is True
+        )
     finally:
         session.close()
         engine.dispose()

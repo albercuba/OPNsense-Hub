@@ -346,15 +346,13 @@ def test_device_template_disables_email_form_when_hub_email_not_configured():
     assert "disabled" in rendered
 
 
-def test_email_notification_settings_reject_when_email_not_configured(monkeypatch):
+def test_email_notification_settings_reject_when_email_not_configured():
     device = make_device()
     db = FakeDb(
         device=device,
         integration_settings=make_integration_settings(configured=False),
         company=Company(id=device.company_id, name="Acme"),
     )
-    monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: True)
-
     with pytest.raises(HTTPException) as exc:
         update_device_email_notification_settings(
             SimpleNamespace(client=None, headers={}),
@@ -374,15 +372,13 @@ def test_email_notification_settings_reject_when_email_not_configured(monkeypatc
     assert "email settings are not configured" in exc.value.detail
 
 
-def test_company_admin_can_save_email_notification_settings(monkeypatch):
+def test_company_admin_can_save_email_notification_settings():
     device = make_device()
     db = FakeDb(
         device=device,
         integration_settings=make_integration_settings(configured=True),
         company=Company(id=device.company_id, name="Acme"),
     )
-    monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: True)
-
     response = update_device_email_notification_settings(
         SimpleNamespace(client=None, headers={}),
         device.id,
@@ -415,7 +411,7 @@ def test_non_admin_cannot_save_email_notification_settings(monkeypatch):
         integration_settings=make_integration_settings(configured=True),
         company=Company(id=device.company_id, name="Acme"),
     )
-    monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: False)
+    monkeypatch.setattr("app.rbac.get_company_role", lambda *args, **kwargs: None)
 
     with pytest.raises(HTTPException) as exc:
         update_device_email_notification_settings(

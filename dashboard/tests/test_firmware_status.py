@@ -261,7 +261,7 @@ def test_heartbeat_response_includes_pending_backup_request():
     )
 
 
-def test_request_backup_now_marks_pending_request(monkeypatch):
+def test_request_backup_now_marks_pending_request():
     device = make_device(
         "fw-backup-now",
         backup_enabled=False,
@@ -271,7 +271,6 @@ def test_request_backup_now_marks_pending_request(monkeypatch):
         backup_interval_hours=24,
     )
     db = FakeDb(device=device)
-    monkeypatch.setattr("app.main.has_company_role", lambda *args, **kwargs: True)
 
     response = request_device_backup_now(
         SimpleNamespace(client=None, headers={}),

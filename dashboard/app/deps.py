@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import Company, Device, User
-from .rbac import has_company_role
+from .rbac import has_company_access as rbac_has_company_access
 from .security import verify_secret
 from .services.auth_service import session_from_request
 
@@ -31,10 +31,7 @@ def ui_user(request: Request, db: Session) -> User | None:
 def has_company_access(
     db: Session, user: User, company_id: uuid.UUID, minimum: str = "viewer"
 ) -> bool:
-    from . import main as main_module
-
-    role_checker = getattr(main_module, "has_company_role", has_company_role)
-    return user.role == "administrator" or role_checker(db, user, company_id, minimum)
+    return rbac_has_company_access(db, user, company_id, minimum)
 
 
 def require_company(
