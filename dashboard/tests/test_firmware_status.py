@@ -1,8 +1,11 @@
 import asyncio
+import base64
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from app.main import (
     backup_due,
     backup_interval_delta,
@@ -17,6 +20,24 @@ from app.main import (
 )
 from app.models import Device, DeviceBackup, DeviceEvent
 from app.security import hash_secret
+from app.services.device_backup_crypto import ENCRYPTED_DEVICE_BACKUP_FORMAT
+
+
+def encrypted_backup_envelope(device_id, marker: bytes = b"A"):
+    ciphertext = b"Salted__" + b"12345678" + marker * 16
+    return {
+        "format": ENCRYPTED_DEVICE_BACKUP_FORMAT,
+        "version": 1,
+        "cipher": "AES-256-CBC+HMAC-SHA256",
+        "kdf": "PBKDF2-HMAC-SHA256",
+        "iterations": 200_000,
+        "key_id": "a" * 24,
+        "device_id": str(device_id),
+        "source_hostname": "test-firewall",
+        "captured_at": "2026-06-25T23:00:00+00:00",
+        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+        "mac": "b" * 64,
+    }
 
 
 class FakeScalarResult:
@@ -245,7 +266,11 @@ def test_heartbeat_response_includes_pending_backup_request():
 
     response = heartbeat(
         device.id,
-        {"status": "online", "hostname": "fw-backup-heartbeat"},
+        {
+            "status": "online",
+            "hostname": "fw-backup-heartbeat",
+            "backup_formats": [ENCRYPTED_DEVICE_BACKUP_FORMAT],
+        },
         db,
         authorization=f"Bearer {token}",
     )
@@ -259,6 +284,27 @@ def test_heartbeat_response_includes_pending_backup_request():
         isinstance(event, DeviceEvent) and event.event_type == "heartbeat"
         for event in db.added
     )
+
+
+def test_heartbeat_does_not_request_backup_from_plaintext_only_plugin():
+    token = "device-token"
+    device = make_device(
+        "fw-legacy-backup",
+        token=token,
+        backup_enabled=True,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {"status": "online", "hostname": "fw-legacy-backup"},
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["backup_requested"] is False
+    assert response["backup_format_required"] == ENCRYPTED_DEVICE_BACKUP_FORMAT
+    assert device.backup_last_requested_at is None
 
 
 def test_request_backup_now_marks_pending_request():
@@ -304,7 +350,11 @@ def test_heartbeat_response_includes_manual_backup_metadata_when_disabled():
 
     response = heartbeat(
         device.id,
-        {"status": "online", "hostname": "fw-backup-manual"},
+        {
+            "status": "online",
+            "hostname": "fw-backup-manual",
+            "backup_formats": [ENCRYPTED_DEVICE_BACKUP_FORMAT],
+        },
         db,
         authorization=f"Bearer {token}",
     )
@@ -376,15 +426,17 @@ def test_upload_device_backup_rotates_to_retention_limit():
         DeviceBackup(
             id=uuid4(),
             device_id=device.id,
-            filename="fw-backup-upload-backup-1.xml",
-            content="<config>1</config>",
+            filename="fw-backup-upload-backup-1.opnenc",
+            backup_format=ENCRYPTED_DEVICE_BACKUP_FORMAT,
+            encrypted_payload=json.dumps(encrypted_backup_envelope(device.id, b"A")),
             created_at=datetime(2026, 6, 23, 23, 0, tzinfo=timezone.utc),
         ),
         DeviceBackup(
             id=uuid4(),
             device_id=device.id,
-            filename="fw-backup-upload-backup-2.xml",
-            content="<config>2</config>",
+            filename="fw-backup-upload-backup-2.opnenc",
+            backup_format=ENCRYPTED_DEVICE_BACKUP_FORMAT,
+            encrypted_payload=json.dumps(encrypted_backup_envelope(device.id, b"B")),
             created_at=datetime(2026, 6, 24, 23, 0, tzinfo=timezone.utc),
         ),
     ]
@@ -393,17 +445,19 @@ def test_upload_device_backup_rotates_to_retention_limit():
     response = upload_device_backup(
         device.id,
         {
-            "filename": "fw-backup-upload-backup-3.xml",
-            "created_at": "2026-06-25T23:00:00Z",
-            "content": "<config>3</config>",
+            "format": ENCRYPTED_DEVICE_BACKUP_FORMAT,
+            "encrypted_backup": encrypted_backup_envelope(device.id, b"C"),
         },
         db,
         authorization=f"Bearer {token}",
     )
 
     assert response["ok"] is True
-    assert response["filename"] == "fw-backup-upload-backup-3.xml"
+    assert response["filename"].endswith(".opnenc")
     assert len(db.backups) == 2
+    newest_backup = max(db.backups, key=lambda item: item.created_at)
+    assert newest_backup.backup_format == ENCRYPTED_DEVICE_BACKUP_FORMAT
+    assert "<config" not in newest_backup.encrypted_payload
     assert len(db.deleted) == 1
     assert device.backup_last_requested_at is None
     assert device.backup_last_uploaded_at is not None
@@ -411,6 +465,62 @@ def test_upload_device_backup_rotates_to_retention_limit():
         isinstance(event, DeviceEvent) and event.event_type == "backup_uploaded"
         for event in db.added
     )
+
+
+def test_upload_device_backup_rejects_plaintext_content():
+    token = "device-token"
+    device = make_device(
+        "fw-plaintext-backup",
+        token=token,
+        backup_enabled=True,
+        backup_last_requested_at=datetime.now(timezone.utc),
+    )
+    db = FakeDb(device=device)
+
+    with pytest.raises(Exception) as exc_info:
+        upload_device_backup(
+            device.id,
+            {"content": "<config><secret>plaintext</secret></config>"},
+            db,
+            authorization=f"Bearer {token}",
+        )
+
+    assert getattr(exc_info.value, "status_code", None) == 400
+    assert "plaintext" in str(getattr(exc_info.value, "detail", "")).lower()
+    assert db.backups == []
+
+
+@pytest.mark.parametrize("mutation", ["wrong-device", "unexpected-field", "bad-base64"])
+def test_upload_device_backup_rejects_invalid_encrypted_envelope(mutation):
+    token = "device-token"
+    device = make_device(
+        f"fw-invalid-{mutation}",
+        token=token,
+        backup_enabled=True,
+        backup_last_requested_at=datetime.now(timezone.utc),
+    )
+    envelope = encrypted_backup_envelope(device.id)
+    if mutation == "wrong-device":
+        envelope["device_id"] = str(uuid4())
+    elif mutation == "unexpected-field":
+        envelope["plaintext"] = "<config />"
+    else:
+        envelope["ciphertext"] = "not valid base64!"
+    db = FakeDb(device=device)
+
+    with pytest.raises(Exception) as exc_info:
+        upload_device_backup(
+            device.id,
+            {
+                "format": ENCRYPTED_DEVICE_BACKUP_FORMAT,
+                "encrypted_backup": envelope,
+            },
+            db,
+            authorization=f"Bearer {token}",
+        )
+
+    assert getattr(exc_info.value, "status_code", None) == 400
+    assert db.backups == []
 
 
 def test_normalize_device_firmware_payload_normalizes_invalid_status_to_error():

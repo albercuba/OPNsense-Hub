@@ -200,7 +200,7 @@ async def run_firmware_schedule_once(now=None):
 
 
 def upload_device_backup(device_id, payload, db, authorization=None):
-    return devices_router.upload_device_backup(
+    return devices_router.store_device_backup_payload(
         device_id,
         payload,
         _compat_post_request(f"/api/v1/devices/{device_id}/backups"),

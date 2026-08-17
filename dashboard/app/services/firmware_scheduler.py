@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
-import re
 from datetime import date, datetime, timezone
 from typing import cast
 
@@ -33,7 +32,6 @@ logger = logging.getLogger(__name__)
 FIRMWARE_STATUSES = {"unknown", "none", "update", "upgrade", "error"}
 FIRMWARE_VERSION_MAX_LENGTH = 80
 FIRMWARE_MESSAGE_MAX_LENGTH = 500
-DEVICE_BACKUP_CONTENT_MAX_LENGTH = 2_000_000
 
 
 def tunnel_proxy_host(value: object) -> str:
@@ -221,12 +219,6 @@ def parse_backup_interval_unit(value: object) -> str:
     return normalized
 
 
-def normalize_backup_filename(device: Device, created_at: datetime) -> str:
-    safe_hostname = (
-        re.sub(r"[^A-Za-z0-9._-]+", "-", device.hostname).strip("-") or "firewall"
-    )
-    return f"{safe_hostname}-backup-{created_at.strftime('%Y%m%d%H%M%S')}.xml"
-
 
 def parse_license_expires_at(value: object) -> datetime | None:
     if value is None:
@@ -242,10 +234,6 @@ def parse_license_expires_at(value: object) -> datetime | None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
 
-
-def parse_uploaded_backup_created_at(value: object) -> datetime:
-    parsed = parse_license_expires_at(value)
-    return parsed or utc_now()
 
 
 def normalize_device_license_payload(

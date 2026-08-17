@@ -17,7 +17,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from fastapi import HTTPException
-from sqlalchemy import Boolean, DateTime, Integer, delete, select
+from sqlalchemy import Boolean, DateTime, Integer, delete, func, select
 from sqlalchemy.orm import Session
 
 from ..backups import (
@@ -47,6 +47,10 @@ from ..models import (
 )
 from ..security import utc_now
 from ..web import settings
+from .device_backup_crypto import (
+    ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    validate_encrypted_device_backup,
+)
 from ..wireguard import (
     WG_KEY_RE,
     WireGuardError,
@@ -57,7 +61,7 @@ from ..wireguard import (
     validate_public_key,
 )
 
-BACKUP_FORMAT_VERSION: Final = 1
+BACKUP_FORMAT_VERSION: Final = 2
 ENCRYPTED_BACKUP_FORMAT: Final = "opnhub-encrypted-backup-v1"
 REQUIRED_BACKUP_MEMBERS: Final = {"manifest.json", "data.json"}
 BACKUP_TABLE_MODELS = (
@@ -415,7 +419,8 @@ def validate_backup_data(
         )
 
     for row in data.get("device_backups", []):
-        if uuid.UUID(str(row.get("device_id"))) not in device_ids:
+        device_id = uuid.UUID(str(row.get("device_id")))
+        if device_id not in device_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains a stored backup with a missing device",
@@ -423,8 +428,31 @@ def validate_backup_data(
         _ensure_string_max_length(
             row.get("filename"), field_name="backup filename", maximum=255
         )
-        _ensure_string_max_length(
-            row.get("content"), field_name="backup content", maximum=2_000_000
+        if "content" in row:
+            raise HTTPException(
+                status_code=400,
+                detail="legacy Hub archives containing plaintext firewall backups are not supported",
+            )
+        if row.get("backup_format") != ENCRYPTED_DEVICE_BACKUP_FORMAT:
+            raise HTTPException(
+                status_code=400,
+                detail="backup archive contains an unsupported firewall backup format",
+            )
+        encrypted_payload = row.get("encrypted_payload")
+        if not isinstance(encrypted_payload, str):
+            raise HTTPException(
+                status_code=400,
+                detail="backup archive contains an invalid encrypted firewall backup",
+            )
+        try:
+            envelope = json.loads(encrypted_payload)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="backup archive contains an invalid encrypted firewall backup",
+            ) from exc
+        row["encrypted_payload"] = validate_encrypted_device_backup(
+            envelope, expected_device_id=device_id
         )
 
     for row in data.get("device_events", []):
@@ -582,15 +610,31 @@ def decrypt_backup_payload(content: bytes, passphrase: str | None) -> bytes:
         or envelope.get("format") != ENCRYPTED_BACKUP_FORMAT
     ):
         return content
+    if set(envelope) != {"format", "salt", "iterations", "ciphertext"}:
+        raise HTTPException(
+            status_code=400, detail="encrypted backup envelope is invalid"
+        )
+    if envelope.get("iterations") != 390000:
+        raise HTTPException(
+            status_code=400, detail="encrypted backup KDF parameters are invalid"
+        )
     if not passphrase:
         raise HTTPException(
             status_code=400, detail="backup archive requires a passphrase"
         )
     try:
-        salt = base64.b64decode(str(envelope["salt"]))
-        iterations = int(envelope["iterations"])
-        token = str(envelope["ciphertext"]).encode("utf-8")
-        return Fernet(_derive_backup_key(passphrase, salt, iterations)).decrypt(token)
+        salt_value = envelope["salt"]
+        ciphertext_value = envelope["ciphertext"]
+        if not isinstance(salt_value, str) or not isinstance(ciphertext_value, str):
+            raise TypeError("invalid encrypted backup field type")
+        salt = base64.b64decode(salt_value, validate=True)
+        if (
+            len(salt) != 16
+            or len(ciphertext_value) > settings.max_backup_restore_bytes * 2
+        ):
+            raise ValueError("invalid encrypted backup field size")
+        token = ciphertext_value.encode("ascii")
+        return Fernet(_derive_backup_key(passphrase, salt, 390000)).decrypt(token)
     except (KeyError, ValueError, TypeError, InvalidToken) as exc:
         raise HTTPException(
             status_code=400,
@@ -601,6 +645,31 @@ def decrypt_backup_payload(content: bytes, passphrase: str | None) -> bytes:
 def export_backup_bundle(
     db: Session, passphrase: str | None = None
 ) -> tuple[bytes, str, str]:
+    encrypted_backup_count, encrypted_payload_characters = db.execute(
+        select(
+            func.count(DeviceBackup.id),
+            func.coalesce(func.sum(func.length(DeviceBackup.encrypted_payload)), 0),
+        )
+    ).one()
+    # Device backup envelopes are ASCII JSON embedded inside data.json. Account
+    # conservatively for JSON escaping and row metadata before materializing them.
+    estimated_device_backup_json_bytes = (
+        int(encrypted_payload_characters) * 2 + int(encrypted_backup_count) * 1024
+    )
+    data_member_limit = min(
+        settings.max_backup_restore_file_bytes,
+        settings.max_backup_restore_total_uncompressed_bytes,
+    )
+    if estimated_device_backup_json_bytes > data_member_limit:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "stored encrypted firewall backups exceed the configured Hub archive "
+                "restore limits; increase MAX_BACKUP_RESTORE_FILE_BYTES and "
+                "MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES before exporting"
+            ),
+        )
+
     exported = {
         table_name: [
             serialize_model_row(row) for row in db.scalars(select(model)).all()
@@ -609,22 +678,63 @@ def export_backup_bundle(
     }
     manifest = build_backup_manifest(exported)
     base_filename = f"opnsense-hub-backup-{utc_now().strftime('%Y%m%d-%H%M%S')}"
+    members: dict[str, bytes] = {
+        "manifest.json": json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"),
+        "data.json": json.dumps(exported, indent=2, sort_keys=True).encode("utf-8"),
+    }
+    logo_path = uploaded_logo_path(settings.branding_upload_dir)
+    if logo_path:
+        members[f"branding/{logo_path.name}"] = logo_path.read_bytes()
+    wg_key_path = Path(settings.wg_server_private_key_path)
+    if wg_key_path.exists():
+        members["wireguard/server.key"] = wg_key_path.read_text().encode("utf-8")
+    if len(members) > settings.max_backup_restore_entries or any(
+        len(content) > settings.max_backup_restore_file_bytes
+        for content in members.values()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "current Hub data exceeds the configured per-file restore limits; "
+                "increase the backup restore limits before exporting"
+            ),
+        )
+    if sum(len(content) for content in members.values()) > (
+        settings.max_backup_restore_total_uncompressed_bytes
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "current Hub data exceeds the configured total restore limit; "
+                "increase the backup restore limits before exporting"
+            ),
+        )
+
     bundle = io.BytesIO()
     with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(
-            "manifest.json", json.dumps(manifest, indent=2, sort_keys=True)
-        )
-        archive.writestr("data.json", json.dumps(exported, indent=2, sort_keys=True))
-        logo_path = uploaded_logo_path(settings.branding_upload_dir)
-        if logo_path:
-            archive.writestr(f"branding/{logo_path.name}", logo_path.read_bytes())
-        wg_key_path = Path(settings.wg_server_private_key_path)
-        if wg_key_path.exists():
-            archive.writestr("wireguard/server.key", wg_key_path.read_text())
+        for name, content in members.items():
+            archive.writestr(name, content)
     raw_bundle = bundle.getvalue()
+    if len(raw_bundle) > settings.max_backup_restore_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "current Hub data exceeds the configured backup file limit; "
+                "increase the backup restore limits before exporting"
+            ),
+        )
     if passphrase and passphrase.strip():
+        encrypted_bundle = encrypt_backup_payload(raw_bundle, passphrase.strip())
+        if len(encrypted_bundle) > settings.max_backup_restore_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "encrypted Hub backup exceeds the configured backup file limit; "
+                    "increase the backup restore limits before exporting"
+                ),
+            )
         return (
-            encrypt_backup_payload(raw_bundle, passphrase.strip()),
+            encrypted_bundle,
             base_filename + ".opnhub",
             "application/octet-stream",
         )

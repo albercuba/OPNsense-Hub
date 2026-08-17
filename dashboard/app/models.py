@@ -433,6 +433,12 @@ class DeviceProxySession(Base):
 
 class DeviceBackup(Base):
     __tablename__ = "device_backups"
+    __table_args__ = (
+        CheckConstraint(
+            "backup_format = 'opnsense-config-encrypted-v1'",
+            name="ck_device_backups_encrypted_format",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -444,7 +450,8 @@ class DeviceBackup(Base):
         index=True,
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    backup_format: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, nullable=False
     )

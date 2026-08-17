@@ -7,6 +7,7 @@ Run the access-path tests first, then broader validation:
 ```sh
 PYTHONPATH=dashboard python -m pytest dashboard/tests/test_proxy_origin.py dashboard/tests/test_tcp_relay.py dashboard/tests/test_security.py
 python -m unittest discover -s connector -p 'test_*.py' -v
+python -m unittest discover -s net-mgmt/os-opnsensehub/tests -p 'test_*.py' -v
 PYTHONPATH=dashboard python -m pytest dashboard/tests
 python -m compileall dashboard/app connector
 ```
@@ -28,6 +29,8 @@ Relevant automated coverage must prove:
 - The connector defaults to loopback, requires `--allow-non-loopback` for broader listeners, validates device/URL/listener arguments, forwards exact bytes, handles idle timeout, and shuts down cleanly.
 - The raw relay forwards exact bytes, constructs an exact per-device hostname, rejects a nonmatching source IP before upstream connect, enforces connection caps, expires hard, applies idle timeout, atomically replaces per-device allocations, cleans up after handoff failures, and releases ports.
 - Startup validation rejects invalid connector/relay limits and refuses `PUBLIC_L4_RELAY_ENABLED=true` unless `PUBLIC_L4_RELAY_MTLS_REQUIRED=true`.
+- Firewall backup tests use the actual OpenSSL command to prove encryption/decryption, key separation and root-only permissions, MAC tamper rejection, wrong-key rejection, recovery-key export/import, and absence of XML plaintext from the upload request.
+- Hub tests prove capability gating, pending-request enforcement, strict encrypted-envelope validation, server-time retention, plaintext upload rejection, opaque no-store download, and Hub export/restore without a `content` field.
 - Existing security coverage continues to prove secret hashing, OTP format, WireGuard key validation, `/32`-only routes, and RBAC ordering.
 
 ## Default connector manual tests
@@ -85,21 +88,26 @@ On a disposable OPNsense VM:
 2. Run `service configd restart`.
 3. Open `Services > OPNsense Hub`.
 4. Enter Hub HTTPS URL and OTP, then click Connect.
-5. Confirm `/var/db/opnsensehub/state.json` and `/usr/local/etc/wireguard/opnsensehub.conf` exist with restrictive permissions.
-6. Confirm the WireGuard private key is never visible in Hub logs or the Hub database.
-7. Run the heartbeat configd action.
-8. Verify Disconnect stops only the local tunnel and does not delete enrollment state.
-9. If testing the optional relay, verify the WebGUI's exact hostname certificate and mandatory client-certificate policy directly on OPNsense before exposing relay ports.
+5. Confirm `/var/db/opnsensehub/state.json`, `/var/db/opnsensehub/backup_master.key`, and `/usr/local/etc/wireguard/opnsensehub.conf` exist with restrictive permissions after the first encrypted backup.
+6. Confirm the WireGuard private key, firewall backup master key, plaintext `config.xml`, and decrypted configuration are never visible in Hub requests, logs, database rows, downloads, or Hub exports.
+7. Run the heartbeat configd action and confirm plugin `0.2` advertises `opnsense-config-encrypted-v1`; confirm an older/non-advertising heartbeat receives `backup_requested=false`.
+8. Export the backup recovery key to offline storage, compare its key fingerprint with `key-info`, import it into a disposable replacement environment, and decrypt a downloaded `.opnenc` backup. Verify tampering and a wrong key fail before plaintext is written.
+9. Verify Disconnect stops only the local tunnel and does not delete enrollment state or the independent backup master key.
+10. If testing the optional relay, verify the WebGUI's exact hostname certificate and mandatory client-certificate policy directly on OPNsense before exposing relay ports.
 
 ## Migration and production readiness tests
 
 - Upgrade a database at revision `0010_device_proxy_sessions` to `0011_connector_access_sessions`; verify the phase constraint accepts `connector` records, `dashboard_session_id` references `sessions(id)` with cascade deletion, and existing access-session rows remain intact.
 - Downgrade only in a disposable database; verify connector rows are removed before the old phase constraint is restored.
-- Verify startup migration reaches Alembic `head`, then test application backup and restore without expecting environment variables to be restored.
+- Upgrade both a revision-`0011` database containing plaintext `device_backups.content` and a fresh database to `0012_encrypted_device_backups`. Verify plaintext rows are deleted, backup timestamps are reset, the encrypted columns/constraint exist, and enabled capable devices upload replacements.
+- Verify an unversioned legacy database is stamped and then upgraded through `head` in the same startup rather than starting against the legacy plaintext column.
+- Verify downgrade deletes ciphertext rather than exposing it as XML, and verify old Hub archive format/version or a version-2 archive containing `device_backups[].content` is rejected.
+- Verify startup migration reaches Alembic `head`, then test application backup and restore without expecting environment variables or firewall recovery keys to be restored.
 - Verify Docker images build from a clean checkout.
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
 - Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet; revocation must remove the peer.
 - Verify production HTTPS/WSS works at `PUBLIC_URL`, Caddy forwards WSS upgrades, and connector tokens never appear in URLs, access logs, referrers, or shell command history.
 - Verify `PROXY_PUBLIC_URL` is used only as the optional relay DNS base and that no L7 `/proxy/*` service or proxy cookie remains.
-- Verify logs do not contain OTPs, device tokens, connector tokens, dashboard cookies, OPNsense credentials/session cookies, client-certificate private keys, private keys, or relayed payload bytes.
+- Verify logs do not contain OTPs, device tokens, connector tokens, dashboard cookies, OPNsense credentials/session cookies, client-certificate private keys, plaintext firewall configurations, firewall backup recovery keys, private keys, or relayed payload bytes.
+- After the plaintext-backup migration, verify legacy Hub exports, PostgreSQL backups/snapshots, WAL archives, and storage replicas containing old rows are expired under the deployment's data-retention policy.
 - Verify monitoring alerts on unexpected connector/relay opens, authorization failures, connection-limit events, relay allocation failures, and revocations.

@@ -120,8 +120,11 @@ CREATE TABLE IF NOT EXISTS device_backups (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   filename text NOT NULL,
-  content text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  backup_format varchar(64) NOT NULL,
+  encrypted_payload text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT ck_device_backups_encrypted_format
+    CHECK (backup_format = 'opnsense-config-encrypted-v1')
 );
 
 CREATE TABLE IF NOT EXISTS device_events (

@@ -19,6 +19,7 @@
 - Connector access accepts binary frames only and forwards opaque TLS bytes to the firewall WebGUI over the validated WireGuard `/32`. The Hub does not terminate firewall TLS or receive WebGUI credentials/session cookies.
 - Connector and optional relay opens are rate limited and audit logged. Device revocation immediately closes tracked local connector/relay access, while active connector streams periodically recheck shared database authorization for cross-worker session revocation, RBAC removal, user deletion, and device revocation.
 - Revocation invalidates the stored device token hash and removes the WireGuard peer.
+- Complete OPNsense configurations are encrypted and authenticated on the firewall before upload. The Hub stores only opaque `opnsense-config-encrypted-v1` envelopes and never receives the backup master/recovery key.
 - The Hub never stores OPNsense web UI credentials.
 
 ## Isolation invariant
@@ -47,6 +48,25 @@ The browser must trust the certificate presented by that OPNsense WebGUI. If its
 
 Caddy handles dashboard HTTP(S), including the WSS upgrade, only. The raw relay described below bypasses Caddy.
 
+## Firewall configuration backup boundary
+
+The plugin—not the Hub—reads `/conf/config.xml`. Plugin `0.2` encrypts it locally with AES-256-CBC and authenticates a canonical envelope with an independent HMAC-SHA256 key. Both keys are domain-separated derivations of a random 32-byte master key at `/var/db/opnsensehub/backup_master.key`. OpenSSL receives the derived high-entropy passphrase through standard input, never through process arguments, URLs, logs, or the Hub API.
+
+The Hub enforces these limits:
+
+- backup requests are sent only to plugins advertising `opnsense-config-encrypted-v1`
+- an upload is accepted only while a backup request is pending
+- legacy `content` fields, unexpected envelope fields, unsupported algorithms, wrong device IDs, invalid base64, non-OpenSSL salt headers, invalid block lengths, and oversized ciphertext are rejected
+- retention ordering uses Hub receipt time, preventing a device-supplied future timestamp from pinning a backup
+- PostgreSQL stores only `backup_format` and canonical `encrypted_payload`; downloads are opaque `.opnenc` files with `Cache-Control: no-store`
+- Hub export format version `2` rejects archives that could restore legacy plaintext firewall backups
+
+The Hub cannot verify the HMAC because it intentionally lacks the key. Verification happens before local decryption with `hmac.compare_digest()` on OPNsense. A stolen device token can still submit structurally valid garbage for a pending request, so device-token protection and backup monitoring remain important.
+
+The root-only backup key is deliberately independent from WireGuard and is not deleted during normal disconnect/revocation cleanup. Export it to separate encrypted offline storage using `backup_crypto.py export-key`; never place that recovery file in Hub storage, Hub exports, or the same failure domain as the Hub database. Without this key, backups cannot be recovered after loss of the firewall's `/var/db` state. Import the key before generating backups on replacement hardware to avoid creating a new recovery lineage.
+
+Migration `0012_encrypted_device_backups` deletes existing plaintext rows because converting them at the Hub would require giving the Hub the encryption key. Database deletion does not erase old PostgreSQL snapshots, WAL, filesystem remnants, or prior Hub exports; operators must expire those copies according to their threat model.
+
 ## Optional public L4 relay boundary
 
 The raw public relay is disabled by default. It must remain disabled unless both `PUBLIC_L4_RELAY_ENABLED=true` and `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` are set and the deployment has independently verified all of these controls:
@@ -70,7 +90,7 @@ Never log or display these values:
 - Dashboard session tokens.
 - WireGuard private keys.
 - Connector tokens and optional relay allocation details.
-- OPNsense administrator passwords, WebGUI session cookies, client-certificate private keys, or decrypted WebGUI traffic.
+- OPNsense administrator passwords, WebGUI session cookies, client-certificate private keys, decrypted WebGUI traffic, plaintext `config.xml`, or firewall backup recovery keys.
 
 ## Production hardening checklist
 
@@ -96,5 +116,7 @@ Never log or display these values:
 - `security: isolate WireGuard management` — for higher-assurance deployments, consider moving WireGuard bootstrap and peer updates into a minimal privileged sidecar or host service.
 - `security: keep login and enrollment rate limits enabled` — tune the existing IP/user limits conservatively and use a shared production backend.
 - `security: preserve CSRF enforcement` — keep signed-cookie/form-token validation on all browser-facing state-changing routes, including connector and relay opens.
-- `security: encrypt database backups` — configs, token hashes, metadata, uploaded branding assets, and audit data are sensitive.
+- `security: export firewall recovery keys offline` — export each firewall's root-only backup key, verify its key fingerprint, keep it encrypted and separate from Hub storage, and test recovery on disposable hardware.
+- `security: remove historical plaintext copies` — after migration `0012`, securely expire old Hub exports, PostgreSQL backups/snapshots, WAL, and storage images that may contain legacy `config.xml` rows.
+- `security: encrypt database backups` — firewall configuration envelopes are opaque, but token hashes, Hub secrets, metadata, uploaded branding assets, audit data, and the Hub WireGuard key remain sensitive.
 - `security: monitor audit logs` — alert on repeated failed enrollment, unexpected `device.connector.open` or `device.relay.open` events, and revocations.

@@ -415,7 +415,12 @@
     </section>
     <section id="device-backup-history-card" class="card device-backup-history-card">
         <h2>Stored backups</h2>
-        <table>
+        <p class="muted">
+            Configuration backups are encrypted on the firewall before upload. The Hub
+            cannot read or restore their contents. Keep the firewall's exported backup
+            recovery key in separate offline storage.
+        </p>
+        <table></table>
             <thead>
                 <tr>
                     <th>Created</th>
@@ -431,9 +436,8 @@
                     <td class="actions">
                         <a
                             class="icon-button"
-                            href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
-                            title="Download backup"
-                            aria-label="Download backup"
+                            href="/devices/{{ device.id }}/backups/{{ backup.id }}/do                            title="Download encrypted backup"
+                            aria-label="Download encrypted backup" backup"
                             ><i class="fa-solid fa-download"></i
                         ></a>
                         <form

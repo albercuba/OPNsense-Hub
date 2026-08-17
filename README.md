@@ -74,6 +74,7 @@ docker-compose.yml
 - Branding logo upload with persistent storage and login/app-shell rendering.
 - Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.
 - Configurable database-backed retention management for audit logs and device events, with batched cleanup and local archive export from the Hub UI.
+- Complete OPNsense configuration backups encrypted and authenticated on the firewall before upload; the Hub stores and downloads only opaque ciphertext and never receives the recovery key.
 - Daily firmware update-status checks requested by Hub and executed locally by the OPNsense plugin at 23:00 Hub time.
 - Colored firmware status icons in the firewalls table for unknown, up to date, updates available, upgrade available, and check failed states.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
@@ -361,6 +362,40 @@ Firmware status colors in the firewalls table:
 
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 
+## Encrypted OPNsense configuration backups
+
+Plugin version `0.2` encrypts `/conf/config.xml` locally before upload. The format uses AES-256-CBC with PBKDF2-HMAC-SHA256 plus an independent HMAC-SHA256 encrypt-then-MAC key. Encryption and authentication keys are derived separately from a random 32-byte master key stored only on the firewall at `/var/db/opnsensehub/backup_master.key` with root-only permissions. The key, plaintext XML, and decrypted configuration are never sent to the Hub.
+
+The plugin advertises `opnsense-config-encrypted-v1` in its heartbeat. The Hub requests a backup only from a plugin advertising that format and accepts uploads only while a backup request is pending. Legacy `content` uploads and unknown or malformed envelopes are rejected. Retention ordering uses Hub receipt time rather than a device-supplied timestamp.
+
+The Hub stores a canonical encrypted envelope, serves downloads as `.opnenc`, and cannot validate the envelope HMAC or decrypt it because it does not possess the firewall key. Integrity is verified locally when the file is decrypted. Hub exports contain only these opaque envelopes, although the rest of a Hub export still contains sensitive Hub data and should normally use passphrase protection.
+
+Back up the recovery key separately before relying on off-device backups:
+
+```sh
+/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/backup_crypto.py \
+  export-key /root/firewall-backup-recovery-key.json
+```
+
+Move that root-only file to encrypted offline storage, then remove the temporary copy from the firewall. Never upload it to OPNsense Hub or store it beside Hub database backups. The non-secret key fingerprint can be displayed with:
+
+```sh
+/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/backup_crypto.py key-info
+```
+
+On a replacement firewall, import the recovery key before generating new backups, then decrypt a downloaded backup to a new root-only file:
+
+```sh
+/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/backup_crypto.py \
+  import-key /root/firewall-backup-recovery-key.json
+/usr/local/opnsense/scripts/OPNsense/OPNsenseHub/backup_crypto.py \
+  decrypt /root/firewall-backup.opnenc /root/config.xml.recovered
+```
+
+The utility refuses to overwrite an existing key or output file. Review and restore the recovered XML using supported OPNsense recovery procedures; the Hub does not push or restore firewall configurations.
+
+Migration `0012_encrypted_device_backups` intentionally deletes all existing plaintext firewall backup rows, resets backup timestamps, replaces the plaintext column with `encrypted_payload`, and requests encrypted replacements from capable plugins. Export any legacy backup you must retain before upgrading, then securely expire old Hub exports, PostgreSQL backups/snapshots, and WAL archives that may still contain plaintext `config.xml` data. Plugin `0.1` remains able to heartbeat but will not receive backup requests from the updated Hub; upgrade each firewall to plugin `0.2` to resume backups.
+
 ## Production defaults
 
 Set `APP_ENV=production` to enable strict startup validation. In production the app refuses to start when any of these remain insecure:
@@ -464,7 +499,7 @@ PYTHONPATH=dashboard python -m alembic -c dashboard/alembic.ini upgrade head
 
 Use the same `PYTHONPATH=dashboard` prefix for local test commands so the `app` package resolves consistently.
 
-On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` can still be bootstrapped and stamped when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`. Migration `0011_connector_access_sessions` permits the `connector` phase in `device_proxy_sessions`, allowing the Hub to store hashed, expiring connector authorization records.
+On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` are bootstrapped, stamped, and then upgraded through `head` when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`. Migration `0011_connector_access_sessions` permits hashed, expiring connector authorization records. Migration `0012_encrypted_device_backups` removes legacy plaintext firewall backups and enforces the firewall-encrypted envelope schema.
 
 ## Hub backup and restore
 
@@ -475,9 +510,11 @@ Under `Settings > Backup`, administrators can:
 
 The backup archive is application-level and portable across supported database backends. Unencrypted restore remains supported for backward compatibility, but encrypted export is strongly recommended. The archive includes:
 
-- Hub database content needed to restore users, companies, memberships, enrollment codes, devices, stored firewall backups, device events, audit logs, and integration settings
+- Hub database content needed to restore users, companies, memberships, enrollment codes, devices, opaque firewall-encrypted backup envelopes, device events, audit logs, and integration settings
 - uploaded branding logo, if present
 - the Hub WireGuard server private key, if present at `WG_SERVER_PRIVATE_KEY_PATH`
+
+Hub archive format version `2` requires firewall backups to use the encrypted envelope fields. Legacy Hub archives containing plaintext `device_backups[].content` are rejected so restore cannot reintroduce readable `config.xml` data.
 
 Restore behavior:
 
@@ -486,6 +523,15 @@ Restore behavior:
 - restores the uploaded branding asset and Hub WireGuard private key from the archive when included
 
 Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `PROXY_PUBLIC_URL`, connector/relay settings, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
+
+Hub export uses the same active limits as restore and refuses to build an archive that those settings cannot restore. Encrypted firewall envelopes are base64-encoded and do not compress significantly, so deployments retaining many large firewall backups may need to raise these values together:
+
+- `MAX_BACKUP_RESTORE_BYTES` — maximum uploaded or generated archive size; default `20000000`
+- `MAX_BACKUP_RESTORE_ENTRIES` — maximum ZIP member count; default `16`
+- `MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES` — aggregate extracted size; default `25000000`
+- `MAX_BACKUP_RESTORE_FILE_BYTES` — maximum size of one member such as `data.json`; default `20000000`
+
+Export performs an aggregate database-size preflight before loading encrypted firewall payloads and returns an actionable error when the retained ciphertext cannot fit within these limits.
 
 ## OPNsense plugin build/install commands
 

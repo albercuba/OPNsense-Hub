@@ -148,8 +148,11 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
               id uuid PRIMARY KEY,
               device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
               filename text NOT NULL,
-              content text NOT NULL,
-              created_at timestamptz NOT NULL DEFAULT now()
+              backup_format varchar(64) NOT NULL,
+              encrypted_payload text NOT NULL,
+              created_at timestamptz NOT NULL DEFAULT now(),
+              CONSTRAINT ck_device_backups_encrypted_format
+                CHECK (backup_format = 'opnsense-config-encrypted-v1')
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_device_backups_device_id ON device_backups(device_id)",
@@ -212,7 +215,6 @@ def run_startup_migrations(target_engine: Engine = engine) -> None:
     if not has_version and settings.allow_legacy_schema_bootstrap:
         ensure_schema_compat_legacy(target_engine)
         command.stamp(config, BASELINE_REVISION)
-        return
     command.upgrade(config, "head")
 
 

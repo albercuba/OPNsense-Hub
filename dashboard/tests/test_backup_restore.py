@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import zipfile
@@ -23,6 +24,10 @@ from app.models import (
 )
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
 from app.services.backup_service import parse_backup_bundle
+from app.services.device_backup_crypto import (
+    ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES,
+)
 from app.services.notification_service import maybe_notify_for_repeated_auth_failures
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -46,6 +51,23 @@ VALID_WG_PUBLIC_KEY = "A" * 43 + "="
 VALID_WG_PUBLIC_KEY_2 = "B" * 43 + "="
 VALID_WG_PRIVATE_KEY = "C" * 43 + "="
 VALID_WG_PRIVATE_KEY_2 = "D" * 43 + "="
+
+
+def encrypted_backup_envelope(device_id):
+    ciphertext = b"Salted__" + b"12345678" + b"A" * 16
+    return {
+        "format": ENCRYPTED_DEVICE_BACKUP_FORMAT,
+        "version": 1,
+        "cipher": "AES-256-CBC+HMAC-SHA256",
+        "kdf": "PBKDF2-HMAC-SHA256",
+        "iterations": 200_000,
+        "key_id": "a" * 24,
+        "device_id": str(device_id),
+        "source_hostname": "fw-acme-1",
+        "captured_at": "2026-06-25T23:00:00+00:00",
+        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+        "mac": "b" * 64,
+    }
 
 
 async def noop():
@@ -129,8 +151,13 @@ def seed_backup_source(session: Session) -> User:
             DeviceBackup(
                 id=uuid4(),
                 device_id=device.id,
-                filename="config.xml",
-                content="<config />",
+                filename="fw-acme-1-backup.opnenc",
+                backup_format=ENCRYPTED_DEVICE_BACKUP_FORMAT,
+                encrypted_payload=json.dumps(
+                    encrypted_backup_envelope(device.id),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
                 created_at=now,
             ),
             DeviceEvent(
@@ -266,14 +293,40 @@ def test_backup_export_bundle_includes_database_and_files(monkeypatch, tmp_path)
         data = json.loads(archive.read("data.json"))
         exported_key = archive.read("wireguard/server.key").decode("utf-8").strip()
 
-    assert manifest["format_version"] == 1
+    assert manifest["format_version"] == 2
     assert manifest["includes"]["branding_logo"] == "logo.png"
     assert manifest["includes"]["wireguard_private_key"] == "server.key"
     assert data["users"][0]["email"] == "admin@example.com"
     assert data["companies"][0]["name"] == "Acme"
     assert data["devices"][0]["hostname"] == "fw-acme-1"
-    assert data["device_backups"][0]["filename"] == "config.xml"
+    assert data["device_backups"][0]["filename"] == "fw-acme-1-backup.opnenc"
+    assert data["device_backups"][0]["backup_format"] == ENCRYPTED_DEVICE_BACKUP_FORMAT
+    assert "content" not in data["device_backups"][0]
+    assert "<config" not in data["device_backups"][0]["encrypted_payload"]
     assert exported_key == VALID_WG_PRIVATE_KEY
+
+
+def test_backup_export_preflights_encrypted_payload_restore_limits(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "branding_upload_dir", str(tmp_path / "branding"))
+    monkeypatch.setattr(
+        settings, "wg_server_private_key_path", str(tmp_path / "missing-server.key")
+    )
+    monkeypatch.setattr(settings, "max_backup_restore_file_bytes", 128)
+    monkeypatch.setattr(
+        settings, "max_backup_restore_total_uncompressed_bytes", 256
+    )
+    with sqlite_session(tmp_path, "export_preflight") as session:
+        seed_backup_source(session)
+        try:
+            export_backup_bundle(session)
+            assert False, "expected encrypted backup export preflight to fail"
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 400
+            assert "stored encrypted firewall backups" in str(
+                getattr(exc, "detail", exc)
+            ).lower()
 
 
 def rewrite_backup_bundle(bundle: bytes, mutate):
@@ -288,6 +341,36 @@ def rewrite_backup_bundle(bundle: bytes, mutate):
         for name, content in members.items():
             rewritten.writestr(name, content)
     return output.getvalue()
+
+
+def test_parse_backup_bundle_rejects_legacy_plaintext_firewall_backup(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "branding_upload_dir", str(tmp_path / "branding"))
+    monkeypatch.setattr(
+        settings, "wg_server_private_key_path", str(tmp_path / "missing-server.key")
+    )
+    with sqlite_session(tmp_path, "plaintext_archive") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    def add_plaintext_content(members):
+        payload = json.loads(members["data.json"])
+        backup = payload["device_backups"][0]
+        backup.pop("backup_format")
+        backup.pop("encrypted_payload")
+        backup["content"] = "<opnsense><secret>legacy</secret></opnsense>"
+        members["data.json"] = json.dumps(payload).encode("utf-8")
+
+    mutated = rewrite_backup_bundle(bundle, add_plaintext_content)
+    try:
+        parse_backup_bundle(mutated)
+        assert False, "expected plaintext firewall backup to be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "plaintext firewall backups" in str(
+            getattr(exc, "detail", exc)
+        ).lower()
 
 
 def test_backup_verification_reports_structural_integrity(monkeypatch, tmp_path):
@@ -765,7 +848,7 @@ def test_parse_backup_bundle_rejects_archives_with_too_many_members(monkeypatch)
     monkeypatch.setattr(settings, "max_backup_restore_entries", 2)
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr("manifest.json", json.dumps({"format_version": 1}))
+        bundle.writestr("manifest.json", json.dumps({"format_version": 2}))
         bundle.writestr(
             "data.json",
             json.dumps(
@@ -846,6 +929,41 @@ def test_parse_backup_bundle_rejects_string_boolean_values(monkeypatch, tmp_path
         assert "invalid boolean" in str(getattr(exc, "detail", exc)).lower()
 
 
+def test_device_backup_upload_authenticates_before_bounded_body_read(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "bounded_device_backup_upload") as session:
+        admin = seed_backup_source(session)
+        device = session.scalars(select(Device)).first()
+        assert device is not None
+        device.backup_enabled = True
+        device.backup_last_requested_at = utc_now()
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        oversized_body = b"x" * (ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES + 1)
+        with TestClient(app) as client:
+            unauthorized = client.post(
+                f"/api/v1/devices/{device.id}/backups",
+                content=oversized_body,
+                headers={
+                    "Authorization": "Bearer wrong-token",
+                    "Content-Type": "application/json",
+                },
+            )
+            oversized = client.post(
+                f"/api/v1/devices/{device.id}/backups",
+                content=oversized_body,
+                headers={
+                    "Authorization": "Bearer device-token",
+                    "Content-Type": "application/json",
+                },
+            )
+        app.dependency_overrides.clear()
+
+    assert unauthorized.status_code == 401
+    assert oversized.status_code == 413
+
+
 def test_download_device_backup_sanitizes_content_disposition_filename(
     monkeypatch, tmp_path
 ):
@@ -863,6 +981,11 @@ def test_download_device_backup_sanitizes_content_disposition_filename(
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-type"].startswith(
+        "application/vnd.opnsense-hub.encrypted-config+json"
+    )
+    assert b"<config" not in response.content
     disposition = response.headers["content-disposition"]
     assert disposition.startswith("attachment; filename=")
     assert "\r" not in disposition
@@ -1272,8 +1395,14 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
     assert [user.email for user in restored_users] == ["admin@example.com"]
     assert [company.name for company in restored_companies] == ["Acme"]
     assert [device.hostname for device in restored_devices] == ["fw-acme-1"]
-    assert [backup.filename for backup in restored_device_backups] == ["config.xml"]
-    assert restored_device_backups[0].content == "<config />"
+    assert [backup.filename for backup in restored_device_backups] == [
+        "fw-acme-1-backup.opnenc"
+    ]
+    assert (
+        restored_device_backups[0].backup_format
+        == ENCRYPTED_DEVICE_BACKUP_FORMAT
+    )
+    assert "<config" not in restored_device_backups[0].encrypted_payload
     assert restored_sessions == []
     assert restored_settings is not None
     assert restored_settings.smtp_host == "smtp.example.com"

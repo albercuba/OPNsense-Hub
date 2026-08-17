@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -36,15 +37,18 @@ from ..services.common import (
     get_or_create_integration_settings,
     is_valid_email_address,
 )
+from ..services.device_backup_crypto import (
+    ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES,
+    encrypted_device_backup_filename,
+    validate_encrypted_device_backup,
+)
 from ..services.firmware_scheduler import (
-    DEVICE_BACKUP_CONTENT_MAX_LENGTH,
     apply_device_firmware_payload,
     apply_device_license_payload,
     device_license_label,
-    normalize_backup_filename,
     parse_backup_interval_unit,
     parse_bounded_int,
-    parse_uploaded_backup_created_at,
 )
 from ..services.network_diagnostics import build_device_network_diagnostics
 from ..web import app_timezone_info, render_template, settings
@@ -359,8 +363,15 @@ def heartbeat(
     pending_firmware_check = device.firmware_check_requested_at is not None
     pending_firmware_check_at = device.firmware_check_requested_at
     pending_firmware_check_reason = device.firmware_check_request_reason
-    pending_backup = mark_device_backup_requested(device)
-    pending_backup_at = device.backup_last_requested_at
+    advertised_backup_formats = payload.get("backup_formats")
+    supports_encrypted_backups = (
+        isinstance(advertised_backup_formats, list)
+        and ENCRYPTED_DEVICE_BACKUP_FORMAT in advertised_backup_formats
+    )
+    pending_backup = (
+        mark_device_backup_requested(device) if supports_encrypted_backups else False
+    )
+    pending_backup_at = device.backup_last_requested_at if pending_backup else None
     db.commit()
     return {
         "ok": True,
@@ -370,6 +381,7 @@ def heartbeat(
         else None,
         "firmware_check_request_reason": pending_firmware_check_reason,
         "backup_requested": pending_backup,
+        "backup_format_required": ENCRYPTED_DEVICE_BACKUP_FORMAT,
         "backup_requested_at": pending_backup_at.isoformat()
         if pending_backup_at
         else None,
@@ -382,14 +394,12 @@ def heartbeat(
     }
 
 
-@router.post("/api/v1/devices/{device_id}/backups")
-def upload_device_backup(
+def _authorize_device_backup_upload(
     device_id: uuid.UUID,
-    payload: dict[str, object],
     request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    authorization: Annotated[str | None, Header()] = None,
-):
+    db: Session,
+    authorization: str | None,
+) -> Device:
     apply_rate_limit(
         request,
         "device-backup",
@@ -398,24 +408,37 @@ def upload_device_backup(
         settings.rate_limit_device_backup_window_seconds,
     )
     device = device_from_token(db, device_id, authorization)
-    if not device.backup_enabled and not backup_request_pending(device):
+    if not backup_request_pending(device):
+        raise HTTPException(status_code=400, detail="no configuration backup is pending")
+    return device
+
+
+def _store_device_backup_payload(
+    device: Device, payload: dict[str, object], db: Session
+):
+    if "content" in payload:
         raise HTTPException(
-            status_code=400, detail="backups are disabled for this firewall"
+            status_code=400,
+            detail="plaintext configuration backups are not accepted",
         )
-    content = str(payload.get("content", ""))
-    if not content.strip():
-        raise HTTPException(status_code=400, detail="backup content is required")
-    if len(content) > DEVICE_BACKUP_CONTENT_MAX_LENGTH:
-        raise HTTPException(status_code=400, detail="backup content is too large")
-    created_at = parse_uploaded_backup_created_at(payload.get("created_at"))
-    filename = clean_optional(
-        str(payload.get("filename", ""))
-    ) or normalize_backup_filename(device, created_at)
+    if set(payload) != {"format", "encrypted_backup"}:
+        raise HTTPException(
+            status_code=400, detail="encrypted backup request fields are invalid"
+        )
+    if payload.get("format") != ENCRYPTED_DEVICE_BACKUP_FORMAT:
+        raise HTTPException(
+            status_code=400, detail="encrypted backup format is required"
+        )
+    encrypted_payload = validate_encrypted_device_backup(
+        payload.get("encrypted_backup"), expected_device_id=device.id
+    )
+    received_at = utc_now()
     backup = DeviceBackup(
         device_id=device.id,
-        filename=filename[:255],
-        content=content,
-        created_at=created_at,
+        filename=encrypted_device_backup_filename(device.hostname, received_at),
+        backup_format=ENCRYPTED_DEVICE_BACKUP_FORMAT,
+        encrypted_payload=encrypted_payload,
+        created_at=received_at,
     )
     device.backup_last_uploaded_at = utc_now()
     device.backup_last_requested_at = None
@@ -443,6 +466,66 @@ def upload_device_backup(
         "created_at": backup.created_at.isoformat(),
         "retained_count": min(len(backups), device.backup_retention_count),
     }
+
+
+def store_device_backup_payload(
+    device_id: uuid.UUID,
+    payload: dict[str, object],
+    request: Request,
+    db: Session,
+    authorization: str | None = None,
+):
+    device = _authorize_device_backup_upload(
+        device_id, request, db, authorization
+    )
+    return _store_device_backup_payload(device, payload, db)
+
+
+def _reject_duplicate_json_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+async def _read_encrypted_backup_request(request: Request) -> dict[str, object]:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
+        if declared_length > ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="encrypted backup request is too large")
+
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="encrypted backup request is too large")
+    try:
+        payload = json.loads(body, object_pairs_hook=_reject_duplicate_json_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="encrypted backup request is invalid") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="encrypted backup request must be an object")
+    return payload
+
+
+@router.post("/api/v1/devices/{device_id}/backups")
+async def upload_device_backup(
+    device_id: uuid.UUID,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+):
+    device = _authorize_device_backup_upload(
+        device_id, request, db, authorization
+    )
+    payload = await _read_encrypted_backup_request(request)
+    return _store_device_backup_payload(device, payload, db)
 
 
 @router.get("/api/v1/companies/{company_id}/devices")
@@ -877,12 +960,14 @@ def download_device_backup(
     headers = {
         "Content-Disposition": content_disposition_attachment(
             backup.filename,
-            fallback="firewall-backup.xml",
-        )
+            fallback="firewall-backup.opnenc",
+        ),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
     }
     return Response(
-        content=backup.content.encode("utf-8"),
-        media_type="application/xml",
+        content=backup.encrypted_payload.encode("utf-8"),
+        media_type="application/vnd.opnsense-hub.encrypted-config+json",
         headers=headers,
     )
 

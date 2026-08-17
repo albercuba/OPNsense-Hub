@@ -11,6 +11,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from backup_crypto import (
+    BACKUP_FORMAT,
+    BACKUP_KEY_FILE,
+    BackupCryptoError,
+    encrypt_config_backup,
+)
 from connect import PLUGIN_VERSION, license_metadata, load_state, save_state
 from firmware_status import collect_firmware_status
 from remove import remove_local_artifacts
@@ -44,6 +50,7 @@ def heartbeat_payload(state, firmware=None):
         "opnsense_version": opnsense_version(),
         "plugin_version": PLUGIN_VERSION,
         "timestamp": heartbeat_timestamp(),
+        "backup_formats": [BACKUP_FORMAT],
         **license_metadata(),
     }
     if firmware is not None:
@@ -89,15 +96,23 @@ def backup_request_pending(body):
 
 
 def upload_backup(state):
-    if not CONFIG_XML.exists():
-        raise FileNotFoundError("config.xml not found")
-    created_at = heartbeat_timestamp()
-    filename = (
-        socket.gethostname().replace(" ", "-")
-        + "-"
-        + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        + ".xml"
+    expected_key_id = state.get("backup_key_id")
+    if expected_key_id and not BACKUP_KEY_FILE.exists():
+        raise BackupCryptoError(
+            "backup master key is missing; import the matching recovery key"
+        )
+    captured_at = heartbeat_timestamp()
+    encrypted_backup = encrypt_config_backup(
+        CONFIG_XML,
+        device_id=state["device_id"],
+        source_hostname=socket.gethostname(),
+        captured_at=captured_at,
     )
+    actual_key_id = encrypted_backup["key_id"]
+    if expected_key_id and actual_key_id != expected_key_id:
+        raise BackupCryptoError(
+            "backup master key does not match the established recovery key"
+        )
     req = urllib.request.Request(
         state["hub_url"].rstrip("/")
         + "/api/v1/devices/"
@@ -105,10 +120,10 @@ def upload_backup(state):
         + "/backups",
         data=json.dumps(
             {
-                "filename": filename,
-                "created_at": created_at,
-                "content": CONFIG_XML.read_text(),
-            }
+                "format": BACKUP_FORMAT,
+                "encrypted_backup": encrypted_backup,
+            },
+            separators=(",", ":"),
         ).encode("utf-8"),
         method="POST",
         headers={
@@ -119,7 +134,8 @@ def upload_backup(state):
     )
     with urllib.request.urlopen(req, timeout=30) as response:
         body = json.loads(response.read().decode("utf-8"))
-    state["last_backup_at"] = created_at
+    state["last_backup_at"] = captured_at
+    state["backup_key_id"] = actual_key_id
     save_state(state)
     return body
 
@@ -137,9 +153,23 @@ def main():
             state["firmware"] = firmware
             save_state(state)
             response_body = send_heartbeat(state, heartbeat_payload(state, firmware))
+        backup_error = False
         if backup_request_pending(response_body):
-            upload_backup(state)
-        print(json.dumps({"status": "ok", "hub_response": response_body}))
+            try:
+                upload_backup(state)
+            except Exception:
+                backup_error = True
+                state["last_error"] = "encrypted configuration backup upload failed"
+                save_state(state)
+        print(
+            json.dumps(
+                {
+                    "status": "warning" if backup_error else "ok",
+                    "hub_response": response_body,
+                    "backup_error": backup_error,
+                }
+            )
+        )
     except urllib.error.HTTPError as exc:
         state["last_error"] = f"heartbeat failed with HTTP {exc.code}"
         save_state(state)

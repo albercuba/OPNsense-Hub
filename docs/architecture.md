@@ -90,6 +90,8 @@ The plugin is scaffolded using standard OPNsense MVC/configd layout:
 - The plugin generates the WireGuard private key locally; the private key is never sent to Hub.
 - The plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the WireGuard client.
 - The plugin checks the Hub heartbeat response for pending firmware-check requests, runs the firmware probe locally on the firewall, and reports normalized status back to the Hub.
+- Plugin `0.2` advertises `opnsense-config-encrypted-v1`, creates a root-only per-firewall backup master key, and encrypts/authenticates `/conf/config.xml` before uploading only a versioned ciphertext envelope. The key remains on the firewall and can be exported separately for offline disaster recovery.
+- The Hub requests configuration backups only from plugins advertising the encrypted format, accepts them only for a pending request, and stores/returns only canonical opaque envelopes. It cannot decrypt them or validate their HMAC.
 - Enrollment code is cleared after successful enrollment.
 - Device token is stored locally with restrictive file permissions by the backend script.
 
@@ -106,6 +108,8 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - The Hub never receives OPNsense administrator passwords, WebGUI session cookies, or plaintext WebGUI requests because firewall TLS terminates only at OPNsense.
 - The optional public L4 relay is disabled by default and requires source-IP preservation plus exact per-device WebGUI certificate and client-certificate enforcement.
 - Firmware status reporting is local-first: the firewall plugin performs the check, the Hub stores the result, and no update is installed automatically.
+- Complete firewall configurations are encrypted and authenticated before leaving OPNsense. The Hub never receives plaintext `config.xml` or the backup master/recovery key; `.opnenc` downloads require the separately protected firewall key.
+- Migration `0012_encrypted_device_backups` purges legacy plaintext rows and resets backup timestamps because the Hub cannot safely convert them without violating the key boundary.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
 - The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.
 - Firewalls must never be able to reach each other or route customer LANs through the Hub overlay.
