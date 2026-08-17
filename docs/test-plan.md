@@ -2,38 +2,80 @@
 
 ## Automated tests
 
-Run:
+Run the access-path tests first, then broader validation:
 
 ```sh
-cd dashboard
-python -m pytest
-python -m compileall app
+PYTHONPATH=dashboard python -m pytest dashboard/tests/test_proxy_origin.py dashboard/tests/test_tcp_relay.py dashboard/tests/test_security.py
+python -m unittest discover -s connector -p 'test_*.py' -v
+PYTHONPATH=dashboard python -m pytest dashboard/tests
+python -m compileall dashboard/app connector
 ```
 
-Current coverage:
+Validate both Compose modes:
 
-- Secret hashing and verification.
-- OTP format generation.
-- WireGuard public key validation against command injection-shaped values.
-- `/32`-only WireGuard peer route generation.
-- RBAC role ordering.
+```sh
+docker compose config
+docker compose -f docker-compose.yml -f deploy/docker-compose.l4.yml config
+```
 
-## Manual tests
+Relevant automated coverage must prove:
 
-1. Start stack with `docker compose up --build`.
-2. Log in with the seeded admin user.
-3. Create a company.
-4. Generate an enrollment OTP and verify it is only shown once.
-5. Simulate enrollment with `curl` using a valid WireGuard-shaped public key.
-6. Verify a second enrollment using the same OTP fails.
-7. Verify the enrolled device appears in the company firewall table.
-8. Send heartbeat using the returned device token.
-9. Revoke the device and verify later heartbeats fail.
-10. Click Open and verify the dashboard sends `POST /devices/{device_id}/proxy/open` with a valid CSRF token into a new tab.
-11. Verify the standalone handoff page automatically submits the grant with `POST` to `PROXY_PUBLIC_URL`; disable JavaScript and verify the visible manual submit button works.
-12. Verify `/proxy/bootstrap` accepts the grant only once, redirects to the selected `/proxy/devices/{device_id}/` path, and creates a host-only cookie scoped to that exact device path.
-13. Verify the cookie cannot authorize another device path and that the dashboard session cookie is not sent to the proxy origin.
-14. Verify a proxy-open audit log entry is created, even if the tunnel target is unreachable.
+- CSRF and company-scoped RBAC are required before connector token creation.
+- Connector tokens are hashed at rest, short-lived, device-scoped, bound to the issuing dashboard session, and rejected when missing, malformed, expired, for another device/company, or revoked.
+- The connector WSS route requires bearer authentication, accepts binary frames only, forwards exact opaque bytes, enforces connection/time limits, and closes access on revocation/shutdown.
+- `/proxy/bootstrap` and `/proxy/devices/*` return `404`; no proxy cookie is created or required.
+- Connector CLI validation accepts the token only from a hidden prompt, stdin, or `OPNSENSE_HUB_CONNECTOR_TOKEN`, never a command argument or URL.
+- The connector defaults to loopback, requires `--allow-non-loopback` for broader listeners, validates device/URL/listener arguments, forwards exact bytes, handles idle timeout, and shuts down cleanly.
+- The raw relay forwards exact bytes, constructs an exact per-device hostname, rejects a nonmatching source IP before upstream connect, enforces connection caps, expires hard, applies idle timeout, atomically replaces per-device allocations, cleans up after handoff failures, and releases ports.
+- Startup validation rejects invalid connector/relay limits and refuses `PUBLIC_L4_RELAY_ENABLED=true` unless `PUBLIC_L4_RELAY_MTLS_REQUIRED=true`.
+- Existing security coverage continues to prove secret hashing, OTP format, WireGuard key validation, `/32`-only routes, and RBAC ordering.
+
+## Default connector manual tests
+
+1. Start the normal stack with `docker compose up --build`; do not apply `deploy/docker-compose.l4.yml` and confirm TCP `55000-55099` is not published.
+2. Log in, create a company, generate an enrollment OTP, enroll a disposable OPNsense firewall, and verify OTP replay fails.
+3. Verify the firewall receives only its unique WireGuard `/32`, heartbeats work, and the WebGUI is reachable from the Hub only at `OPNSENSE_GUI_PORT` through the tunnel.
+4. Click Open and verify the browser sends a CSRF-protected `POST /devices/{device_id}/proxy/open` on `PUBLIC_URL`.
+5. Verify the response has `Cache-Control: no-store` and `Referrer-Policy: no-referrer`, contains a short-lived connector token/instructions, creates no proxy authorization cookie, and contains no `/proxy/bootstrap` handoff.
+6. Verify a `device.connector.open` audit event is written even if the subsequent firewall TCP connection cannot be established.
+7. Install the connector in a virtual environment:
+
+   ```sh
+   cd connector
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+   ```
+
+8. Run `opnsense_hub_connector.py --hub-url <PUBLIC_URL> --device <UUID>` and enter the token at the hidden prompt. Confirm the listener defaults to `127.0.0.1:8443`.
+9. Repeat once with one token line from a permission-restricted secret file on stdin and once with `OPNSENSE_HUB_CONNECTOR_TOKEN`. Confirm `--help` exposes no connector-token argument, literal tokens are absent from shell history/process arguments, and putting a token in the Hub URL is rejected.
+10. Open the connector's local HTTPS URL and verify the complete OPNsense login/session flow works while packet/log inspection at the Hub shows only TLS ciphertext, not credentials, cookies, paths, or response bodies.
+11. Verify the browser reports the OPNsense WebGUI certificate. If its SAN expects a firewall hostname, map that hostname to `127.0.0.1`, run with `--browser-host <certificate-hostname>`, and confirm hostname validation and OPNsense redirects work without disabling certificate checks.
+12. Verify a token cannot connect to another device, a cross-company user cannot obtain a token, an expired token cannot start a new WSS stream, and device revocation closes active access. Revoke the issuing dashboard session and remove company membership while a stream is active; verify the stream closes within `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`.
+13. Exercise concurrent browser connections and verify `CONNECTOR_MAX_CONNECTIONS`, `CONNECTOR_CONNECTION_MAX_SECONDS`, and token expiry terminate or reject access as configured.
+14. Confirm direct requests to `/proxy/bootstrap` and `/proxy/devices/{device_id}/` return `404` and no separate proxy origin is serving dashboard or firewall traffic.
+
+## Optional public L4 relay tests
+
+Run these tests only in a disposable environment whose OPNsense WebGUI is already configured to require a trusted browser client certificate.
+
+1. Confirm `POST /devices/{device_id}/relay/open` returns `404` while `PUBLIC_L4_RELAY_ENABLED=false`.
+2. Set `PUBLIC_L4_RELAY_ENABLED=true` while leaving `PUBLIC_L4_RELAY_MTLS_REQUIRED=false`; verify startup fails closed.
+3. Configure the test WebGUI to reject clients without an approved certificate and to present a trusted certificate valid for the exact generated name `d-{device UUID without dashes}.<PROXY_PUBLIC_URL hostname>`.
+4. Configure wildcard DNS for `*.<PROXY_PUBLIC_URL hostname>` to the single Hub node. Verify resolution of the exact generated device hostname.
+5. Set both relay gates to `true`, open TCP `55000-55099`, and start with the override:
+
+   ```sh
+   docker compose -f docker-compose.yml -f deploy/docker-compose.l4.yml --profile reverse-proxy up -d --build
+   ```
+
+6. Verify Caddy serves only dashboard HTTPS/WSS and does not listen on or terminate TLS for TCP `55000-55099`; the raw relay must reach the API container directly.
+7. Submit the CSRF/RBAC-protected relay-open POST and verify a `device.relay.open` audit event, a random port in `55000-55099`, the exact per-device hostname, and the configured hard expiry.
+8. Connect from the authorized source IP with the approved browser client certificate and verify OPNsense terminates TLS and serves the WebGUI. Verify the Hub cannot decrypt the stream.
+9. Connect without a client certificate, with an unapproved certificate, or with a hostname mismatch and verify OPNsense/browser rejects access.
+10. Connect from a different source IP and verify the relay closes before opening the upstream firewall connection. Repeat through any L4 load balancer and verify it preserves the original source IP; do not enable PROXY protocol because the relay does not parse it.
+11. Verify idle timeout, maximum concurrent connections, hard TTL, explicit replacement of a prior device relay, device revocation, and Hub shutdown all close listeners/connections and release ports.
+12. Document the same-NAT risk by confirming source-IP filtering cannot distinguish two clients sharing one public egress IP; client-certificate enforcement must still reject the unauthorized client.
+13. Verify a second Hub API replica cannot share allocations or accept a relay created by the first. Keep the relay deployment single-node/single-process and ensure dashboard POSTs and raw ports reach the same instance.
 
 ## Plugin lab tests
 
@@ -42,25 +84,22 @@ On a disposable OPNsense VM:
 1. Copy plugin files into `/usr/local/opnsense`.
 2. Run `service configd restart`.
 3. Open `Services > OPNsense Hub`.
-4. Enter Hub HTTPS URL and OTP.
-5. Click Connect.
-6. Confirm `/var/db/opnsensehub/state.json` exists with restrictive permissions.
-7. Confirm `/usr/local/etc/wireguard/opnsensehub.conf` exists with restrictive permissions.
-8. Confirm the WireGuard private key is never visible in Hub logs or Hub database.
-9. Run heartbeat configd action.
-10. Test Disconnect stops only the local tunnel and does not delete enrollment state.
+4. Enter Hub HTTPS URL and OTP, then click Connect.
+5. Confirm `/var/db/opnsensehub/state.json` and `/usr/local/etc/wireguard/opnsensehub.conf` exist with restrictive permissions.
+6. Confirm the WireGuard private key is never visible in Hub logs or the Hub database.
+7. Run the heartbeat configd action.
+8. Verify Disconnect stops only the local tunnel and does not delete enrollment state.
+9. If testing the optional relay, verify the WebGUI's exact hostname certificate and mandatory client-certificate policy directly on OPNsense before exposing relay ports.
 
-## Production readiness tests
+## Migration and production readiness tests
 
+- Upgrade a database at revision `0010_device_proxy_sessions` to `0011_connector_access_sessions`; verify the phase constraint accepts `connector` records, `dashboard_session_id` references `sessions(id)` with cascade deletion, and existing access-session rows remain intact.
+- Downgrade only in a disposable database; verify connector rows are removed before the old phase constraint is restored.
+- Verify startup migration reaches Alembic `head`, then test application backup and restore without expecting environment variables to be restored.
 - Verify Docker images build from a clean checkout.
-- Verify database backup and restore.
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
-- Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet.
-- Verify revocation removes the peer from `wg show`.
-- Verify company RBAC prevents cross-company proxy access and unauthorized users cannot obtain a handoff grant.
-- Verify expired, replayed, malformed, and wrong-device proxy grants fail closed.
-- Verify `PUBLIC_URL` and `PROXY_PUBLIC_URL` are distinct HTTPS origins with valid DNS and TLS.
-- Verify the dashboard host returns `404` for `/proxy/bootstrap` and `/proxy/devices/*`.
-- Verify the proxy host serves only `/proxy/bootstrap` and `/proxy/devices/*`, and returns `404` for `/`, dashboard, login, settings, and API routes.
-- Verify the proxy authorization cookie has no `Domain` attribute and has `Path=/proxy/devices/{device_id}`.
-- Verify logs do not contain OTPs, device tokens, proxy grants, dashboard/proxy cookies, or private keys.
+- Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet; revocation must remove the peer.
+- Verify production HTTPS/WSS works at `PUBLIC_URL`, Caddy forwards WSS upgrades, and connector tokens never appear in URLs, access logs, referrers, or shell command history.
+- Verify `PROXY_PUBLIC_URL` is used only as the optional relay DNS base and that no L7 `/proxy/*` service or proxy cookie remains.
+- Verify logs do not contain OTPs, device tokens, connector tokens, dashboard cookies, OPNsense credentials/session cookies, client-certificate private keys, private keys, or relayed payload bytes.
+- Verify monitoring alerts on unexpected connector/relay opens, authorization failures, connection-limit events, relay allocation failures, and revocations.

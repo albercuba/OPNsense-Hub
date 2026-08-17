@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import hmac
 from hashlib import sha256
-from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request
 
 from ..config import get_settings
 from ..security import random_token
-from .request_context import is_proxy_path
 
 settings = get_settings()
 _CSRF_FORM_FIELD = "csrf_token"
@@ -66,76 +64,7 @@ def should_enforce_csrf(request: Request) -> bool:
         path.endswith("/heartbeat") or path.endswith("/backups")
     ):
         return False
-    return not is_proxy_path(path)
-
-
-def _configured_origin(url: str) -> str:
-    try:
-        parsed = urlparse(url)
-        _ = parsed.port
-    except ValueError:
-        return ""
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-    ):
-        return ""
-    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-
-
-def _request_origin(request: Request) -> str:
-    host = (request.headers.get("host") or request.url.netloc or "").strip()
-    if not host:
-        return ""
-    return _configured_origin(f"{request.url.scheme}://{host}")
-
-
-def _normalized_origin(origin: str) -> str:
-    try:
-        parsed = urlparse(origin)
-    except ValueError:
-        return ""
-    if parsed.path or parsed.params or parsed.query or parsed.fragment:
-        return ""
-    return _configured_origin(origin)
-
-
-def _origin_matches_proxy_request(request: Request, origin: str) -> bool:
-    normalized = _normalized_origin(origin)
-    if not normalized:
-        return False
-    expected_origins = {
-        _configured_origin(settings.proxy_public_url),
-        _request_origin(request),
-    }
-    expected_origins.discard("")
-    return normalized in expected_origins
-
-
-def validate_proxy_unsafe_request(request: Request) -> None:
-    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
-        return
-    path = request.url.path
-    if not is_proxy_path(path):
-        return
-    origin = (request.headers.get("origin") or "").strip()
-    if path == "/proxy/bootstrap":
-        if not origin or _normalized_origin(origin) != _configured_origin(
-            settings.public_url
-        ):
-            raise HTTPException(
-                status_code=403, detail="proxy bootstrap origin is not allowed"
-            )
-        return
-    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
-    if sec_fetch_site == "cross-site":
-        raise HTTPException(status_code=403, detail="cross-site proxy request blocked")
-    if not origin or not _origin_matches_proxy_request(request, origin):
-        raise HTTPException(
-            status_code=403, detail="cross-origin proxy request blocked"
-        )
+    return True
 
 
 async def validate_csrf_request(request: Request) -> None:

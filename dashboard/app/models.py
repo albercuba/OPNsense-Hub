@@ -392,11 +392,12 @@ class DeviceProxySession(Base):
     __tablename__ = "device_proxy_sessions"
     __table_args__ = (
         CheckConstraint(
-            "phase IN ('grant', 'session')",
+            "phase IN ('grant', 'session', 'connector')",
             name="ck_device_proxy_sessions_phase",
         ),
         Index("idx_device_proxy_sessions_expires_at", "expires_at"),
         Index("idx_device_proxy_sessions_device_id", "device_id"),
+        Index("idx_device_proxy_sessions_dashboard_session_id", "dashboard_session_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -407,6 +408,11 @@ class DeviceProxySession(Base):
     )
     device_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    dashboard_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sessions.id", ondelete="CASCADE"),
+        nullable=True,
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     phase: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -422,6 +428,7 @@ class DeviceProxySession(Base):
 
     user: Mapped[User] = relationship()
     device: Mapped[Device] = relationship()
+    dashboard_session: Mapped[SessionToken | None] = relationship()
 
 
 class DeviceBackup(Base):

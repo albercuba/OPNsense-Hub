@@ -19,6 +19,20 @@ class Settings(BaseSettings):
     proxy_grant_ttl_seconds: int = 60
     proxy_session_ttl_minutes: int = 15
     proxy_session_cookie_prefix: str = "opnsense_hub_proxy_"
+    connector_session_ttl_minutes: int = 15
+    connector_local_port: int = 8443
+    connector_max_connections: int = 16
+    connector_upstream_connect_timeout_seconds: int = 15
+    connector_connection_max_seconds: int = 900
+    connector_authorization_recheck_seconds: int = 5
+    public_l4_relay_enabled: bool = False
+    public_l4_relay_mtls_required: bool = False
+    public_l4_relay_bind_host: str = "0.0.0.0"
+    public_l4_relay_port_min: int = 55000
+    public_l4_relay_port_max: int = 55099
+    public_l4_relay_ttl_seconds: int = 600
+    public_l4_relay_idle_timeout_seconds: int = 120
+    public_l4_relay_max_connections: int = 16
     database_url: str = (
         "postgresql+psycopg://opnsensehub:opnsensehub@db:5432/opnsensehub"
     )
@@ -90,6 +104,8 @@ class Settings(BaseSettings):
     rate_limit_device_backup_window_seconds: int = 300
     rate_limit_backup_restore_attempts: int = 3
     rate_limit_backup_restore_window_seconds: int = 900
+    rate_limit_device_access_attempts: int = 20
+    rate_limit_device_access_window_seconds: int = 300
     audit_log_retention_days: int = 365
     device_event_retention_days: int = 90
     log_retention_sweep_interval_hours: int = 24

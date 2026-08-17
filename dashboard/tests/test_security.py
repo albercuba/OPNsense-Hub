@@ -1,7 +1,5 @@
-from uuid import uuid4
-
 from app.models import Device
-from app.routers.proxy import proxy_rewrite_location, validate_proxy_device_target
+from app.routers.proxy import validate_proxy_device_target
 from app.security import (
     generate_totp_secret,
     hash_secret,
@@ -133,16 +131,6 @@ def test_auth_microsoft_post_is_now_subject_to_csrf():
 
     assert should_enforce_csrf(request) is True
 
-
-def test_proxy_rewrite_location_rejects_off_origin_redirects():
-    assert (
-        proxy_rewrite_location(
-            "https://evil.example.com/admin",
-            uuid4(),
-            "https://100.96.0.10:443/",
-        )
-        is None
-    )
 
 
 def test_validate_proxy_device_target_rejects_ips_outside_wireguard_overlay():

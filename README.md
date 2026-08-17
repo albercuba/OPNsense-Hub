@@ -1,6 +1,6 @@
 # OPNsense Hub
 
-OPNsense Hub enrolls OPNsense firewalls into a central dashboard with a short-lived OTP, establishes a WireGuard tunnel, and opens the firewall UI through a protected reverse proxy path.
+OPNsense Hub enrolls OPNsense firewalls into a central dashboard with a short-lived OTP, establishes a WireGuard tunnel, and provides end-to-end encrypted WebGUI access through a local connector.
 
 > Important: the Hub dashboard/control plane does not modify firewall configuration, restore backups, reboot firewalls, or store OPNsense admin passwords. The only firewall-side configuration change is performed by the OPNsense plugin on that firewall to create its own WireGuard client tunnel.
 
@@ -37,6 +37,7 @@ Third-party dependency, container image, font, icon, and trademark notices are t
 ## Repository layout
 
 ```text
+connector/                Local opaque-TCP-to-WSS connector and tests
 dashboard/
   app/                    FastAPI dashboard/API
   migrations/             SQL schema
@@ -45,7 +46,7 @@ dashboard/
   requirements.txt
 net-mgmt/os-opnsensehub/  OPNsense plugin scaffold
 docs/                     Architecture, security, licensing, compliance, test plan
-deploy/                   Reverse proxy examples
+deploy/                   Dashboard proxy and optional L4 relay Compose examples
 docker-compose.yml
 .env.example
 ```
@@ -65,7 +66,9 @@ docker-compose.yml
 - Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and optional automatic Hub firewall isolation rules.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
-- Audit logs for login, company creation, enrollment, revoke, and proxy access, with throttled `device.view` entries to reduce browsing noise.
+- Audit logs for login, company creation, enrollment, revoke, connector access, and optional relay access, with throttled `device.view` entries to reduce browsing noise.
+- Default local connector that carries opaque browser TLS bytes over an authenticated, device-scoped WSS connection; the Hub never terminates firewall TLS or receives WebGUI credentials.
+- Optional, disabled-by-default public raw L4 relay for deployments where each OPNsense WebGUI enforces client certificates.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
 - Branding logo upload with persistent storage and login/app-shell rendering.
@@ -128,8 +131,9 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    - Install Docker Engine with the Compose plugin.
    - Ensure `/dev/net/tun` exists and the host allows containers to use `NET_ADMIN`.
-   - Open inbound TCP `80`/`443` for the reverse proxy and UDP `51820` for WireGuard.
-   - Point two DNS names, for example `hub.example.com` and `proxy.example.com`, at the Docker host. Both names require valid TLS certificates.
+   - Open inbound TCP `80`/`443` for the dashboard and authenticated connector WSS endpoint, and UDP `51820` for WireGuard.
+   - Point the dashboard DNS name, for example `hub.example.com`, at the Docker host and provision a valid TLS certificate.
+   - Do not open TCP `55000-55099` for the default connector design. Those ports are only for the optional public L4 relay described below.
 
 2. Create and edit the environment file:
 
@@ -142,12 +146,11 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    ```text
    APP_ENV=production
    PUBLIC_URL=https://hub.example.com
-   PROXY_PUBLIC_URL=https://proxy.example.com
-   ALLOWED_HOSTS=hub.example.com,proxy.example.com
+   PROXY_PUBLIC_URL=https://relay.example.com
+   ALLOWED_HOSTS=hub.example.com,relay.example.com
    TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
    RATE_LIMIT_BACKEND=redis
    RATE_LIMIT_REDIS_URL=redis://opnsense-hub-redis:6379/0
-   PROXY_VERIFY_TLS=true
    NETWORK_CONTROL_MODE=external
    HUB_WG_ENDPOINT=hub.example.com:51820
    SECRET_KEY=<long-random-secret>
@@ -156,40 +159,46 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    INITIAL_ADMIN_PASSWORD=<temporary-strong-password>
    SESSION_SECURE=true
    WG_DRY_RUN=false
+   PUBLIC_L4_RELAY_ENABLED=false
+   PUBLIC_L4_RELAY_MTLS_REQUIRED=false
    ```
+
+   `PROXY_PUBLIC_URL` is retained as the base hostname used to construct optional raw relay names; it is not an L7 proxy origin and serves no `/proxy/*` routes. Production validation currently requires it to be a valid HTTPS URL on a hostname distinct from `PUBLIC_URL`, even while the relay is disabled. Wildcard DNS and relay ports are unnecessary until the relay is explicitly enabled.
 
    If you change the PostgreSQL username, password, database, Redis service name, or service hostnames, keep `DATABASE_URL` and `RATE_LIMIT_REDIS_URL` in `.env` aligned with `docker-compose.yml`.
 
-3. Configure the reverse proxy profile when using the bundled Caddy example:
+3. Configure the bundled Caddy profile when required:
 
-   - Edit `deploy/Caddyfile` and replace `hub.example.com`, `proxy.example.com`, and the email address.
+   - Edit `deploy/Caddyfile` and replace `hub.example.com` and the email address.
    - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service.
-   - Keep `PUBLIC_URL` and `PROXY_PUBLIC_URL` on distinct HTTPS origins. The dashboard origin denies `/proxy/*`; the proxy origin serves only `/proxy/bootstrap` and `/proxy/devices/*` and returns `404` for dashboard and API routes.
+   - Caddy handles dashboard HTTP(S), including the WSS upgrade on `/api/v1/connector/devices/{id}`. It does not terminate or proxy the optional raw L4 relay.
 
-   Production-focused security/runtime variables include:
+   Connector settings added in `dashboard/app/config.py`:
 
-   - `PROXY_PUBLIC_URL` — dedicated HTTPS origin used only for the proxy bootstrap and device proxy paths; it must differ from `PUBLIC_URL`.
-   - `ALLOWED_HOSTS` — allowed incoming `Host` header values for the dashboard and proxy origins.
-   - `TRUSTED_PROXY_CIDRS` — reverse proxy IPs/subnets whose `X-Forwarded-For` headers are trusted.
-   - `RATE_LIMIT_BACKEND` — `memory`, `redis`, or `edge`.
-   - `RATE_LIMIT_REDIS_URL` — required when `RATE_LIMIT_BACKEND=redis`.
-   - `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` — MFA login throttling.
-   - `PROXY_VERIFY_TLS` — verifies the firewall HTTPS certificate during Hub proxy access.
-   - `MAX_PROXY_REQUEST_BYTES` and `MAX_PROXY_RESPONSE_BYTES` — proxied request/response body limits.
-   - `MAX_BACKUP_RESTORE_BYTES`, `MAX_BACKUP_RESTORE_ENTRIES`, `MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES`, and `MAX_BACKUP_RESTORE_FILE_BYTES` — backup restore safety limits.
-   - `NETWORK_CONTROL_MODE` — `inline` to let the app manage WireGuard/runtime firewall state itself, or `external` to move those actions outside the web app process.
-   - `SECURITY_HEADERS_ENABLED`, `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, and `PERMISSIONS_POLICY` — browser security header controls.
-   - `SECURITY_ALERT_EMAIL_ENABLED` — enables email alerts for selected security events when email delivery is configured.
+   - `CONNECTOR_SESSION_TTL_MINUTES` — lifetime of the short-lived, device-scoped connector token; default `15`.
+   - `CONNECTOR_LOCAL_PORT` — local port shown in connector instructions; default `8443`.
+   - `CONNECTOR_MAX_CONNECTIONS` — concurrent WSS streams allowed per connector session; default `16`.
+   - `CONNECTOR_UPSTREAM_CONNECT_TIMEOUT_SECONDS` — Hub timeout while connecting to the firewall WebGUI through WireGuard; default `15`.
+   - `CONNECTOR_CONNECTION_MAX_SECONDS` — maximum lifetime of each connector WSS stream; default `900`.
+   - `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS` — interval for rechecking the issuing dashboard session, user/company access, device revocation, and connector expiry during an active stream; default `5`.
+   - `RATE_LIMIT_DEVICE_ACCESS_ATTEMPTS` and `RATE_LIMIT_DEVICE_ACCESS_WINDOW_SECONDS` — per-user connector/relay launch limit; defaults `20` launches per `300` seconds.
 
-4. Validate the Compose file:
+   Optional relay settings added in `dashboard/app/config.py`:
+
+   - `PUBLIC_L4_RELAY_ENABLED` — enables relay allocation; default `false`.
+   - `PUBLIC_L4_RELAY_MTLS_REQUIRED` — deployment attestation that every exposed OPNsense WebGUI requires and validates client certificates; default `false` and required to enable the relay.
+   - `PUBLIC_L4_RELAY_BIND_HOST` — raw TCP listener bind address; default `0.0.0.0`.
+   - `PUBLIC_L4_RELAY_PORT_MIN` and `PUBLIC_L4_RELAY_PORT_MAX` — allocation range; defaults `55000` and `55099`.
+   - `PUBLIC_L4_RELAY_TTL_SECONDS` — hard relay lifetime; default `600`.
+   - `PUBLIC_L4_RELAY_IDLE_TIMEOUT_SECONDS` — inactivity timeout per raw connection; default `120`.
+   - `PUBLIC_L4_RELAY_MAX_CONNECTIONS` — concurrent connections allowed per allocated relay; default `16`.
+
+   Other production-focused variables include `ALLOWED_HOSTS`, `TRUSTED_PROXY_CIDRS`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_MFA_ATTEMPTS`, `RATE_LIMIT_MFA_WINDOW_SECONDS`, `NETWORK_CONTROL_MODE`, browser security-header controls, and backup/restore size limits.
+
+4. Validate and start the default stack:
 
    ```sh
    docker compose config
-   ```
-
-5. Start the stack without the bundled reverse proxy when TLS is handled elsewhere:
-
-   ```sh
    docker compose up -d --build
    ```
 
@@ -199,14 +208,14 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    docker compose --profile reverse-proxy up -d --build
    ```
 
-6. Check service status and logs:
+5. Check service status and logs:
 
    ```sh
    docker compose ps
    docker compose logs -f opnsense-hub-api
    ```
 
-7. Back up the persistent Docker volumes:
+6. Back up the persistent Docker volumes:
 
    - `opnsense_hub_db` for PostgreSQL data.
    - `opnsense_hub_wg` for the Hub WireGuard server key and config.
@@ -215,7 +224,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    Losing the WireGuard volume changes the Hub server key and requires re-enrollment or careful key rotation for existing firewalls.
 
-8. Upgrade an existing deployment:
+7. Upgrade an existing deployment:
 
    ```sh
    git pull
@@ -223,9 +232,67 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    docker compose up -d --build
    ```
 
-   Fresh databases run migrations automatically on startup. Existing databases should keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` unless migrations are managed manually.
+   Fresh databases run migrations automatically on startup. Existing databases should keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` unless migrations are managed manually. Migration `0011_connector_access_sessions` extends access-session storage for short-lived connector tokens.
 
 After the stack is running, open `PUBLIC_URL`, sign in with the initial admin credentials, change the temporary password, create a company, generate an enrollment OTP, and enroll the OPNsense firewall through `Services > OPNsense Hub`.
+
+### Connector install and usage
+
+Install the connector on the administrator's workstation with Python 3.11 or newer:
+
+```sh
+cd connector
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+In the dashboard, click `Open OPNsense UI` for the firewall. The CSRF/RBAC-protected POST displays a device UUID, a short-lived connector token, and a command like:
+
+```sh
+.venv/bin/python opnsense_hub_connector.py \
+  --hub-url https://hub.example.com \
+  --device 01234567-89ab-cdef-0123-456789abcdef
+```
+
+The interactive command prompts for the token without echoing it and is the recommended path. For managed automation, provide exactly one token line on standard input from a short-lived, permission-restricted secret file or secret-manager file descriptor:
+
+```sh
+.venv/bin/python opnsense_hub_connector.py \
+  --hub-url https://hub.example.com \
+  --device 01234567-89ab-cdef-0123-456789abcdef \
+  < /run/secrets/opnsense-hub-connector-token
+```
+
+The connector also supports `OPNSENSE_HUB_CONNECTOR_TOKEN`, but process environments may be inspectable on some systems. The token is never accepted as a CLI argument or URL value. Do not place a literal token in shell commands or shell history.
+
+The connector listens on `127.0.0.1:8443` by default and prints the local HTTPS URL. OPNsense terminates that TLS connection, so browser trust, hostname checks, redirects, and client-certificate behavior come from the target firewall's WebGUI certificate. If the certificate expects `firewall.example.test`, map it to loopback locally, for example `127.0.0.1 firewall.example.test`, and run with `--browser-host firewall.example.test`. `--browser-host` changes the printed URL only; it does not change DNS or the listener address. A non-loopback `--listen` value is rejected unless `--allow-non-loopback` is also supplied. Use that override only when exposing the unauthenticated local TCP listener is deliberate and protected by the workstation firewall. Any local process or user that can connect to the listener can use the active connector token to reach the selected firewall.
+
+### Optional public L4 relay
+
+The public relay is disabled by default and is not required for normal connector access. Enable it only when every participating firewall has all of the following controls in place:
+
+- the OPNsense WebGUI requires and validates a trusted browser client certificate, with no password-only fallback on the relay listener
+- the WebGUI presents a certificate valid for the exact generated per-device hostname `d-{device-uuid-without-dashes}.<PROXY_PUBLIC_URL hostname>`
+- wildcard DNS for `*.<PROXY_PUBLIC_URL hostname>` resolves to the Hub node
+- TCP `55000-55099` is allowed end to end without an HTTP proxy, TLS terminator, or source-NAT device that hides the browser's source IP
+
+Then set both required gates:
+
+```text
+PUBLIC_L4_RELAY_ENABLED=true
+PUBLIC_L4_RELAY_MTLS_REQUIRED=true
+```
+
+Open TCP `55000-55099` on the host firewall/security group and start Compose with the relay port override:
+
+```sh
+docker compose -f docker-compose.yml -f deploy/docker-compose.l4.yml config
+docker compose -f docker-compose.yml -f deploy/docker-compose.l4.yml --profile reverse-proxy up -d --build
+```
+
+The relay allocates a short-lived random port, accepts only the source IP observed on the authorized dashboard POST, and forwards raw TLS bytes directly to that device's WebGUI over WireGuard. Caddy is not in this path. Any L4 load balancer must preserve the original source IP; PROXY protocol is not consumed by the relay.
+
+Relay state and port allocation are process-local, so this design is single-node/single-process only: the dashboard authorization request and TCP relay ports must reach the same Hub API instance. Source-IP filtering also cannot distinguish users behind the same NAT; another user sharing that public IP could reach the temporary port, which is why exact per-device WebGUI certificates and enforced client-certificate authentication are mandatory.
 
 ## WireGuard production notes
 
@@ -256,12 +323,13 @@ Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can rea
 
 Required inbound ports for a typical deployment:
 
-- TCP `443` to the reverse proxy for both the dashboard and dedicated proxy DNS names. The dashboard host handles browser access and firewall enrollment API calls; the proxy host handles only proxy bootstrap/device traffic. If running the development compose file directly, TCP `8083` reaches the FastAPI app instead.
+- TCP `443` to the dashboard reverse proxy for browser access, enrollment APIs, and authenticated connector WSS traffic. If running the development Compose file directly, TCP `8083` reaches the FastAPI app instead.
 - UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
+- No public WebGUI relay ports for the default connector path. TCP `55000-55099` is required only when the optional L4 relay is enabled.
 
-`Open OPNsense UI` sends a CSRF-protected POST to the dashboard origin. After session and company-scope authorization, the dashboard returns a minimal handoff page that makes a one-time POST containing a short-lived grant to `PROXY_PUBLIC_URL`. The proxy bootstrap consumes the grant and sets a host-only cookie scoped to `/proxy/devices/{device_id}` before opening that firewall path. The dashboard session cookie is not used on the proxy origin, and dashboard/API routes are unavailable there.
+`Open OPNsense UI` sends a CSRF-protected POST to the dashboard. After session and company-scope RBAC authorization, the Hub creates a short-lived, device-scoped connector token, stores only its hash, and displays connector instructions in a `no-store` response. The user runs the local connector, which listens on loopback and opens an authenticated WSS connection to `/api/v1/connector/devices/{device_id}` for each accepted local TCP connection. The Hub connects to `OPNSENSE_GUI_PORT` (default TCP `443`) at that firewall's WireGuard `/32` and copies opaque binary bytes in both directions. Browser-to-firewall TLS remains end to end, so the Hub never receives the OPNsense administrator password, session cookie, or plaintext WebGUI traffic.
 
-The device proxy uses the WireGuard tunnel from the Hub to the firewall tunnel IP, then proxies to the firewall GUI on `OPNSENSE_GUI_PORT`, which defaults to TCP `443`. You do not need to expose the firewall GUI to the internet, but the Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`. In production, keep `PROXY_VERIFY_TLS=true` and provide certificate trust that matches how the Hub connects to the firewall.
+The firewall WebGUI does not need to be exposed to the internet. The Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`.
 
 On connect, the OPNsense plugin provisions the firewall side for Hub access:
 
@@ -302,8 +370,9 @@ Set `APP_ENV=production` to enable strict startup validation. In production the 
 - `INITIAL_ADMIN_PASSWORD=change-me` or a weak password
 - `SESSION_SECURE=false`
 - `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
-- `PROXY_PUBLIC_URL` is not HTTPS, uses localhost, or is not a distinct origin from `PUBLIC_URL`
-- `PROXY_VERIFY_TLS=false` unless `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`
+- `PROXY_PUBLIC_URL`, which supplies the optional relay base hostname, is not HTTPS, is invalid, or is not distinct from `PUBLIC_URL`
+- connector limits are invalid, or the public relay is enabled without `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` and valid relay limits
+- the retained `PROXY_VERIFY_TLS` setting is `false` without `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`; the default connector still leaves firewall TLS validation to the user's browser
 
 In development the same conditions remain usable but are logged as warnings.
 
@@ -313,7 +382,7 @@ The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRAN
 
 ## CSRF protection
 
-Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions (including `POST /devices/{device_id}/proxy/open`), and backup export/restore. The subsequent cross-origin proxy bootstrap uses the one-time handoff grant rather than the dashboard CSRF cookie. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
+Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions (including connector token creation at `POST /devices/{device_id}/proxy/open` and optional relay allocation at `POST /devices/{device_id}/relay/open`), and backup export/restore. The connector then authenticates its WSS upgrade with the short-lived bearer token; it does not use the dashboard session or CSRF cookie. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
 
 ## Rate limiting
 
@@ -395,7 +464,7 @@ PYTHONPATH=dashboard python -m alembic -c dashboard/alembic.ini upgrade head
 
 Use the same `PYTHONPATH=dashboard` prefix for local test commands so the `app` package resolves consistently.
 
-On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` can still be bootstrapped and stamped when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`.
+On startup, fresh databases upgrade to `head`. Existing databases without `alembic_version` can still be bootstrapped and stamped when `ALLOW_LEGACY_SCHEMA_BOOTSTRAP=true`. Migration `0011_connector_access_sessions` permits the `connector` phase in `device_proxy_sessions`, allowing the Hub to store hashed, expiring connector authorization records.
 
 ## Hub backup and restore
 
@@ -416,7 +485,7 @@ Restore behavior:
 - clears all active dashboard sessions and redirects back to the login page
 - restores the uploaded branding asset and Hub WireGuard private key from the archive when included
 
-Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `PROXY_PUBLIC_URL`, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
+Deployment environment variables such as `DATABASE_URL`, `PUBLIC_URL`, `PROXY_PUBLIC_URL`, connector/relay settings, `SECRET_KEY`, and other container/runtime settings are not changed by the restore operation and still need to be configured on the target container.
 
 ## OPNsense plugin build/install commands
 
@@ -489,12 +558,12 @@ Devices:
 - `POST /api/v1/devices/{device_id}/heartbeat`
 - `POST /api/v1/devices/{device_id}/revoke`
 
-Proxy:
-- Dashboard origin: `POST /devices/{device_id}/proxy/open`
-- Proxy origin: `POST /proxy/bootstrap`
-- Proxy origin: `GET/POST/PUT/PATCH/DELETE /proxy/devices/{device_id}/{path:path}`
+Firewall access:
+- Dashboard: `POST /devices/{device_id}/proxy/open` — CSRF/RBAC-authorized connector token creation and instructions
+- Dashboard WSS: `/api/v1/connector/devices/{device_id}` — bearer-authenticated opaque binary stream to the selected firewall
+- Dashboard: `POST /devices/{device_id}/relay/open` — optional CSRF/RBAC-authorized raw L4 relay allocation; returns `404` while disabled
 
-The proxy origin intentionally returns `404` for dashboard, settings, authentication, and API routes.
+Legacy `/proxy/bootstrap` and `/proxy/devices/*` routes are not part of this design and return `404`.
 
 ## Validation
 
@@ -509,6 +578,8 @@ docker compose build
 
 ## Known limitations
 
-- The FastAPI proxy is intentionally simple. For production, consider Caddy/Nginx with a signed internal auth check or a hardened streaming proxy.
+- Connector access requires the user to install and run the local Python connector. Browser trust and hostname behavior still depend on the certificate presented by the target OPNsense WebGUI.
+- Connector connection counts and immediate socket cleanup are process-local. The shipped deployment uses one Uvicorn process; active streams also poll shared database authorization so session revocation, RBAC removal, and device revocation are enforced across workers within `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`. Multi-process deployments need shared accounting if a global connection cap is required.
+- The optional public L4 relay is single-node/single-process and source-IP filtering cannot distinguish users behind the same NAT.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.
 

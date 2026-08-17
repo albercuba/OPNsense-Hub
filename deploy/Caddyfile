@@ -9,13 +9,4 @@ hub.example.com {
   reverse_proxy opnsense-hub-api:8083
 }
 
-proxy.example.com {
-  @proxy_routes path /proxy/bootstrap /proxy/devices/*
-  handle @proxy_routes {
-    reverse_proxy opnsense-hub-api:8083
-  }
-
-  handle {
-    respond 404
-  }
-}
+# Public L4 relay ports bypass Caddy so OPNsense terminates TLS end to end.

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Temporary relay for {{ device.hostname }}</title>
+        <style>
+            body { max-width: 700px; margin: 2rem auto; padding: 0 1rem; font: 15px/1.5 system-ui, sans-serif; color: #142033; }
+            .warning { padding: 1rem; border: 1px solid #fed7aa; border-radius: 10px; background: #fff7ed; color: #9a3412; }
+            a { display: inline-block; margin-top: 1rem; padding: .7rem 1rem; }
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1>Temporary L4 relay for {{ device.hostname }}</h1>
+            <p>
+                This endpoint passes TLS bytes unchanged to OPNsense and is restricted to
+                source address {{ source_ip }}. It expires at
+                {{ format_datetime(relay_expires_at, include_tz=True) }}.
+            </p>
+            <p class="warning">
+                Continue only if this firewall requires a trusted client certificate and
+                presents a certificate valid for its device relay hostname. Users sharing
+                the same NAT address are not separated by source-IP filtering alone.
+            </p>
+            <a href="{{ relay_url }}" target="_blank" rel="noopener noreferrer">Open OPNsense through the temporary relay</a>
+        </main>
+    </body>
+</html>

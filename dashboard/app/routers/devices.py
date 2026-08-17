@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -916,7 +917,7 @@ def delete_device_backup(
 
 
 @router.post("/api/v1/devices/{device_id}/revoke")
-def revoke_device(
+async def revoke_device(
     request: Request,
     device_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
@@ -928,7 +929,7 @@ def revoke_device(
     if not device or not has_company_access(db, user, device.company_id, "admin"):
         raise HTTPException(status_code=404)
     if not device.revoked_at:
-        remove_peer(device.wg_public_key)
+        await asyncio.to_thread(remove_peer, device.wg_public_key)
         device.revoked_at = utc_now()
         device.status = "revoked"
         device.device_token_hash = hash_secret(random_token(48))
@@ -946,11 +947,14 @@ def revoke_device(
             device_id=device.id,
         )
         db.commit()
+        from .proxy import close_device_access
+
+        await close_device_access(device.id)
     return RedirectResponse(f"/companies/{device.company_id}", status_code=303)
 
 
 @router.post("/api/v1/devices/{device_id}/delete")
-def delete_revoked_device(
+async def delete_revoked_device(
     request: Request,
     device_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
@@ -977,6 +981,9 @@ def delete_revoked_device(
     )
     db.delete(device)
     db.commit()
+    from .proxy import close_device_access
+
+    await close_device_access(device_id_for_audit)
     if not redirect_to.startswith("/") or redirect_to.startswith("//"):
         redirect_to = "/companies"
     return RedirectResponse(redirect_to, status_code=303)

@@ -1,126 +1,57 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import ipaddress
-import re
 import uuid
-from http.cookies import SimpleCookie
+from datetime import timezone
 from typing import Annotated
 from urllib.parse import urlparse
 
-import httpx
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
+from starlette.websockets import WebSocketDisconnect
 
-from ..audit import log_security_warning, write_audit
-from ..database import get_db
+from ..audit import write_audit
+from ..database import SessionLocal, get_db
 from ..deps import current_user, has_company_access
 from ..models import Device, User
-from ..services.firmware_scheduler import device_webgui_url, tunnel_proxy_host
+from ..security import utc_now
+from ..security.rate_limit import apply_rate_limit
+from ..security.request_context import client_ip
+from ..services.auth_service import session_from_request
+from ..services.firmware_scheduler import tunnel_proxy_host
 from ..services.proxy_auth import (
-    create_proxy_grant,
-    exchange_proxy_grant,
-    proxy_session_cookie_name,
-    validate_proxy_session,
+    create_connector_session,
+    validate_connector_session,
+    validate_connector_session_id,
 )
-from ..web import settings, templates
+from ..services.tcp_relay import TcpRelayManager
+from ..web import render_template, settings
 from ..wireguard import get_validated_hub_wireguard_config
 
 router = APIRouter()
-PROXY_REQUEST_HEADER_BLOCKLIST = {
-    "authorization",
-    "connection",
-    "content-length",
-    "cookie",
-    "forwarded",
-    "host",
-    "keep-alive",
-    "origin",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "referer",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-    "x-forwarded-for",
-    "x-forwarded-host",
-    "x-forwarded-proto",
-    "x-forwarded-port",
-    "x-real-ip",
-    "x-original-url",
-    "x-rewrite-url",
-    "x-http-method-override",
-    "x-method-override",
-}
-PROXY_RESPONSE_HEADER_BLOCKLIST = {
-    "connection",
-    "content-encoding",
-    "content-length",
-    "keep-alive",
-    "location",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "set-cookie",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-}
+CONNECTOR_CHUNK_SIZE = 64 * 1024
+_connector_connection_counts: dict[uuid.UUID, int] = {}
+_connector_websockets: dict[uuid.UUID, set[WebSocket]] = {}
+_connector_tasks: dict[uuid.UUID, set[asyncio.Task[None]]] = {}
+_connector_connection_lock = asyncio.Lock()
+_relay_device_locks: dict[uuid.UUID, asyncio.Lock] = {}
+CONNECTOR_CLEANUP_TIMEOUT_SECONDS = 5
 
-
-class ProxyResponseTooLarge(RuntimeError):
-    pass
-
-
-def proxy_cookie_prefix(device_id: uuid.UUID) -> str:
-    return f"opnhub_{device_id.hex}_"
-
-
-def proxy_path_prefix(device_id: uuid.UUID) -> str:
-    return f"/proxy/devices/{device_id}"
-
-
-def proxy_upstream_cookie_header(request: Request, device_id: uuid.UUID) -> str:
-    prefix = proxy_cookie_prefix(device_id)
-    upstream_cookies = []
-    for name, value in request.cookies.items():
-        if name.startswith(prefix):
-            upstream_cookies.append(f"{name[len(prefix) :]}={value}")
-    return "; ".join(upstream_cookies)
-
-
-def proxy_request_headers(request: Request, device_id: uuid.UUID) -> dict[str, str]:
-    headers = {
-        key: value
-        for key, value in request.headers.items()
-        if key.lower() not in PROXY_REQUEST_HEADER_BLOCKLIST
-    }
-    cookie_header = proxy_upstream_cookie_header(request, device_id)
-    if cookie_header:
-        headers["cookie"] = cookie_header
-    return headers
-
-
-def proxy_downstream_set_cookie_headers(
-    set_cookie_headers: list[str], device_id: uuid.UUID
-) -> list[str]:
-    rewritten = []
-    prefix = proxy_cookie_prefix(device_id)
-    path_prefix = proxy_path_prefix(device_id)
-    for header in set_cookie_headers:
-        cookies = SimpleCookie()
-        cookies.load(header)
-        for name, morsel in cookies.items():
-            morsel.set(prefix + name, morsel.value, morsel.coded_value)
-            morsel["path"] = path_prefix
-            morsel["domain"] = ""
-            morsel["httponly"] = True
-            morsel["samesite"] = "Lax"
-            if settings.session_secure:
-                morsel["secure"] = True
-            rewritten.append(morsel.OutputString())
-    return rewritten
+relay_manager = (
+    TcpRelayManager(
+        bind_host=settings.public_l4_relay_bind_host,
+        port_min=settings.public_l4_relay_port_min,
+        port_max=settings.public_l4_relay_port_max,
+        ttl=settings.public_l4_relay_ttl_seconds,
+        idle_timeout=settings.public_l4_relay_idle_timeout_seconds,
+        max_connections=settings.public_l4_relay_max_connections,
+    )
+    if settings.public_l4_relay_enabled
+    else TcpRelayManager()
+)
 
 
 def validate_proxy_device_target(device: Device) -> str:
@@ -142,325 +73,466 @@ def validate_proxy_device_target(device: Device) -> str:
     return str(target_ip)
 
 
-def proxy_rewrite_location(
-    location: str, device_id: uuid.UUID, upstream_base: str
-) -> str | None:
-    path_prefix = proxy_path_prefix(device_id)
-    if location.startswith("/") and not location.startswith(path_prefix + "/"):
-        return path_prefix + location
-
-    parsed_location = urlparse(location)
-    if not parsed_location.scheme and not parsed_location.netloc:
-        return location
-
-    parsed_upstream = urlparse(upstream_base)
-    upstream_port = parsed_upstream.port or (
-        443 if parsed_upstream.scheme == "https" else 80
-    )
-    location_port = parsed_location.port or (
-        443 if parsed_location.scheme == "https" else 80
-    )
-    same_origin = (
-        parsed_location.scheme == parsed_upstream.scheme
-        and parsed_location.hostname == parsed_upstream.hostname
-        and location_port == upstream_port
-    )
-    if not same_origin:
-        return None
-
-    rewritten_path = parsed_location.path or "/"
-    rewritten = path_prefix + rewritten_path
-    if parsed_location.query:
-        rewritten += f"?{parsed_location.query}"
-    if parsed_location.fragment:
-        rewritten += f"#{parsed_location.fragment}"
-    return rewritten
-
-
-def proxy_rewrite_absolute_path(match: re.Match[str], path_prefix: str) -> str:
-    prefix = match.group("prefix")
-    path = match.group("path")
-    if path.startswith(("/", "proxy/devices/")):
-        return match.group(0)
-    return f"{prefix}{path_prefix}/{path}"
-
-
-def proxy_rewrite_body(
-    content: bytes, content_type: str, device_id: uuid.UUID
-) -> bytes:
-    if not any(
-        kind in content_type.lower() for kind in ("text/html", "text/css", "javascript")
-    ):
-        return content
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        return content
-    path_prefix = proxy_path_prefix(device_id)
-    text = re.sub(
-        r'(?P<prefix>\b(?:href|src|action)=(?:["\']))/(?P<path>[^"\']*)',
-        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
-        text,
-    )
-    text = re.sub(
-        r'(?P<prefix>url\((?:["\']?))/(?P<path>[^)"\']*)',
-        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
-        text,
-    )
-    text = re.sub(
-        r'(?P<prefix>["\'])/(?P<path>(?!/|proxy/devices/)[^"\']*)',
-        lambda match: proxy_rewrite_absolute_path(match, path_prefix),
-        text,
-    )
-    return text.encode("utf-8")
-
-
-async def read_limited_request_body(request: Request, limit_bytes: int) -> bytes:
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > limit_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail="proxied request body exceeds the configured size limit",
-                )
-        except ValueError:
-            pass
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > limit_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail="proxied request body exceeds the configured size limit",
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-async def read_limited_proxy_response(
-    proxied: httpx.Response, limit_bytes: int
-) -> bytes:
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in proxied.aiter_bytes():
-        total += len(chunk)
-        if total > limit_bytes:
-            raise ProxyResponseTooLarge
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-@router.post("/devices/{device_id}/proxy/open", response_class=HTMLResponse)
-def open_device_proxy(
-    request: Request,
-    device_id: uuid.UUID,
-    db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(current_user)],
-):
+def _require_dashboard_device(db: Session, user: User, device_id: uuid.UUID) -> Device:
     device = db.get(Device, device_id)
     if (
-        not device
-        or device.revoked_at
+        device is None
+        or device.revoked_at is not None
+        or (device.status or "").lower() == "revoked"
         or not has_company_access(db, user, device.company_id)
     ):
         raise HTTPException(status_code=404)
+    return device
+
+
+def _proxy_base_hostname() -> str:
     try:
-        configured_proxy_url = urlparse(settings.proxy_public_url)
-        _ = configured_proxy_url.port
+        parsed = urlparse(settings.proxy_public_url)
+        _ = parsed.port
     except ValueError as exc:
         raise HTTPException(
             status_code=500, detail="PROXY_PUBLIC_URL is invalid"
         ) from exc
     if (
-        configured_proxy_url.scheme not in {"http", "https"}
-        or not configured_proxy_url.netloc
-        or configured_proxy_url.username is not None
-        or configured_proxy_url.password is not None
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
     ):
         raise HTTPException(status_code=500, detail="PROXY_PUBLIC_URL is invalid")
-    proxy_origin = (
-        f"{configured_proxy_url.scheme.lower()}://{configured_proxy_url.netloc.lower()}"
+    return parsed.hostname.lower()
+
+
+def _no_store(response):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        "script-src 'none'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'"
     )
-    grant = create_proxy_grant(db, user, device)
+    return response
+
+
+@router.post("/devices/{device_id}/proxy/open", response_class=HTMLResponse)
+def open_device_connector(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+):
+    device = _require_dashboard_device(db, user, device_id)
+    apply_rate_limit(
+        request,
+        "device-connector-open",
+        str(user.id),
+        settings.rate_limit_device_access_attempts,
+        settings.rate_limit_device_access_window_seconds,
+    )
+    validate_proxy_device_target(device)
+    dashboard_session = session_from_request(request, db)
+    token = create_connector_session(db, user, device, dashboard_session)
     write_audit(
         db,
         request,
-        "device.proxy.open",
+        "device.connector.open",
         user=user,
         company_id=device.company_id,
         device_id=device.id,
     )
-    db.commit()
-
-    response = templates.TemplateResponse(
-        request,
+    response = render_template(
+        db,
         "proxy_handoff.html",
         {
             "request": request,
-            "proxy_bootstrap_url": f"{proxy_origin}/proxy/bootstrap",
-            "grant": grant,
+            "device": device,
+            "connector_token": token,
+            "connector_hub_url": settings.public_url.rstrip("/"),
+            "connector_local_port": settings.connector_local_port,
+            "connector_session_ttl_minutes": settings.connector_session_ttl_minutes,
+            "public_l4_relay_enabled": settings.public_l4_relay_enabled,
         },
     )
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'unsafe-inline'; "
-        f"form-action {proxy_origin}; base-uri 'none'; frame-ancestors 'none'"
-    )
-    return response
-
-
-@router.post("/proxy/bootstrap")
-def bootstrap_device_proxy(
-    db: Annotated[Session, Depends(get_db)],
-    grant: str = Form(...),
-):
-    session_token, proxy_session = exchange_proxy_grant(db, grant)
     db.commit()
-    device_path = proxy_path_prefix(proxy_session.device_id)
-    response = RedirectResponse(f"{device_path}/", status_code=303)
-    response.set_cookie(
-        proxy_session_cookie_name(proxy_session.device_id),
-        session_token,
-        httponly=True,
-        secure=settings.session_secure,
-        samesite="lax",
-        max_age=settings.proxy_session_ttl_minutes * 60,
-        path=device_path,
-    )
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
+    return _no_store(response)
 
 
-@router.api_route(
-    "/proxy/devices/{device_id}/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-)
-async def proxy_device(
+async def _replace_device_relay(
+    device_id: uuid.UUID,
+    target_host: str,
+    target_port: int,
+    source_ip: str,
+    public_base_hostname: str,
+):
+    device_lock = _relay_device_locks.setdefault(device_id, asyncio.Lock())
+    async with device_lock:
+        await relay_manager.close_device(device_id)
+        return await relay_manager.create_relay(
+            device_id,
+            target_host,
+            target_port,
+            source_ip,
+            public_base_hostname,
+        )
+
+
+async def _close_device_relay(device_id: uuid.UUID) -> None:
+    device_lock = _relay_device_locks.setdefault(device_id, asyncio.Lock())
+    async with device_lock:
+        await relay_manager.close_device(device_id)
+
+
+@router.post("/devices/{device_id}/relay/open", response_class=HTMLResponse)
+async def open_public_l4_relay(
     request: Request,
     device_id: uuid.UUID,
-    path: str,
     db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
 ):
-    session_token = request.cookies.get(proxy_session_cookie_name(device_id))
-    if not session_token:
-        raise HTTPException(status_code=401, detail="proxy authorization required")
-    _proxy_session, user, device = validate_proxy_session(
-        db, session_token, device_id
+    if not settings.public_l4_relay_enabled:
+        raise HTTPException(status_code=404)
+    if not settings.public_l4_relay_mtls_required:
+        raise HTTPException(
+            status_code=503,
+            detail="public relay requires OPNsense-side mutual TLS enforcement",
+        )
+    device = _require_dashboard_device(db, user, device_id)
+    apply_rate_limit(
+        request,
+        "device-relay-open",
+        str(user.id),
+        settings.rate_limit_device_access_attempts,
+        settings.rate_limit_device_access_window_seconds,
     )
+    target_host = validate_proxy_device_target(device)
+    source_ip = client_ip(request)
     try:
-        validate_proxy_device_target(device)
-        url = device_webgui_url(device) + path
-        if request.url.query:
-            url += "?" + request.url.query
+        ipaddress.ip_address(source_ip)
     except ValueError as exc:
-        write_audit(
-            db,
-            request,
-            "device.proxy.failed",
-            user=user,
-            company_id=device.company_id,
-            device_id=device.id,
-        )
-        db.commit()
         raise HTTPException(
-            status_code=500,
-            detail=f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}",
+            status_code=400, detail="could not determine a stable client IP"
         ) from exc
-    body = await read_limited_request_body(request, settings.max_proxy_request_bytes)
+
     try:
-        async with httpx.AsyncClient(
-            verify=settings.proxy_verify_tls, follow_redirects=False, timeout=30
-        ) as client:
-            async with client.stream(
-                request.method,
-                url,
-                headers=proxy_request_headers(request, device_id),
-                content=body,
-            ) as proxied:
-                content = await read_limited_proxy_response(
-                    proxied, settings.max_proxy_response_bytes
-                )
-                response_headers = {
-                    k: v
-                    for k, v in proxied.headers.items()
-                    if k.lower() not in PROXY_RESPONSE_HEADER_BLOCKLIST
-                }
-                if location := proxied.headers.get("location"):
-                    rewritten_location = proxy_rewrite_location(
-                        location, device_id, device_webgui_url(device)
-                    )
-                    if rewritten_location is None:
-                        raise HTTPException(
-                            status_code=502,
-                            detail="The proxied OPNsense UI returned a redirect to an unexpected origin",
-                        )
-                    response_headers["location"] = rewritten_location
-                response = Response(
-                    content=proxy_rewrite_body(
-                        content, proxied.headers.get("content-type", ""), device_id
-                    ),
-                    status_code=proxied.status_code,
-                    headers=response_headers,
-                )
-                for cookie in proxy_downstream_set_cookie_headers(
-                    proxied.headers.get_list("set-cookie"), device_id
-                ):
-                    response.headers.append("set-cookie", cookie)
-                return response
-    except HTTPException as exc:
-        write_audit(
-            db,
-            request,
-            "device.proxy.failed",
-            user=user,
-            company_id=device.company_id,
-            device_id=device.id,
+        allocation = await _replace_device_relay(
+            device.id,
+            target_host,
+            settings.opnsense_gui_port,
+            source_ip,
+            _proxy_base_hostname(),
         )
-        db.commit()
-        log_security_warning("device.proxy.failed", detail=str(exc.detail))
-        raise exc
-    except ProxyResponseTooLarge as exc:
-        write_audit(
-            db,
-            request,
-            "device.proxy.failed",
-            user=user,
-            company_id=device.company_id,
-            device_id=device.id,
-        )
-        db.commit()
-        log_security_warning(
-            "device.proxy.failed",
-            detail=f"upstream response exceeded {settings.max_proxy_response_bytes} bytes",
-        )
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(
-            status_code=502,
-            detail="The proxied OPNsense UI response exceeded the configured size limit",
+            status_code=503, detail="no public relay port is currently available"
         ) from exc
-    except httpx.RequestError as exc:
-        error_detail = str(exc) or repr(exc)
+
+    try:
+        db.expire_all()
+        device = _require_dashboard_device(db, user, device_id)
         write_audit(
             db,
             request,
-            "device.proxy.failed",
+            "device.relay.open",
             user=user,
             company_id=device.company_id,
             device_id=device.id,
         )
-        db.commit()
-        log_security_warning(
-            "device.proxy.failed",
-            detail=f"{exc.__class__.__name__}: {error_detail}",
+        response = render_template(
+            db,
+            "relay_handoff.html",
+            {
+                "request": request,
+                "device": device,
+                "relay_url": allocation.url,
+                "relay_expires_at": allocation.expires_at,
+                "source_ip": source_ip,
+            },
         )
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Could not reach OPNsense UI at {url}: {exc.__class__.__name__}: {error_detail}. "
-                "Verify WireGuard has a recent handshake, the firewall allows Hub tunnel traffic to the "
-                "WebGUI port, and the WebGUI listens on the tunnel interface."
-            ),
-        ) from exc
+        db.commit()
+    except BaseException:
+        db.rollback()
+        await relay_manager.close_allocation(allocation)
+        raise
+    return _no_store(response)
+
+
+def _bearer_token(websocket: WebSocket) -> str | None:
+    authorization = websocket.headers.get("authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    return token or None
+
+
+async def _reserve_connector_connection(session_id: uuid.UUID) -> bool:
+    async with _connector_connection_lock:
+        current = _connector_connection_counts.get(session_id, 0)
+        if current >= settings.connector_max_connections:
+            return False
+        _connector_connection_counts[session_id] = current + 1
+        return True
+
+
+async def _track_connector_connection(
+    device_id: uuid.UUID, websocket: WebSocket
+) -> None:
+    task = asyncio.current_task()
+    async with _connector_connection_lock:
+        _connector_websockets.setdefault(device_id, set()).add(websocket)
+        if task is not None:
+            _connector_tasks.setdefault(device_id, set()).add(task)
+
+
+async def _release_connector_connection(
+    session_id: uuid.UUID, device_id: uuid.UUID, websocket: WebSocket
+) -> None:
+    task = asyncio.current_task()
+    async with _connector_connection_lock:
+        current = _connector_connection_counts.get(session_id, 0)
+        if current <= 1:
+            _connector_connection_counts.pop(session_id, None)
+        else:
+            _connector_connection_counts[session_id] = current - 1
+
+        device_websockets = _connector_websockets.get(device_id)
+        if device_websockets is not None:
+            device_websockets.discard(websocket)
+            if not device_websockets:
+                _connector_websockets.pop(device_id, None)
+
+        device_tasks = _connector_tasks.get(device_id)
+        if device_tasks is not None and task is not None:
+            device_tasks.discard(task)
+            if not device_tasks:
+                _connector_tasks.pop(device_id, None)
+
+
+async def _close_tracked_connectors(
+    websockets: tuple[WebSocket, ...],
+    tasks: tuple[asyncio.Task[None], ...],
+    *,
+    code: int,
+    reason: str,
+) -> None:
+    current_task = asyncio.current_task()
+    pending_tasks = tuple(task for task in tasks if task is not current_task)
+    for task in pending_tasks:
+        task.cancel()
+
+    async def close_websocket(websocket: WebSocket) -> None:
+        with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+            await websocket.close(code=code, reason=reason)
+
+    cleanup = asyncio.gather(
+        *(close_websocket(websocket) for websocket in websockets),
+        *pending_tasks,
+        return_exceptions=True,
+    )
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(cleanup, timeout=CONNECTOR_CLEANUP_TIMEOUT_SECONDS)
+
+
+async def close_device_access(device_id: uuid.UUID) -> None:
+    await _close_device_relay(device_id)
+    async with _connector_connection_lock:
+        websockets = tuple(_connector_websockets.pop(device_id, set()))
+        tasks = tuple(_connector_tasks.pop(device_id, set()))
+    await _close_tracked_connectors(
+        websockets,
+        tasks,
+        code=4403,
+        reason="device access revoked",
+    )
+
+
+async def close_all_access() -> None:
+    await relay_manager.close_all()
+    async with _connector_connection_lock:
+        websockets = tuple(
+            websocket
+            for device_websockets in _connector_websockets.values()
+            for websocket in device_websockets
+        )
+        tasks = tuple(
+            task for device_tasks in _connector_tasks.values() for task in device_tasks
+        )
+        _connector_websockets.clear()
+        _connector_tasks.clear()
+    await _close_tracked_connectors(
+        websockets,
+        tasks,
+        code=1001,
+        reason="Hub shutting down",
+    )
+
+
+class ConnectorAuthorizationEnded(Exception):
+    pass
+
+
+def _connector_session_is_authorized(
+    connector_session_id: uuid.UUID, device_id: uuid.UUID
+) -> bool:
+    db = SessionLocal()
+    try:
+        validate_connector_session_id(db, connector_session_id, device_id)
+        return True
+    except (HTTPException, ValueError):
+        return False
+    finally:
+        db.close()
+
+
+async def _monitor_connector_authorization(
+    connector_session_id: uuid.UUID, device_id: uuid.UUID
+) -> None:
+    while True:
+        await asyncio.sleep(settings.connector_authorization_recheck_seconds)
+        authorized = await asyncio.to_thread(
+            _connector_session_is_authorized,
+            connector_session_id,
+            device_id,
+        )
+        if not authorized:
+            raise ConnectorAuthorizationEnded
+
+
+async def _pipe_websocket_to_tcp(
+    websocket: WebSocket, writer: asyncio.StreamWriter
+) -> None:
+    while True:
+        message = await websocket.receive()
+        message_type = message.get("type")
+        if message_type == "websocket.disconnect":
+            return
+        data = message.get("bytes")
+        if not isinstance(data, bytes):
+            await websocket.close(code=1003, reason="binary frames required")
+            return
+        writer.write(data)
+        await writer.drain()
+
+
+async def _pipe_tcp_to_websocket(
+    reader: asyncio.StreamReader, websocket: WebSocket
+) -> None:
+    while chunk := await reader.read(CONNECTOR_CHUNK_SIZE):
+        await websocket.send_bytes(chunk)
+
+
+async def _relay_connector_stream(
+    websocket: WebSocket,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    connector_session_id: uuid.UUID,
+    device_id: uuid.UUID,
+) -> None:
+    tasks = {
+        asyncio.create_task(_pipe_websocket_to_tcp(websocket, writer)),
+        asyncio.create_task(_pipe_tcp_to_websocket(reader, websocket)),
+        asyncio.create_task(
+            _monitor_connector_authorization(connector_session_id, device_id)
+        ),
+    }
+    done: set[asyncio.Task[None]] = set()
+    try:
+        done, _pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    for task in done:
+        task.result()
+
+
+@router.websocket("/api/v1/connector/devices/{device_id}")
+async def connector_device_tunnel(websocket: WebSocket, device_id: uuid.UUID):
+    token = _bearer_token(websocket)
+    if token is None:
+        await websocket.close(code=4401, reason="connector authorization required")
+        return
+
+    db = SessionLocal()
+    try:
+        connector_session, _user, device = validate_connector_session(
+            db, token, device_id
+        )
+        target_host = validate_proxy_device_target(device)
+        db.commit()
+        db.refresh(connector_session)
+        connector_session_id = connector_session.id
+        connector_expires_at = connector_session.expires_at
+    except (HTTPException, ValueError):
+        db.rollback()
+        await websocket.close(code=4401, reason="invalid connector authorization")
+        return
+    finally:
+        db.close()
+
+    if not await _reserve_connector_connection(connector_session_id):
+        await websocket.close(code=4429, reason="connector connection limit reached")
+        return
+
+    writer: asyncio.StreamWriter | None = None
+    await _track_connector_connection(device_id, websocket)
+    try:
+        if not await asyncio.to_thread(
+            _connector_session_is_authorized, connector_session_id, device_id
+        ):
+            await websocket.close(code=4401, reason="invalid connector authorization")
+            return
+
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(
+                    target_host,
+                    settings.opnsense_gui_port,
+                    limit=CONNECTOR_CHUNK_SIZE,
+                ),
+                timeout=settings.connector_upstream_connect_timeout_seconds,
+            )
+        except (OSError, asyncio.TimeoutError):
+            await websocket.close(code=4502, reason="firewall connection failed")
+            return
+
+        if not await asyncio.to_thread(
+            _connector_session_is_authorized, connector_session_id, device_id
+        ):
+            await websocket.close(code=4401, reason="invalid connector authorization")
+            return
+
+        await websocket.accept()
+        expires_at = connector_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        remaining = max(0.0, (expires_at - utc_now()).total_seconds())
+        if remaining <= 0:
+            await websocket.close(code=4401, reason="connector session expired")
+            return
+        try:
+            await asyncio.wait_for(
+                _relay_connector_stream(
+                    websocket,
+                    reader,
+                    writer,
+                    connector_session_id,
+                    device_id,
+                ),
+                timeout=min(remaining, settings.connector_connection_max_seconds),
+            )
+        except asyncio.TimeoutError:
+            await websocket.close(code=1000, reason="connector session ended")
+        except ConnectorAuthorizationEnded:
+            await websocket.close(code=4403, reason="connector authorization ended")
+    except (RuntimeError, WebSocketDisconnect):
+        pass
+    finally:
+        if writer is not None:
+            writer.close()
+            with contextlib.suppress(OSError, ConnectionError):
+                await writer.wait_closed()
+        await _release_connector_connection(
+            connector_session_id, device_id, websocket
+        )

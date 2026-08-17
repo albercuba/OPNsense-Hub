@@ -1,0 +1,4 @@
+services:
+  opnsense-hub-api:
+    ports:
+      - "55000-55099:55000-55099/tcp"

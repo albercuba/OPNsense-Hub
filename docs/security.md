@@ -13,10 +13,11 @@
 - The OPNsense plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the tunnel.
 - Hub disables IPv4 and IPv6 forwarding by default unless `HUB_ENABLE_IP_FORWARDING=true`.
 - When enabled, Hub startup installs an idempotent `wg0 -> wg0` forward-drop isolation rule using nftables or iptables so one firewall cannot talk to another through the Hub.
-- Dashboard RBAC and CSRF checks happen before issuing a proxy handoff grant.
-- Proxy handoff grants are short-lived, single-use, and delivered by POST from the dashboard origin to a distinct proxy origin.
-- The proxy bootstrap establishes a host-only cookie scoped to `/proxy/devices/{device_id}`; it does not expose the dashboard session cookie to the proxy origin.
-- Proxy access and revocation are audit logged.
+- Dashboard session, CSRF, company-scoped RBAC, device target validation, and revocation checks happen before a connector token is issued.
+- Connector tokens are random, short-lived, device-scoped, bound to the issuing dashboard session, stored only as hashes, returned in `no-store` pages, and sent to WSS only in an `Authorization: Bearer` header.
+- The connector accepts the token only from a hidden prompt, standard input, or `OPNSENSE_HUB_CONNECTOR_TOKEN`; no CLI token option or token-bearing URL exists.
+- Connector access accepts binary frames only and forwards opaque TLS bytes to the firewall WebGUI over the validated WireGuard `/32`. The Hub does not terminate firewall TLS or receive WebGUI credentials/session cookies.
+- Connector and optional relay opens are rate limited and audit logged. Device revocation immediately closes tracked local connector/relay access, while active connector streams periodically recheck shared database authorization for cross-worker session revocation, RBAC removal, user deletion, and device revocation.
 - Revocation invalidates the stored device token hash and removes the WireGuard peer.
 - The Hub never stores OPNsense web UI credentials.
 
@@ -33,16 +34,32 @@ This is intentional:
 
 The `wg0 -> wg0` forward-drop rule is a defense-in-depth control that prevents firewall-to-firewall forwarding on the Hub even if OS forwarding or other host routing changes are introduced later. The runtime now hard-fails if unsafe forwarding/isolation settings are combined, and the `/32`-only peer-route invariant is covered by unit tests so customer LAN CIDRs are not added to peer routes by accident.
 
-## Proxy origin isolation
+## Default connector boundary
 
-Production deployments require two distinct HTTPS origins:
+The default access path has no separate browser proxy origin, `/proxy/bootstrap`, proxy authorization cookie, or L7 reverse proxy to OPNsense.
 
-- `PUBLIC_URL` serves the dashboard, authentication, settings, and API routes. Its reverse proxy must deny `/proxy/*`.
-- `PROXY_PUBLIC_URL` serves only `POST /proxy/bootstrap` and `/proxy/devices/*`. All dashboard, authentication, settings, and API paths must return `404` on this origin.
+1. The browser sends a CSRF-protected `POST /devices/{device_id}/proxy/open` to `PUBLIC_URL` using the normal dashboard session.
+2. The Hub enforces company RBAC, validates the device's WireGuard target, creates a short-lived device-scoped token bound to the issuing dashboard session, stores only its hash, and returns the token and connector instructions with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+3. The local connector listens on loopback by default. Each local browser TCP connection opens an authenticated `wss://<PUBLIC_URL host>/api/v1/connector/devices/{device_id}` connection with the token in the bearer header.
+4. The Hub validates token/device/user/dashboard-session/revocation state and connection limits, opens TCP to the firewall's WireGuard `/32` and `OPNSENSE_GUI_PORT`, rechecks authorization before WSS acceptance and periodically during the stream, and copies opaque binary bytes. OPNsense—not the Hub—terminates browser TLS.
 
-The browser starts access with a CSRF-protected `POST /devices/{device_id}/proxy/open` on `PUBLIC_URL`. After session and company-scope authorization, a minimal handoff page POSTs a short-lived one-time grant to `PROXY_PUBLIC_URL`; the grant must not be placed in a URL or query string. The bootstrap consumes the grant and issues a host-only, device-path-scoped proxy cookie. This limits proxy credentials to one proxy host and one `/proxy/devices/{device_id}` path and prevents the dashboard session cookie from becoming proxy authorization.
+The browser must trust the certificate presented by that OPNsense WebGUI. If its certificate and redirects use a firewall hostname, map that hostname to loopback on the connector host and use connector `--browser-host`; do not disable certificate validation as a convenience. Keep the listener on loopback. A non-loopback listener requires the explicit `--allow-non-loopback` override plus separate workstation firewall controls, and any local process able to reach the listener can use the active connector.
 
-Both hostnames need DNS records pointing to the edge proxy and valid TLS certificates. Keep the origins distinct; do not deploy `PROXY_PUBLIC_URL` as a path beneath `PUBLIC_URL`.
+Caddy handles dashboard HTTP(S), including the WSS upgrade, only. The raw relay described below bypasses Caddy.
+
+## Optional public L4 relay boundary
+
+The raw public relay is disabled by default. It must remain disabled unless both `PUBLIC_L4_RELAY_ENABLED=true` and `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` are set and the deployment has independently verified all of these controls:
+
+- every participating OPNsense WebGUI requires and validates an approved browser client certificate; password-only access is not an adequate relay control
+- each WebGUI presents a trusted certificate whose SAN matches its exact generated hostname `d-{device UUID without dashes}.<PROXY_PUBLIC_URL hostname>`
+- wildcard DNS under the `PROXY_PUBLIC_URL` hostname resolves generated device names to the correct Hub node
+- inbound TCP `55000-55099` is restricted to the Hub and traverses no HTTP proxy or TLS terminator
+- the network path preserves the browser's source IP; the relay does not consume PROXY protocol and rejects a TCP peer whose source differs from the IP authorized by the dashboard POST
+
+Use `deploy/docker-compose.l4.yml` to publish TCP `55000-55099`. These raw ports bypass Caddy so browser-to-OPNsense TLS remains end to end. A relay is short-lived, bound to one device and one observed source IP, limited by idle/connection controls, and closed on expiry or revocation.
+
+This relay is single-node/single-process only because listeners and allocations are held in API-process memory. The CSRF/RBAC POST and raw relay connection must reach the same API instance. Source-IP pinning is only defense in depth: users behind the same NAT share a public source IP and are not isolated from each other by this check. Enforced WebGUI client-certificate authentication and exact certificate hostname validation remain mandatory.
 
 ## Redacted/sensitive fields
 
@@ -52,29 +69,32 @@ Never log or display these values:
 - Device tokens.
 - Dashboard session tokens.
 - WireGuard private keys.
-- OPNsense administrator passwords or session cookies.
-- Any firewall GUI credentials proxied through the Hub.
+- Connector tokens and optional relay allocation details.
+- OPNsense administrator passwords, WebGUI session cookies, client-certificate private keys, or decrypted WebGUI traffic.
 
 ## Production hardening checklist
 
-- `security: enforce HTTPS and secure cookies` — set `APP_ENV=production`, `SESSION_SECURE=true`, and deploy both `PUBLIC_URL` and the distinct `PROXY_PUBLIC_URL` behind HTTPS.
+- `security: enforce dashboard HTTPS and secure cookies` — set `APP_ENV=production`, `SESSION_SECURE=true`, and deploy `PUBLIC_URL` behind HTTPS/WSS. `PROXY_PUBLIC_URL` is a distinct base hostname for optional relay DNS, not an L7 origin.
 - `security: replace default secrets` — set a long random `SECRET_KEY`, admin password, and database password.
 - `security: replace the default admin address` — set `INITIAL_ADMIN_EMAIL` to a real admin mailbox.
-- `security: verify firewall TLS` — set `PROXY_VERIFY_TLS=true` in production unless you explicitly accept the risk with `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`.
-- `security: restrict incoming hostnames` — set `ALLOWED_HOSTS` to the real dashboard and proxy hostnames used by browsers and reverse proxies.
-- `security: enforce proxy edge routes` — deny `/proxy/*` on the dashboard host; on the proxy host expose only `/proxy/bootstrap` and `/proxy/devices/*`, returning `404` for everything else.
-- `security: trust only known reverse proxies` — set `TRUSTED_PROXY_CIDRS` to the proxy IPs/subnets that are allowed to supply `X-Forwarded-For`.
+- `security: keep the connector local` — bind the user connector to loopback, prefer its hidden prompt, and never place a token in a CLI argument, URL, literal shell command, or shell history. Use a protected secret file/file descriptor for managed automation; process environments may be inspectable.
+- `security: validate local firewall TLS` — make the browser trust the OPNsense WebGUI certificate and use a loopback hostname mapping plus `--browser-host` when its SAN does not match `localhost` or `127.0.0.1`.
+- `security: restrict incoming hostnames` — set `ALLOWED_HOSTS` to the actual dashboard and configured relay-base hostnames.
+- `security: keep the raw relay off by default` — leave `PUBLIC_L4_RELAY_ENABLED=false` unless the documented mTLS, exact hostname, wildcard DNS, source-IP, port, and single-node requirements are all met.
+- `security: attest and enforce relay mTLS` — setting `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` is only an operator assertion; verify each OPNsense WebGUI actually rejects clients without a trusted certificate.
+- `security: bypass Caddy only for raw relay ports` — Caddy serves dashboard HTTPS/WSS; if enabled, publish TCP `55000-55099` directly with `deploy/docker-compose.l4.yml` and preserve source IP.
+- `security: trust only known reverse proxies` — set `TRUSTED_PROXY_CIDRS` to the dashboard proxies allowed to supply `X-Forwarded-For`; relay source-IP authorization depends on this value.
 - `security: use a production rate-limit backend` — prefer `RATE_LIMIT_BACKEND=redis` with `RATE_LIMIT_REDIS_URL` configured, or enforce rate limits at the edge when using `RATE_LIMIT_BACKEND=edge`.
 - `security: keep MFA throttling enabled` — tune `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` conservatively for internet-facing deployments.
-- `security: bound proxy and restore payload sizes` — review `MAX_PROXY_REQUEST_BYTES`, `MAX_PROXY_RESPONSE_BYTES`, `MAX_BACKUP_RESTORE_BYTES`, `MAX_BACKUP_RESTORE_ENTRIES`, `MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES`, and `MAX_BACKUP_RESTORE_FILE_BYTES` for your deployment.
+- `security: bound connector, relay, and restore resources` — review `CONNECTOR_SESSION_TTL_MINUTES`, `CONNECTOR_MAX_CONNECTIONS`, `CONNECTOR_CONNECTION_MAX_SECONDS`, `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`, device-access launch rate limits, all `PUBLIC_L4_RELAY_*` limits, and backup/restore size limits for your deployment.
 - `security: minimize web-app privilege` — use `NETWORK_CONTROL_MODE=external` when WireGuard bootstrap and runtime firewall management are handled by a sidecar or host service.
 - `security: keep browser hardening headers enabled` — leave `SECURITY_HEADERS_ENABLED=true` and only relax `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, or `PERMISSIONS_POLICY` intentionally.
 - `security: keep management-only routing` — continue rejecting customer LAN routes in WireGuard `AllowedIPs` to avoid cross-company routing and overlapping subnet conflicts.
 - `security: keep IP forwarding disabled` — leave `HUB_ENABLE_IP_FORWARDING=false` unless you intentionally manage peer routing outside the app.
 - `security: keep Hub firewall isolation enabled` — leave `HUB_MANAGE_FIREWALL_RULES=true` so startup installs the `wg0 -> wg0` forward-drop rule.
-- `security: pin firewall certificates` — replace trust bypasses with certificate pinning or an internal CA when possible.
+- `security: manage firewall certificates` — use an internal/public CA or explicit trust so local connector hostnames and exact optional relay hostnames validate without trust bypasses.
 - `security: isolate WireGuard management` — for higher-assurance deployments, consider moving WireGuard bootstrap and peer updates into a minimal privileged sidecar or host service.
-- `security: rate limit login and enrollment` — add IP/user rate limits to auth and enrollment endpoints.
-- `security: add CSRF protection` — server-rendered forms should get CSRF tokens before production use.
+- `security: keep login and enrollment rate limits enabled` — tune the existing IP/user limits conservatively and use a shared production backend.
+- `security: preserve CSRF enforcement` — keep signed-cookie/form-token validation on all browser-facing state-changing routes, including connector and relay opens.
 - `security: encrypt database backups` — configs, token hashes, metadata, uploaded branding assets, and audit data are sensitive.
-- `security: monitor audit logs` — alert on repeated failed enrollment, unexpected proxy opens, and revocations.
+- `security: monitor audit logs` — alert on repeated failed enrollment, unexpected `device.connector.open` or `device.relay.open` events, and revocations.

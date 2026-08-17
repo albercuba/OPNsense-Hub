@@ -111,6 +111,53 @@ def test_runtime_validation_rejects_invalid_proxy_ttls(overrides, setting_name):
     assert any(setting_name in error for error in errors)
 
 
+@pytest.mark.parametrize(
+    ("overrides", "setting_name"),
+    [
+        ({"connector_session_ttl_minutes": 0}, "CONNECTOR_SESSION_TTL_MINUTES"),
+        ({"connector_local_port": 0}, "CONNECTOR_LOCAL_PORT"),
+        ({"connector_max_connections": 0}, "CONNECTOR_MAX_CONNECTIONS"),
+        (
+            {"connector_connection_max_seconds": 0},
+            "CONNECTOR_CONNECTION_MAX_SECONDS",
+        ),
+        (
+            {"connector_authorization_recheck_seconds": 0},
+            "CONNECTOR_AUTHORIZATION_RECHECK_SECONDS",
+        ),
+    ],
+)
+def test_runtime_validation_rejects_invalid_connector_settings(
+    overrides, setting_name
+):
+    errors = runtime_validation_errors(production_settings(**overrides))
+
+    assert any(setting_name in error for error in errors)
+
+
+def test_public_l4_relay_requires_opnsense_side_mtls():
+    errors = runtime_validation_errors(
+        production_settings(
+            public_l4_relay_enabled=True,
+            public_l4_relay_mtls_required=False,
+        )
+    )
+
+    assert any("PUBLIC_L4_RELAY_MTLS_REQUIRED" in error for error in errors)
+
+
+def test_runtime_validation_accepts_explicit_hardened_public_l4_relay():
+    assert (
+        runtime_validation_errors(
+            production_settings(
+                public_l4_relay_enabled=True,
+                public_l4_relay_mtls_required=True,
+            )
+        )
+        == []
+    )
+
+
 def test_isolation_invariant_errors_reject_unsafe_forwarding_combinations():
     external = production_settings(
         network_control_mode="external",

@@ -12,6 +12,9 @@ MAX_LOG_RETENTION_DELETE_BATCH_SIZE = 20000
 MAX_LOG_RETENTION_SWEEP_INTERVAL_HOURS = 720
 MAX_PROXY_GRANT_TTL_SECONDS = 300
 MAX_PROXY_SESSION_TTL_MINUTES = 60
+MAX_CONNECTOR_SESSION_TTL_MINUTES = 60
+MAX_CONNECTOR_CONNECTION_SECONDS = 3600
+MAX_PUBLIC_L4_RELAY_TTL_SECONDS = 900
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,56 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append(
             f"Set PROXY_SESSION_TTL_MINUTES to {MAX_PROXY_SESSION_TTL_MINUTES} or less"
         )
+    if settings.connector_session_ttl_minutes <= 0:
+        errors.append("Set CONNECTOR_SESSION_TTL_MINUTES to a positive value")
+    elif (
+        settings.connector_session_ttl_minutes
+        > MAX_CONNECTOR_SESSION_TTL_MINUTES
+    ):
+        errors.append(
+            f"Set CONNECTOR_SESSION_TTL_MINUTES to {MAX_CONNECTOR_SESSION_TTL_MINUTES} or less"
+        )
+    if not 1 <= settings.connector_local_port <= 65535:
+        errors.append("Set CONNECTOR_LOCAL_PORT to a valid TCP port")
+    if not 1 <= settings.connector_max_connections <= 64:
+        errors.append("Set CONNECTOR_MAX_CONNECTIONS between 1 and 64")
+    if not 1 <= settings.connector_upstream_connect_timeout_seconds <= 60:
+        errors.append(
+            "Set CONNECTOR_UPSTREAM_CONNECT_TIMEOUT_SECONDS between 1 and 60"
+        )
+    if not (
+        1
+        <= settings.connector_connection_max_seconds
+        <= MAX_CONNECTOR_CONNECTION_SECONDS
+    ):
+        errors.append(
+            f"Set CONNECTOR_CONNECTION_MAX_SECONDS between 1 and {MAX_CONNECTOR_CONNECTION_SECONDS}"
+        )
+    if not 1 <= settings.connector_authorization_recheck_seconds <= 60:
+        errors.append("Set CONNECTOR_AUTHORIZATION_RECHECK_SECONDS between 1 and 60")
+    if settings.public_l4_relay_enabled:
+        if not settings.public_l4_relay_mtls_required:
+            errors.append(
+                "Set PUBLIC_L4_RELAY_MTLS_REQUIRED=true only after every OPNsense WebGUI enforces client certificates"
+            )
+        if not settings.public_l4_relay_bind_host.strip():
+            errors.append("Set PUBLIC_L4_RELAY_BIND_HOST")
+        if not 1024 <= settings.public_l4_relay_port_min <= 65535:
+            errors.append("Set PUBLIC_L4_RELAY_PORT_MIN to an unprivileged TCP port")
+        if not 1024 <= settings.public_l4_relay_port_max <= 65535:
+            errors.append("Set PUBLIC_L4_RELAY_PORT_MAX to an unprivileged TCP port")
+        if settings.public_l4_relay_port_min > settings.public_l4_relay_port_max:
+            errors.append("Set PUBLIC_L4_RELAY_PORT_MIN no higher than the maximum")
+        if not 1 <= settings.public_l4_relay_ttl_seconds <= MAX_PUBLIC_L4_RELAY_TTL_SECONDS:
+            errors.append(
+                f"Set PUBLIC_L4_RELAY_TTL_SECONDS between 1 and {MAX_PUBLIC_L4_RELAY_TTL_SECONDS}"
+            )
+        if not 1 <= settings.public_l4_relay_idle_timeout_seconds <= settings.public_l4_relay_ttl_seconds:
+            errors.append(
+                "Set PUBLIC_L4_RELAY_IDLE_TIMEOUT_SECONDS between 1 and the relay TTL"
+            )
+        if not 1 <= settings.public_l4_relay_max_connections <= 64:
+            errors.append("Set PUBLIC_L4_RELAY_MAX_CONNECTIONS between 1 and 64")
     if (
         proxy_public_url.hostname
         and proxy_public_url.hostname.lower()

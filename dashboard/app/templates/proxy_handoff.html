@@ -3,19 +3,57 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Opening OPNsense UI</title>
+        <title>Connect to {{ device.hostname }}</title>
+        <style>
+            body { max-width: 760px; margin: 2rem auto; padding: 0 1rem; font: 15px/1.5 system-ui, sans-serif; color: #142033; }
+            section { margin: 1rem 0; padding: 1rem; border: 1px solid #dfe7f3; border-radius: 10px; }
+            code, textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
+            code { display: block; padding: .75rem; overflow-wrap: anywhere; background: #f5f8fc; }
+            textarea { min-height: 6rem; padding: .75rem; }
+            button, a { display: inline-block; margin-top: .75rem; padding: .6rem .9rem; }
+            .warning { color: #9a3412; }
+        </style>
     </head>
     <body>
         <main>
-            <h1>Opening OPNsense UI</h1>
-            <p>If the firewall UI does not open automatically, use the button below.</p>
-            <form id="proxy-handoff" action="{{ proxy_bootstrap_url }}" method="post">
-                <input type="hidden" name="grant" value="{{ grant }}" />
-                <button type="submit">Continue to OPNsense UI</button>
-            </form>
+            <h1>Secure connector for {{ device.hostname }}</h1>
+            <p>
+                The connector keeps the browser-to-firewall TLS stream encrypted while
+                it crosses the Hub. The Hub forwards ciphertext and never receives the
+                OPNsense administrator password.
+            </p>
+            <section>
+                <h2>1. Start the local connector</h2>
+                <code>python3 connector/opnsense_hub_connector.py --hub-url {{ connector_hub_url }} --device {{ device.id }} --listen 127.0.0.1:{{ connector_local_port }}</code>
+                <p>The command prompts for the token without displaying it.</p>
+            </section>
+            <section>
+                <h2>2. Copy the short-lived connector token</h2>
+                <textarea readonly aria-label="Connector token">{{ connector_token }}</textarea>
+                <p>This token expires in {{ connector_session_ttl_minutes }} minutes and is stored only as a hash by the Hub.</p>
+            </section>
+            <section>
+                <h2>3. Open the local endpoint</h2>
+                <a href="https://localhost:{{ connector_local_port }}/" target="_blank" rel="noopener noreferrer">Open OPNsense through the connector</a>
+                <p class="warning">
+                    The OPNsense WebGUI certificate must be trusted by the browser. For an
+                    exact hostname match, map the firewall certificate hostname to
+                    127.0.0.1 and pass it with <code>--browser-host</code>.
+                </p>
+            </section>
+            {% if public_l4_relay_enabled %}
+            <section>
+                <h2>Optional browser-only L4 relay</h2>
+                <p>
+                    Use this only when the OPNsense WebGUI enforces client certificates
+                    and your deployment preserves the browser source IP.
+                </p>
+                <form action="/devices/{{ device.id }}/relay/open" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <button type="submit">Open temporary L4 relay</button>
+                </form>
+            </section>
+            {% endif %}
         </main>
-        <script>
-            document.getElementById("proxy-handoff").submit();
-        </script>
     </body>
 </html>

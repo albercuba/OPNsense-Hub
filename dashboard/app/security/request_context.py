@@ -73,22 +73,13 @@ def host_is_allowed(host: str | None) -> bool:
 
 
 def is_proxy_path(path: str) -> bool:
-    return path == "/proxy/bootstrap" or path.startswith("/proxy/devices/")
+    return path == "/proxy" or path.startswith("/proxy/")
 
 
 def ensure_host_path_boundary(request: Request) -> None:
     host = _normalized_hostname(request.headers.get("host") or request.url.hostname)
-    path = request.url.path
-    if host == proxy_hostname():
-        if is_proxy_path(path):
-            return
+    if host == proxy_hostname() or is_proxy_path(request.url.path):
         raise HTTPException(status_code=404, detail="Not Found")
-    if is_proxy_path(path):
-        is_development_testserver = (
-            settings.app_env.strip().lower() != "production" and host == "testserver"
-        )
-        if not is_development_testserver:
-            raise HTTPException(status_code=404, detail="Not Found")
 
 
 def ensure_allowed_host(request: Request) -> None:
