@@ -4,6 +4,7 @@
 
 - OTP enrollment codes are generated randomly, short-lived, single-use, stored only as PBKDF2 hashes, and atomically claimed during enrollment.
 - Dashboard login now uses random server-side session tokens stored only as HMAC-SHA256 hashes in PostgreSQL with expiration and revocation support.
+- Pending local MFA logins carry a signed nonce bound to a server-side pending-login row; failed authenticator-code attempts are counted in the database and the pending login is invalidated after `RATE_LIMIT_MFA_ATTEMPTS` failures.
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.

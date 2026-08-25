@@ -17,12 +17,12 @@ from app.main import (
     session_from_request,
     settings,
 )
-from app.models import Device, IntegrationSettings, SessionToken, User
+from app.models import Device, IntegrationSettings, PendingMfaLogin, SessionToken, User
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
 from app.security.secrets import encrypt_secret
 from app.services.auth_service import upsert_external_user
 from fastapi import HTTPException, Response
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session, sessionmaker
@@ -557,6 +557,86 @@ def test_local_login_with_enabled_totp_requires_second_step(monkeypatch, tmp_pat
 
             dashboard_response = client.get("/dashboard", follow_redirects=False)
             assert dashboard_response.status_code == 200
+        app.dependency_overrides.clear()
+
+
+def test_pending_mfa_login_is_invalidated_after_repeated_failures(
+    monkeypatch, tmp_path
+):
+    disable_background_startup(monkeypatch)
+    monkeypatch.setattr(settings, "rate_limit_mfa_attempts", 2)
+    monkeypatch.setattr(
+        "app.routers.auth.send_security_alert_email", lambda *_args, **_kwargs: None
+    )
+    secret = "JBSWY3DPEHPK3PXP"
+    with sqlite_session(tmp_path) as session:
+        user = User(
+            id=uuid4(),
+            email="mfa-limit-user@example.org",
+            password_hash=hash_secret("StrongPassword123"),
+            role="user",
+            mfa_enabled=True,
+            mfa_secret=encrypt_secret(secret),
+        )
+        session.add(user)
+        session.commit()
+
+        def override_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as client:
+            login_page = client.get("/login")
+            csrf_token = extract_csrf_token(login_page.text)
+            login_response = client.post(
+                "/api/v1/auth/login",
+                data={
+                    "csrf_token": csrf_token,
+                    "email": user.email,
+                    "password": "StrongPassword123",
+                },
+                follow_redirects=False,
+            )
+            assert login_response.status_code == 303
+            assert login_response.headers["location"] == "/auth/mfa"
+
+            mfa_page = client.get("/auth/mfa")
+            first_csrf = extract_csrf_token(mfa_page.text)
+            first_failure = client.post(
+                "/auth/mfa",
+                data={"csrf_token": first_csrf, "code": "000000"},
+                follow_redirects=False,
+            )
+            assert first_failure.status_code == 401
+            assert "Invalid authenticator code" in first_failure.text
+
+            second_csrf = extract_csrf_token(first_failure.text)
+            second_failure = client.post(
+                "/auth/mfa",
+                data={"csrf_token": second_csrf, "code": "000000"},
+                follow_redirects=False,
+            )
+            assert second_failure.status_code == 401
+            assert "Too many invalid MFA attempts" in second_failure.text
+            assert "opnhub_mfa_pending" in second_failure.headers.get(
+                "set-cookie", ""
+            )
+            assert "Max-Age=0" in second_failure.headers.get("set-cookie", "")
+            pending_login = session.scalar(select(PendingMfaLogin))
+            assert pending_login is not None
+            assert pending_login.failed_attempts == 2
+            assert pending_login.consumed_at is not None
+
+            login_page_after_lock = client.get("/auth/mfa")
+            assert login_page_after_lock.status_code == 401
+            locked_csrf = extract_csrf_token(login_page_after_lock.text)
+            correct_code_after_lock = client.post(
+                "/auth/mfa",
+                data={"csrf_token": locked_csrf, "code": totp_code(secret)},
+                follow_redirects=False,
+            )
+            assert correct_code_after_lock.status_code == 401
+            assert "Your MFA sign-in session is invalid or has expired" in correct_code_after_lock.text
         app.dependency_overrides.clear()
 
 

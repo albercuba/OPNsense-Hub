@@ -22,6 +22,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.l4.yml config
 Relevant automated coverage must prove:
 
 - CSRF and company-scoped RBAC are required before connector token creation.
+- Local MFA tests prove successful second-factor login and that repeated invalid authenticator codes increment the server-side pending-login attempt counter, clear the pending MFA cookie at `RATE_LIMIT_MFA_ATTEMPTS`, and require a fresh primary login before any later correct code is accepted.
 - Connector tokens are hashed at rest, short-lived, device-scoped, bound to the issuing dashboard session, and rejected when missing, malformed, expired, for another device/company, or revoked.
 - The connector WSS route requires bearer authentication, accepts binary frames only, forwards exact opaque bytes, enforces connection/time limits, and closes access on revocation/shutdown.
 - `/proxy/bootstrap` and `/proxy/devices/*` return `404`; no proxy cookie is created or required.

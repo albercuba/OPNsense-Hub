@@ -39,8 +39,11 @@ from ..services.common import clean_optional
 from ..services.local_ad_auth import authenticate_local_ad_user
 from ..services.mfa_service import (
     clear_pending_mfa_cookie,
+    consume_pending_mfa_login,
     local_user_supports_hub_mfa,
+    pending_mfa_state_from_request,
     pending_mfa_user_id_from_request,
+    record_pending_mfa_failure,
     set_pending_mfa_cookie,
     totp_qr_code_data_url,
 )
@@ -124,7 +127,7 @@ def render_mfa_login_template(
 
 
 def pending_mfa_user(db: Session, request: Request) -> User:
-    pending_user_id = pending_mfa_user_id_from_request(request)
+    pending_user_id = pending_mfa_user_id_from_request(db, request)
     user = db.get(User, pending_user_id)
     if not user or not local_user_supports_hub_mfa(user) or not user.mfa_enabled:
         raise HTTPException(status_code=401, detail="invalid MFA sign-in state")
@@ -207,12 +210,33 @@ def complete_mfa_login(
     code: str = Form(...),
 ):
     try:
-        user = pending_mfa_user(db, request)
+        pending_state = pending_mfa_state_from_request(db, request)
+        user = db.get(User, pending_state.user_id)
+        if not user or not local_user_supports_hub_mfa(user) or not user.mfa_enabled:
+            raise HTTPException(status_code=401, detail="invalid MFA sign-in state")
     except HTTPException:
         response = render_login_template(
             db,
             request,
             error="Your MFA sign-in session is invalid or has expired. Please sign in again.",
+            status_code=401,
+        )
+        clear_pending_mfa_cookie(response)
+        return response
+    if pending_state.attempts >= settings.rate_limit_mfa_attempts:
+        consume_pending_mfa_login(db, pending_state)
+        audit_failure(
+            db,
+            request,
+            "auth.mfa.locked",
+            user=user,
+            detail="pending MFA sign-in exceeded the attempt limit",
+            notify=True,
+        )
+        response = render_login_template(
+            db,
+            request,
+            error="Too many invalid MFA attempts. Please sign in again.",
             status_code=401,
         )
         clear_pending_mfa_cookie(response)
@@ -237,13 +261,29 @@ def complete_mfa_login(
         raise exc
     secret = decrypt_secret(user.mfa_secret)
     if not secret or not verify_totp_code(secret, code):
+        next_attempts = record_pending_mfa_failure(db, pending_state)
+        limit_reached = next_attempts >= settings.rate_limit_mfa_attempts
+        if limit_reached:
+            consume_pending_mfa_login(db, pending_state)
         audit_failure(
             db,
             request,
-            "auth.mfa.failed",
+            "auth.mfa.locked" if limit_reached else "auth.mfa.failed",
             user=user,
-            detail="invalid authenticator code",
+            detail="pending MFA sign-in exceeded the attempt limit"
+            if limit_reached
+            else "invalid authenticator code",
+            notify=limit_reached,
         )
+        if limit_reached:
+            response = render_login_template(
+                db,
+                request,
+                error="Too many invalid MFA attempts. Please sign in again.",
+                status_code=401,
+            )
+            clear_pending_mfa_cookie(response)
+            return response
         return render_mfa_login_template(
             db,
             request,
@@ -251,6 +291,7 @@ def complete_mfa_login(
             error="Invalid authenticator code",
             status_code=401,
         )
+    consume_pending_mfa_login(db, pending_state)
     token = create_user_session(db, user, request)
     write_audit(db, request, "auth.login", user=user)
     db.commit()
@@ -423,7 +464,8 @@ def login(
                 status_code=401,
             )
         response = RedirectResponse("/auth/mfa", status_code=303)
-        set_pending_mfa_cookie(response, user)
+        set_pending_mfa_cookie(db, response, user)
+        db.commit()
         return response
     token = create_user_session(db, user, request)
     response = RedirectResponse("/dashboard", status_code=303)
