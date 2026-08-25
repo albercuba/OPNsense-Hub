@@ -100,9 +100,14 @@ def test_settings_navigation_is_grouped_by_admin_area():
 
     assert positions == sorted(positions)
     assert len(parser.settings_section_details) == 4
-    assert all("open" not in section for section in parser.settings_section_details)
+    assert "['manage-companies', 'manage-users', 'branding'] %}open" in source
+    assert "['microsoft-365', 'local-ad', 'email-settings'] %}open" in source
+    assert "['backup', 'retention'] %}open" in source
+    assert "['network', 'security'] %}open" in source
     assert 'data-settings-submenu' in source
     assert 'data-settings-section' in source
+    assert 'addEventListener("click"' in source
+    assert 'event.preventDefault()' in source
     assert 'addEventListener("toggle"' in source
     assert "document</script>" not in source
     assert "\ndiv>" not in source

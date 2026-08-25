@@ -113,7 +113,11 @@
                             <i class="fa-solid fa-gear"></i> Settings
                         </summary>
                         <div class="side-menu-submenu" data-settings-submenu>
-                            <details class="side-menu-section" data-settings-section>
+                            <details
+                                class="side-menu-section"
+                                data-settings-section
+                                {% if active_settings in ['manage-companies', 'manage-users', 'branding'] %}open{% endif %}
+                            >
                                 <summary class="side-menu-section-title">Organization</summary>
                                 <div class="side-menu-section-items">
                                     <a
@@ -133,7 +137,11 @@
                                     >
                                 </div>
                             </details>
-                            <details class="side-menu-section" data-settings-section>
+                            <details
+                                class="side-menu-section"
+                                data-settings-section
+                                {% if active_settings in ['microsoft-365', 'local-ad', 'email-settings'] %}open{% endif %}
+                            >
                                 <summary class="side-menu-section-title">Integrations</summary>
                                 <div class="side-menu-section-items">
                                     <a
@@ -153,7 +161,11 @@
                                     >
                                 </div>
                             </details>
-                            <details class="side-menu-section" data-settings-section>
+                            <details
+                                class="side-menu-section"
+                                data-settings-section
+                                {% if active_settings in ['backup', 'retention'] %}open{% endif %}
+                            >
                                 <summary class="side-menu-section-title">System</summary>
                                 <div class="side-menu-section-items">
                                     <a
@@ -168,7 +180,11 @@
                                     >
                                 </div>
                             </details>
-                            <details class="side-menu-section" data-settings-section>
+                            <details
+                                class="side-menu-section"
+                                data-settings-section
+                                {% if active_settings in ['network', 'security'] %}open{% endif %}
+                            >
                                 <summary class="side-menu-section-title">Network &amp; Security</summary>
                                 <div class="side-menu-section-items">
                                     <a
@@ -214,6 +230,10 @@
                         "details[data-settings-section]"
                     );
                     sections.forEach((section) => {
+                        const summary = section.querySelector("summary");
+                        summary?.addEventListener("click", (event) => {
+                            if (section.open) event.preventDefault();
+                        });
                         section.addEventListener("toggle", () => {
                             if (!section.open) return;
                             sections.forEach((other) => {
