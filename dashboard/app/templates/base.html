@@ -113,56 +113,68 @@
                             <i class="fa-solid fa-gear"></i> Settings
                         </summary>
                         <div class="side-menu-submenu">
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
-                                href="/settings/manage-companies"
-                                >Manage Companies</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
-                                href="/settings/manage-users"
-                                >Manage Users</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
-                                href="/settings/email-settings"
-                                >Email Settings</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
-                                href="/settings/microsoft-365"
-                                >Microsoft 365 Integration</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
-                                href="/settings/local-ad"
-                                >Microsoft Local AD Integration</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
-                                href="/settings/branding"
-                                >Branding</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'backup' %}active{% endif %}"
-                                href="/settings/backup"
-                                >Backup</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'security' %}active{% endif %}"
-                                href="/settings/security"
-                                >Security</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'network' %}active{% endif %}"
-                                href="/settings/network"
-                                >Network</a
-                            >
-                            <a
-                                class="side-menu-sublink {% if active_settings == 'retention' %}active{% endif %}"
-                                href="/settings/retention"
-                                >Retention</a
-                            >
+                            <div class="side-menu-section">
+                                <p class="side-menu-section-title">Organization</p>
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
+                                    href="/settings/manage-companies"
+                                    >Manage Companies</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
+                                    href="/settings/manage-users"
+                                    >Manage Users</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
+                                    href="/settings/branding"
+                                    >Branding</a
+                                >
+                            </div>
+div>                            <div class="side-menu-section">
+                                <p class="side-menu-section-title">Integrations</p>
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
+                                    href="/settings/microsoft-365"
+                                    >Microsoft 365 Integration</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
+                                    href="/settings/local-ad"
+                                    >Microsoft Local AD Integration</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
+                                    href="/settings/email-settings"
+                                    >Email Settings</a
+                                >
+                            </div>
+                            <div class="side-menu-section">
+                                <p class="side-menu-section-title">System</p>
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'backup' %}active{% endif %}"
+                                    href="/settings/backup"
+                                    >Backup</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'retention' %}active{% endif %}"
+                                    href="/settings/retention"
+                                    >Retention</a
+                                >
+                            </div>
+                            <div class="side-menu-section">
+                                <p class="side-menu-section-title">Network &amp; Security</p>
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'network' %}active{% endif %}"
+                                    href="/settings/network"
+                                    >Network</a
+                                >
+                                <a
+                                    class="side-menu-sublink {% if active_settings == 'security' %}active{% endif %}"
+                                    href="/settings/security"
+                                    >Sessions &amp; Secrets</a
+                                >
+                            </div>
                         </div>
                     </details>
                 {% endif %}
