@@ -59,6 +59,9 @@ services:
     user: "0:0"
     cap_add:
       - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "0"
+      net.ipv6.conf.all.forwarding: "0"
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
