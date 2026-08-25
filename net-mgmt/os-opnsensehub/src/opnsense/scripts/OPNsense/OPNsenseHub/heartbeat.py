@@ -25,6 +25,10 @@ STATE_FILE = Path("/var/db/opnsensehub/state.json")
 CONFIG_XML = Path("/conf/config.xml")
 
 
+class HeartbeatRevoked(RuntimeError):
+    pass
+
+
 def opnsense_version():
     try:
         import subprocess
@@ -68,8 +72,9 @@ def heartbeat_url(state):
 
 
 def send_heartbeat(state, payload):
+    url = heartbeat_url(state)
     req = urllib.request.Request(
-        heartbeat_url(state),
+        url,
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers={
@@ -78,8 +83,13 @@ def send_heartbeat(state, payload):
             "User-Agent": "os-opnsensehub/0.1",
         },
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
-        body = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 410 and exc.url == url:
+            raise HeartbeatRevoked("heartbeat revoked by Hub") from exc
+        raise
     state["status"] = "online"
     state["last_heartbeat"] = payload["timestamp"]
     state["last_error"] = ""
@@ -170,17 +180,19 @@ def main():
                 }
             )
         )
+    except HeartbeatRevoked as exc:
+        state["last_error"] = str(exc)
+        save_state(state)
+        result = remove_local_artifacts(reason=state["last_error"])
+        result["status"] = "revoked"
+        result["message"] = (
+            "Hub explicitly revoked this device; removed local OPNsense Hub tunnel and state"
+        )
+        print(json.dumps(result))
+        sys.exit(1)
     except urllib.error.HTTPError as exc:
         state["last_error"] = f"heartbeat failed with HTTP {exc.code}"
         save_state(state)
-        if exc.code == 410:
-            result = remove_local_artifacts(reason=state["last_error"])
-            result["status"] = "revoked"
-            result["message"] = (
-                "Hub revoked this device; removed local OPNsense Hub tunnel and state"
-            )
-            print(json.dumps(result))
-            sys.exit(1)
         print(
             json.dumps(
                 {

@@ -5,6 +5,7 @@ import stat
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,16 @@ from backup_crypto import (  # noqa: E402
     export_recovery_key,
     import_recovery_key,
 )
+
+
+def http_error(url, code):
+    return urllib.error.HTTPError(
+        url=url,
+        code=code,
+        msg="test error",
+        hdrs={},
+        fp=None,
+    )
 
 
 class FakeHttpResponse:
@@ -124,6 +135,22 @@ class BackupCryptoTests(unittest.TestCase):
         payload = heartbeat.heartbeat_payload({})
         self.assertEqual(payload["backup_formats"], [BACKUP_FORMAT])
 
+    def test_primary_heartbeat_410_is_explicit_revocation(self) -> None:
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "device-token",
+        }
+        with patch.object(
+            heartbeat.urllib.request,
+            "urlopen",
+            lambda _request, timeout: (_ for _ in ()).throw(
+                http_error(heartbeat.heartbeat_url(state), 410)
+            ),
+        ):
+            with self.assertRaisesRegex(heartbeat.HeartbeatRevoked, "revoked"):
+                heartbeat.send_heartbeat(state, {"timestamp": "2026-08-25T00:00:00+00:00"})
+
     def test_heartbeat_upload_contains_only_encrypted_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -194,6 +221,134 @@ class BackupCryptoTests(unittest.TestCase):
             with patch.object(heartbeat, "BACKUP_KEY_FILE", missing_key):
                 with self.assertRaisesRegex(BackupCryptoError, "missing"):
                     heartbeat.upload_backup(state)
+
+    def test_primary_heartbeat_410_removes_local_artifacts(self) -> None:
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "device-token",
+        }
+        removed = []
+        saved = []
+
+        def fake_send_heartbeat(_state, _payload):
+            raise heartbeat.HeartbeatRevoked("heartbeat revoked by Hub")
+
+        with (
+            patch.object(heartbeat, "STATE_FILE", Path(__file__)),
+            patch.object(heartbeat, "load_state", lambda: dict(state)),
+            patch.object(heartbeat, "heartbeat_payload", lambda _state, firmware=None: {}),
+            patch.object(heartbeat, "send_heartbeat", fake_send_heartbeat),
+            patch.object(heartbeat, "save_state", lambda value: saved.append(dict(value))),
+            patch.object(
+                heartbeat,
+                "remove_local_artifacts",
+                lambda reason: removed.append(reason) or {"removed": True},
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                heartbeat.main()
+
+        self.assertEqual(removed, ["heartbeat revoked by Hub"])
+        self.assertEqual(saved[-1]["last_error"], "heartbeat revoked by Hub")
+
+    def test_primary_heartbeat_401_does_not_remove_local_artifacts(self) -> None:
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "device-token",
+        }
+        removed = []
+
+        def fake_send_heartbeat(_state, _payload):
+            raise http_error(heartbeat.heartbeat_url(state), 401)
+
+        with (
+            patch.object(heartbeat, "STATE_FILE", Path(__file__)),
+            patch.object(heartbeat, "load_state", lambda: dict(state)),
+            patch.object(heartbeat, "heartbeat_payload", lambda _state, firmware=None: {}),
+            patch.object(heartbeat, "send_heartbeat", fake_send_heartbeat),
+            patch.object(heartbeat, "save_state", lambda _state: None),
+            patch.object(
+                heartbeat,
+                "remove_local_artifacts",
+                lambda reason: removed.append(reason) or {},
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                heartbeat.main()
+
+        self.assertEqual(removed, [])
+
+    def test_firmware_report_404_does_not_remove_local_artifacts(self) -> None:
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "device-token",
+        }
+        removed = []
+        calls = []
+
+        def fake_send_heartbeat(_state, payload):
+            calls.append(payload)
+            if len(calls) == 1:
+                return {"firmware_check_requested": True}
+            raise http_error(heartbeat.heartbeat_url(state), 404)
+
+        with (
+            patch.object(heartbeat, "STATE_FILE", Path(__file__)),
+            patch.object(heartbeat, "load_state", lambda: dict(state)),
+            patch.object(
+                heartbeat,
+                "heartbeat_payload",
+                lambda _state, firmware=None: {"firmware": firmware}
+                if firmware is not None
+                else {},
+            ),
+            patch.object(heartbeat, "collect_firmware_status", lambda: {"status": "ok"}),
+            patch.object(heartbeat, "send_heartbeat", fake_send_heartbeat),
+            patch.object(heartbeat, "save_state", lambda _state: None),
+            patch.object(
+                heartbeat,
+                "remove_local_artifacts",
+                lambda reason: removed.append(reason) or {},
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                heartbeat.main()
+
+        self.assertEqual(removed, [])
+
+    def test_backup_upload_401_does_not_remove_local_artifacts(self) -> None:
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "device-token",
+        }
+        removed = []
+
+        with (
+            patch.object(heartbeat, "STATE_FILE", Path(__file__)),
+            patch.object(heartbeat, "load_state", lambda: dict(state)),
+            patch.object(heartbeat, "heartbeat_payload", lambda _state, firmware=None: {}),
+            patch.object(heartbeat, "send_heartbeat", lambda _state, _payload: {"backup_requested": True}),
+            patch.object(
+                heartbeat,
+                "upload_backup",
+                lambda _state: (_ for _ in ()).throw(
+                    http_error("https://hub.example.test/api/v1/devices/id/backups", 401)
+                ),
+            ),
+            patch.object(heartbeat, "save_state", lambda _state: None),
+            patch.object(
+                heartbeat,
+                "remove_local_artifacts",
+                lambda reason: removed.append(reason) or {},
+            ),
+        ):
+            heartbeat.main()
+
+        self.assertEqual(removed, [])
 
     def test_wrong_recovery_key_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -18,6 +18,7 @@
 - Connector access accepts binary frames only and forwards opaque TLS bytes to the firewall WebGUI over the validated WireGuard `/32`. The Hub does not terminate firewall TLS or receive WebGUI credentials/session cookies.
 - Connector and optional relay opens are rate limited and audit logged. Device revocation immediately closes tracked local connector/relay access, while active connector streams periodically recheck shared database authorization for cross-worker session revocation, RBAC removal, user deletion, and device revocation.
 - Revocation invalidates the stored device token hash and removes the WireGuard peer.
+- The OPNsense plugin removes its local tunnel/state only after an explicit revocation response from the primary heartbeat endpoint, currently `410 Gone`; ordinary `401`/`404` failures from heartbeat, firmware reporting, backup upload, version skew, or reverse-proxy errors are recorded as errors without destructive cleanup.
 - Complete OPNsense configurations are encrypted and authenticated on the firewall before upload. The Hub stores only opaque `opnsense-config-encrypted-v1` envelopes and never receives the backup master/recovery key.
 - The Hub never stores OPNsense web UI credentials.
 
