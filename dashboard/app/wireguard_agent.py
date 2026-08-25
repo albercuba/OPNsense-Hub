@@ -4,6 +4,8 @@ import asyncio
 import contextlib
 import ipaddress
 from contextlib import asynccontextmanager
+
+import httpx
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, status
@@ -40,6 +42,11 @@ class RemovePeerRequest(BaseModel):
 
 class PeerSyncRequest(BaseModel):
     peers: list[PeerRequest]
+
+
+class ProbeResponse(BaseModel):
+    reachable: bool
+    message: str
 
 
 def _peer_request_payload(peer: PeerRequest) -> dict[str, str]:
@@ -170,6 +177,30 @@ def _validate_connect_target(host: str, port: int) -> None:
         raise WireGuardError("WireGuard connect target is outside HUB_WG_CIDR")
     if port != settings.opnsense_gui_port:
         raise WireGuardError("WireGuard connect target port is not permitted")
+
+
+@app.get("/probe-webgui", dependencies=[Depends(require_agent_auth)])
+async def probe_webgui(host: Annotated[str, Query()], port: Annotated[int, Query()]):
+    try:
+        _validate_connect_target(host, port)
+    except WireGuardError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    url = f"https://{host}:{port}/"
+    try:
+        async with httpx.AsyncClient(
+            verify=settings.proxy_verify_tls,
+            follow_redirects=False,
+            timeout=settings.firewall_health_check_timeout_seconds,
+        ) as client:
+            await client.get(url)
+    except httpx.RequestError as exc:
+        error_detail = str(exc) or repr(exc)
+        return ProbeResponse(
+            reachable=False,
+            message=f"WebGUI unreachable at {url}: {exc.__class__.__name__}: {error_detail}",
+        )
+    return ProbeResponse(reachable=True, message=f"WebGUI reachable at {url}")
 
 
 async def _pipe_agent_websocket_to_tcp(

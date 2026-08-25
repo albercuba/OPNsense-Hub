@@ -50,12 +50,35 @@ async def probe_device_webgui(
     client: httpx.AsyncClient, device: Device
 ) -> tuple[bool, str]:
     try:
-        url = device_webgui_url(device)
+        target_host = tunnel_proxy_host(device.wg_tunnel_ip)
+        url = f"https://{target_host}:{settings.opnsense_gui_port}/"
     except ValueError as exc:
         return (
             False,
             f"Stored WireGuard tunnel IP is invalid: {device.wg_tunnel_ip}: {exc}",
         )
+
+    if settings.wg_agent_url:
+        if not settings.wg_agent_token:
+            return False, "WG_AGENT_TOKEN is required for delegated health checks"
+        try:
+            response = await client.get(
+                settings.wg_agent_url.rstrip("/") + "/probe-webgui",
+                params={"host": target_host, "port": settings.opnsense_gui_port},
+                headers={"Authorization": f"Bearer {settings.wg_agent_token}"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.RequestError as exc:
+            error_detail = str(exc) or repr(exc)
+            return (
+                False,
+                f"WireGuard agent health probe failed for {url}: {exc.__class__.__name__}: {error_detail}",
+            )
+        except Exception as exc:
+            return False, f"WireGuard agent health probe returned an invalid response for {url}: {exc}"
+        return bool(payload.get("reachable")), str(payload.get("message") or "")
+
     try:
         await client.get(url)
     except httpx.RequestError as exc:
