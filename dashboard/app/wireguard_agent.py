@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import ipaddress
 from contextlib import asynccontextmanager
 
-import httpx
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
 from .config import get_settings
@@ -47,6 +48,22 @@ class PeerSyncRequest(BaseModel):
 class ProbeResponse(BaseModel):
     reachable: bool
     message: str
+
+
+class ProxyRequest(BaseModel):
+    host: str
+    port: int
+    method: str
+    path: str
+    query: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    body_b64: str = ""
+
+
+class ProxyResponse(BaseModel):
+    status_code: int
+    headers: list[tuple[str, str]]
+    body_b64: str
 
 
 def _peer_request_payload(peer: PeerRequest) -> dict[str, str]:
@@ -201,6 +218,50 @@ async def probe_webgui(host: Annotated[str, Query()], port: Annotated[int, Query
             message=f"WebGUI unreachable at {url}: {exc.__class__.__name__}: {error_detail}",
         )
     return ProbeResponse(reachable=True, message=f"WebGUI reachable at {url}")
+
+
+@app.post("/proxy-request", dependencies=[Depends(require_agent_auth)])
+async def proxy_request(payload: ProxyRequest):
+    try:
+        _validate_connect_target(payload.host, payload.port)
+    except WireGuardError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    method = payload.method.upper()
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+        raise HTTPException(status_code=405, detail="method is not supported")
+    path = payload.path if payload.path.startswith("/") else "/" + payload.path
+    if ".." in path.split("/"):
+        raise HTTPException(status_code=400, detail="invalid proxy path")
+    url = f"https://{payload.host}:{payload.port}{path}"
+    if payload.query:
+        url += "?" + payload.query
+    try:
+        body = base64.b64decode(payload.body_b64.encode("ascii"), validate=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid request body") from exc
+    if len(body) > settings.max_proxy_request_bytes:
+        raise HTTPException(status_code=413, detail="proxy request body is too large")
+    try:
+        async with httpx.AsyncClient(
+            verify=settings.proxy_verify_tls,
+            follow_redirects=False,
+            timeout=settings.connector_upstream_connect_timeout_seconds,
+        ) as client:
+            response = await client.request(
+                method,
+                url,
+                headers=payload.headers,
+                content=body,
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="firewall proxy request failed") from exc
+    if len(response.content) > settings.max_proxy_response_bytes:
+        raise HTTPException(status_code=502, detail="firewall proxy response is too large")
+    return ProxyResponse(
+        status_code=response.status_code,
+        headers=list(response.headers.multi_items()),
+        body_b64=base64.b64encode(response.content).decode("ascii"),
+    )
 
 
 async def _pipe_agent_websocket_to_tcp(

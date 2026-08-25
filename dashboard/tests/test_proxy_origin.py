@@ -1,8 +1,11 @@
 import asyncio
-from contextlib import contextmanager
+import base64
+import json
 import re
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -193,6 +196,44 @@ class FakeUpstreamWriter:
         return None
 
 
+class FakeAgentHttpResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = json.dumps(payload)
+
+    def json(self):
+        return self._payload
+
+
+class FakeAgentHttpClient:
+    calls: ClassVar[list[tuple[str, dict]]] = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeAgentHttpResponse(
+            {
+                "status_code": 200,
+                "headers": [
+                    ["content-type", "text/html"],
+                    ["set-cookie", "PHPSESSID=abc123; Path=/; Secure; HttpOnly"],
+                    ["location", "https://100.96.0.10:443/ui/"],
+                ],
+                "body_b64": base64.b64encode(b"<html>firewall</html>").decode("ascii"),
+            }
+        )
+
+
 class FakeUpstreamReader:
     def __init__(self, writer: FakeUpstreamWriter):
         self.writer = writer
@@ -270,6 +311,68 @@ def test_connector_session_forwards_only_opaque_binary_data(monkeypatch):
             assert client.get(f"{settings.proxy_public_url}/dashboard").status_code == 404
 
         app.dependency_overrides.clear()
+
+
+def test_hub_proxy_mode_open_redirects_to_authenticated_proxy(monkeypatch):
+    with connector_test_database() as (session, session_factory):
+        user, device, _other_device = seed_connector_data(session)
+        configure_test_client(monkeypatch, session, session_factory, user)
+        monkeypatch.setattr(settings, "firewall_access_mode", "hub_proxy")
+
+        with TestClient(app) as client:
+            response = client.post(
+                f"/devices/{device.id}/proxy/open",
+                data=csrf_form_data(client),
+                follow_redirects=False,
+            )
+
+        app.dependency_overrides.clear()
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/proxy/devices/{device.id}/"
+        assert session.scalars(select(DeviceProxySession)).all() == []
+
+
+def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypatch):
+    with connector_test_database() as (session, session_factory):
+        user, device, _other_device = seed_connector_data(session)
+        configure_test_client(monkeypatch, session, session_factory, user)
+        monkeypatch.setattr(settings, "firewall_access_mode", "hub_proxy")
+        monkeypatch.setattr(
+            settings, "wg_agent_url", "http://opnsense-hub-wireguard:8084"
+        )
+        monkeypatch.setattr(settings, "wg_agent_token", "a" * 32)
+        monkeypatch.setattr(settings, "opnsense_gui_port", 443)
+        FakeAgentHttpClient.calls = []
+        monkeypatch.setattr(proxy_router.httpx, "AsyncClient", FakeAgentHttpClient)
+
+        with TestClient(app) as client:
+            client.cookies.set(settings.session_cookie_name, "hub-session-token")
+            client.cookies.set(
+                f"opnhub_fw_{device.id.hex}_PHPSESSID",
+                "existing-firewall-session",
+            )
+            response = client.get(
+                f"/proxy/devices/{device.id}/ui/index.php?foo=bar",
+                follow_redirects=False,
+            )
+
+        app.dependency_overrides.clear()
+        assert response.status_code == 200
+        assert response.text == "<html>firewall</html>"
+        assert response.headers["location"] == f"/proxy/devices/{device.id}/ui/"
+        assert f"opnhub_fw_{device.id.hex}_PHPSESSID=abc123" in response.headers[
+            "set-cookie"
+        ]
+        url, kwargs = FakeAgentHttpClient.calls[0]
+        assert url == "http://opnsense-hub-wireguard:8084/proxy-request"
+        assert kwargs["headers"] == {"Authorization": "Bearer " + "a" * 32}
+        assert kwargs["json"]["host"] == "100.96.0.10"
+        assert kwargs["json"]["path"] == "/ui/index.php"
+        assert kwargs["json"]["query"] == "foo=bar"
+        assert kwargs["json"]["headers"]["cookie"] == "PHPSESSID=existing-firewall-session"
+        assert settings.session_cookie_name not in kwargs["json"]["headers"].get(
+            "cookie", ""
+        )
 
 
 def test_connector_open_rejects_cross_company_viewer(monkeypatch):

@@ -25,13 +25,13 @@ Relevant automated coverage must prove:
 - Local MFA tests prove successful second-factor login and that repeated invalid authenticator codes increment the server-side pending-login attempt counter, clear the pending MFA cookie at `RATE_LIMIT_MFA_ATTEMPTS`, and require a fresh primary login before any later correct code is accepted.
 - Connector tokens are hashed at rest, short-lived, device-scoped, bound to the issuing dashboard session, and rejected when missing, malformed, expired, for another device/company, or revoked.
 - The connector WSS route requires bearer authentication, accepts binary frames only, forwards exact opaque bytes, enforces connection/time limits, and closes access on revocation/shutdown.
-- `/proxy/bootstrap` and `/proxy/devices/*` return `404`; no proxy cookie is created or required.
+- In default connector mode, `/proxy/bootstrap` and `/proxy/devices/*` return `404`; no proxy cookie is created or required.
 - Connector CLI validation accepts the token only from a hidden prompt, stdin, or `OPNSENSE_HUB_CONNECTOR_TOKEN`, never a command argument or URL.
 - The connector defaults to loopback, requires `--allow-non-loopback` for broader listeners, validates device/URL/listener arguments, forwards exact bytes, handles idle timeout, and shuts down cleanly.
 - The raw relay forwards exact bytes, constructs an exact per-device hostname, rejects a nonmatching source IP before upstream connect, enforces connection caps, expires hard, applies idle timeout, atomically replaces per-device allocations, cleans up after handoff failures, and releases ports.
 - Compose validation proves the public Caddy service publishes TCP `80`/`443`, while direct FastAPI `8083` is either internal-only or bound to `127.0.0.1` and never published on all interfaces.
 - Rate-limit tests prove spoofed `X-Forwarded-For` headers are ignored from untrusted peers, forwarded client IPs are accepted only from configured trusted proxies, and the development memory limiter globally prunes expired buckets and enforces `RATE_LIMIT_MEMORY_MAX_BUCKETS`.
-- Startup validation refuses production external/disabled tunnel isolation without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, rejects an invalid control-plane port, requires a strong `WG_AGENT_TOKEN` when `WG_AGENT_URL` is configured, requires a positive `RATE_LIMIT_MEMORY_MAX_BUCKETS`, and permits enabled kernel forwarding only while the managed or verified-external default-drop policy remains active.
+- Startup validation refuses production external/disabled tunnel isolation without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, rejects an invalid control-plane port, rejects an invalid `FIREWALL_ACCESS_MODE`, requires a strong `WG_AGENT_TOKEN` when `WG_AGENT_URL` is configured, requires a positive `RATE_LIMIT_MEMORY_MAX_BUCKETS`, and permits enabled kernel forwarding only while the managed or verified-external default-drop policy remains active.
 - nftables and iptables/ip6tables tests prove established return traffic is allowed, new tunnel input is restricted to `HUB_WG_CIDR -> HUB_WG_ADDRESS:HUB_CONTROL_PLANE_PORT/TCP`, all other IPv4/IPv6 tunnel input is dropped, and every forwarded packet originating from `wg0` is dropped regardless of output interface. WireGuard delegation tests prove the web process calls the authenticated agent API instead of local `wg` commands when `WG_AGENT_URL` is configured, and health probe tests prove WebGUI reachability checks are delegated through the agent and reject out-of-CIDR targets.
 - Startup validation rejects invalid connector/relay limits and refuses `PUBLIC_L4_RELAY_ENABLED=true` unless `PUBLIC_L4_RELAY_MTLS_REQUIRED=true`.
 - Firewall backup tests use the actual OpenSSL command to prove encryption/decryption, key separation and root-only permissions, MAC tamper rejection, wrong-key rejection, recovery-key export/import, and absence of XML plaintext from the upload request.
@@ -65,6 +65,19 @@ Relevant automated coverage must prove:
 12. Verify a token cannot connect to another device, a cross-company user cannot obtain a token, an expired token cannot start a new WSS stream, and device revocation closes active access. Revoke the issuing dashboard session and remove company membership while a stream is active; verify the stream closes within `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`.
 13. Exercise concurrent browser connections and verify `CONNECTOR_MAX_CONNECTIONS`, `CONNECTOR_CONNECTION_MAX_SECONDS`, and token expiry terminate or reject access as configured.
 14. Confirm direct requests to `/proxy/bootstrap` and `/proxy/devices/{device_id}/` return `404` and no separate proxy origin is serving dashboard or firewall traffic.
+
+## Browser-only Hub proxy tests
+
+Run these tests only when the deployment explicitly sets `FIREWALL_ACCESS_MODE=hub_proxy`.
+
+1. Confirm the normal dashboard login and CSRF protections still apply on `PUBLIC_URL`.
+2. Click Open for an enrolled firewall and verify the CSRF-protected `POST /devices/{device_id}/proxy/open` returns `303` to `/proxy/devices/{device_id}/` instead of the local connector handoff page.
+3. Confirm a `device.hub_proxy.open` audit event is written and no connector token row is created.
+4. Verify `/proxy/devices/{device_id}/` requires an authenticated dashboard session and company-scoped access; a cross-company user must receive `404`.
+5. Verify requests are delegated to the WireGuard sidecar when `WG_AGENT_URL` is configured, target only the device's validated WireGuard `/32` and `OPNSENSE_GUI_PORT`, and reject out-of-CIDR targets.
+6. Log in to OPNsense through the proxied path and verify firewall cookies are stored with the per-device Hub prefix, Hub session cookies are not forwarded to OPNsense, and same-firewall redirects stay under `/proxy/devices/{device_id}/`.
+7. Keep `PROXY_VERIFY_TLS=true` and verify the firewall WebGUI certificate chain/SAN is valid from the Hub sidecar. If verification must be disabled for a lab firewall, document the exception and confirm it is not treated as a secure production default.
+8. Verify Hub logs do not intentionally record proxied request headers, cookies, bodies, response bodies, OPNsense credentials, or WebGUI session values.
 
 ## Optional public L4 relay tests
 

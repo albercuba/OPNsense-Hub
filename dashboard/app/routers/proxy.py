@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import ipaddress
 import uuid
 from datetime import timezone
+from http.cookies import SimpleCookie
 from typing import Annotated
 from urllib.parse import quote, urlparse
 
+import httpx
 import websockets
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 from websockets.exceptions import WebSocketException
@@ -41,6 +44,25 @@ _connector_tasks: dict[uuid.UUID, set[asyncio.Task[None]]] = {}
 _connector_connection_lock = asyncio.Lock()
 _relay_device_locks: dict[uuid.UUID, asyncio.Lock] = {}
 CONNECTOR_CLEANUP_TIMEOUT_SECONDS = 5
+HUB_PROXY_COOKIE_PREFIX = "opnhub_fw_"
+HUB_PROXY_EXCLUDED_REQUEST_HEADERS = {
+    "connection",
+    "content-length",
+    "host",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+HUB_PROXY_EXCLUDED_RESPONSE_HEADERS = {
+    "connection",
+    "content-encoding",
+    "content-length",
+    "set-cookie",
+    "transfer-encoding",
+}
 
 relay_manager = (
     TcpRelayManager(
@@ -105,6 +127,10 @@ def _proxy_base_hostname() -> str:
     return parsed.hostname.lower()
 
 
+def _firewall_access_mode() -> str:
+    return settings.firewall_access_mode.strip().lower()
+
+
 def _no_store(response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -132,6 +158,17 @@ def open_device_connector(
         settings.rate_limit_device_access_window_seconds,
     )
     validate_proxy_device_target(device)
+    if _firewall_access_mode() == "hub_proxy":
+        write_audit(
+            db,
+            request,
+            "device.hub_proxy.open",
+            user=user,
+            company_id=device.company_id,
+            device_id=device.id,
+        )
+        db.commit()
+        return RedirectResponse(f"/proxy/devices/{device.id}/", status_code=303)
     dashboard_session = session_from_request(request, db)
     token = create_connector_session(db, user, device, dashboard_session)
     write_audit(
@@ -157,6 +194,185 @@ def open_device_connector(
     )
     db.commit()
     return _no_store(response)
+
+
+def _hub_proxy_cookie_prefix(device_id: uuid.UUID) -> str:
+    return f"{HUB_PROXY_COOKIE_PREFIX}{device_id.hex}_"
+
+
+def _request_headers_for_firewall(request: Request, device_id: uuid.UUID) -> dict[str, str]:
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in HUB_PROXY_EXCLUDED_REQUEST_HEADERS and key.lower() != "cookie"
+    }
+    cookie_prefix = _hub_proxy_cookie_prefix(device_id)
+    upstream_cookies = []
+    for name, value in request.cookies.items():
+        if name.startswith(cookie_prefix):
+            upstream_cookies.append(f"{name.removeprefix(cookie_prefix)}={value}")
+    if upstream_cookies:
+        headers["cookie"] = "; ".join(upstream_cookies)
+    return headers
+
+
+def _rewrite_firewall_location(location: str, device_id: uuid.UUID, target_host: str) -> str:
+    parsed = urlparse(location)
+    proxy_base = f"/proxy/devices/{device_id}"
+    if parsed.scheme in {"http", "https"} and parsed.hostname == target_host:
+        rewritten = parsed.path or "/"
+        if parsed.query:
+            rewritten += "?" + parsed.query
+        return proxy_base + rewritten
+    if location.startswith("/"):
+        return proxy_base + location
+    return location
+
+
+def _copy_firewall_cookies(
+    response: Response,
+    upstream_set_cookie: str | None,
+    device_id: uuid.UUID,
+) -> None:
+    if not upstream_set_cookie:
+        return
+    parsed = SimpleCookie()
+    parsed.load(upstream_set_cookie)
+    cookie_prefix = _hub_proxy_cookie_prefix(device_id)
+    for name, morsel in parsed.items():
+        response.set_cookie(
+            cookie_prefix + name,
+            morsel.value,
+            path=f"/proxy/devices/{device_id}",
+            secure=settings.session_secure,
+            httponly=bool(morsel["httponly"]),
+            samesite="lax",
+        )
+
+
+def _agent_header_pairs(payload: dict[str, object]) -> list[tuple[str, str]]:
+    raw_headers = payload.get("headers") or []
+    if not isinstance(raw_headers, list):
+        raise HTTPException(status_code=502, detail="invalid firewall proxy response")
+    pairs: list[tuple[str, str]] = []
+    for raw_pair in raw_headers:
+        if not isinstance(raw_pair, (list, tuple)) or len(raw_pair) != 2:
+            raise HTTPException(status_code=502, detail="invalid firewall proxy response")
+        key, value = raw_pair
+        pairs.append((str(key), str(value)))
+    return pairs
+
+
+def _proxy_response_from_agent_payload(
+    payload: dict[str, object], device_id: uuid.UUID, target_host: str
+) -> Response:
+    try:
+        body = base64.b64decode(str(payload.get("body_b64") or ""), validate=True)
+        status_code = int(str(payload["status_code"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="invalid firewall proxy response") from exc
+    all_header_pairs = _agent_header_pairs(payload)
+    header_pairs = [
+        (key, value)
+        for key, value in all_header_pairs
+        if key.lower() not in HUB_PROXY_EXCLUDED_RESPONSE_HEADERS
+    ]
+    headers = dict(header_pairs)
+    for key, value in header_pairs:
+        if key.lower() == "location":
+            headers["location"] = _rewrite_firewall_location(
+                value, device_id, target_host
+            )
+            break
+    response = Response(content=body, status_code=status_code, headers=headers)
+    for key, value in all_header_pairs:
+        if key.lower() == "set-cookie":
+            _copy_firewall_cookies(response, value, device_id)
+    return response
+
+
+async def _hub_proxy_request(
+    request: Request,
+    device_id: uuid.UUID,
+    target_host: str,
+    path: str,
+) -> Response:
+    body = await request.body()
+    if len(body) > settings.max_proxy_request_bytes:
+        raise HTTPException(status_code=413, detail="proxy request body is too large")
+    proxy_path = "/" + path.lstrip("/")
+    query = request.url.query
+    headers = _request_headers_for_firewall(request, device_id)
+    if settings.wg_agent_url:
+        if not settings.wg_agent_token:
+            raise HTTPException(status_code=503, detail="WG_AGENT_TOKEN is not configured")
+        async with httpx.AsyncClient(
+            timeout=settings.connector_upstream_connect_timeout_seconds
+        ) as client:
+            agent_response = await client.post(
+                settings.wg_agent_url.rstrip("/") + "/proxy-request",
+                headers={"Authorization": f"Bearer {settings.wg_agent_token}"},
+                json={
+                    "host": target_host,
+                    "port": settings.opnsense_gui_port,
+                    "method": request.method,
+                    "path": proxy_path,
+                    "query": query,
+                    "headers": headers,
+                    "body_b64": base64.b64encode(body).decode("ascii"),
+                },
+            )
+        if agent_response.status_code >= 400:
+            raise HTTPException(
+                status_code=agent_response.status_code,
+                detail="firewall proxy request failed",
+            )
+        return _proxy_response_from_agent_payload(
+            agent_response.json(), device_id, target_host
+        )
+
+    url = f"https://{target_host}:{settings.opnsense_gui_port}{proxy_path}"
+    if query:
+        url += "?" + query
+    async with httpx.AsyncClient(
+        verify=settings.proxy_verify_tls,
+        follow_redirects=False,
+        timeout=settings.connector_upstream_connect_timeout_seconds,
+    ) as client:
+        upstream = await client.request(request.method, url, headers=headers, content=body)
+    payload = {
+        "status_code": upstream.status_code,
+        "headers": list(upstream.headers.multi_items()),
+        "body_b64": base64.b64encode(upstream.content).decode("ascii"),
+    }
+    return _proxy_response_from_agent_payload(payload, device_id, target_host)
+
+
+@router.api_route(
+    "/proxy/devices/{device_id}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+@router.api_route(
+    "/proxy/devices/{device_id}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def hub_proxy_device_request(
+    request: Request,
+    device_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+    path: str = "",
+):
+    if _firewall_access_mode() != "hub_proxy":
+        raise HTTPException(status_code=404)
+    device = _require_dashboard_device(db, user, device_id)
+    try:
+        target_host = validate_proxy_device_target(device)
+        return await _hub_proxy_request(request, device.id, target_host, path)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="firewall proxy request failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _replace_device_relay(

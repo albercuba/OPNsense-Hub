@@ -80,6 +80,14 @@ def test_runtime_validation_accepts_secure_proxy_settings():
     assert runtime_validation_errors(production_settings()) == []
 
 
+def test_runtime_validation_rejects_invalid_firewall_access_mode():
+    errors = runtime_validation_errors(
+        production_settings(firewall_access_mode="legacy_proxy")
+    )
+
+    assert any("FIREWALL_ACCESS_MODE" in error for error in errors)
+
+
 def test_runtime_validation_requires_strong_wireguard_agent_token():
     errors = runtime_validation_errors(
         production_settings(

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     proxy_grant_ttl_seconds: int = 60
     proxy_session_ttl_minutes: int = 15
     proxy_session_cookie_prefix: str = "opnsense_hub_proxy_"
+    firewall_access_mode: str = "connector"
     connector_session_ttl_minutes: int = 15
     connector_local_port: int = 8443
     connector_max_connections: int = 16

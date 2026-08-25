@@ -76,9 +76,18 @@ def is_proxy_path(path: str) -> bool:
     return path == "/proxy" or path.startswith("/proxy/")
 
 
+def is_hub_proxy_device_path(path: str) -> bool:
+    return settings.firewall_access_mode.strip().lower() == "hub_proxy" and (
+        path == "/proxy/devices" or path.startswith("/proxy/devices/")
+    )
+
+
 def ensure_host_path_boundary(request: Request) -> None:
     host = _normalized_hostname(request.headers.get("host") or request.url.hostname)
-    if host == proxy_hostname() or is_proxy_path(request.url.path):
+    if host == proxy_hostname() or (
+        is_proxy_path(request.url.path)
+        and not is_hub_proxy_device_path(request.url.path)
+    ):
         raise HTTPException(status_code=404, detail="Not Found")
 
 

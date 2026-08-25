@@ -149,6 +149,8 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append(
             f"Set PROXY_SESSION_TTL_MINUTES to {MAX_PROXY_SESSION_TTL_MINUTES} or less"
         )
+    if settings.firewall_access_mode.strip().lower() not in {"connector", "hub_proxy"}:
+        errors.append("Set FIREWALL_ACCESS_MODE to connector or hub_proxy")
     if settings.connector_session_ttl_minutes <= 0:
         errors.append("Set CONNECTOR_SESSION_TTL_MINUTES to a positive value")
     elif (

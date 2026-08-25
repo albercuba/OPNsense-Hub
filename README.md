@@ -1,6 +1,6 @@
 # OPNsense Hub
 
-OPNsense Hub enrolls OPNsense firewalls into a central dashboard with a short-lived OTP, establishes a WireGuard tunnel, and provides end-to-end encrypted WebGUI access through a local connector.
+OPNsense Hub enrolls OPNsense firewalls into a central dashboard with a short-lived OTP, establishes a WireGuard tunnel, and provides WebGUI access through either the default end-to-end encrypted local connector or an explicit browser-only Hub proxy mode.
 
 > Important: the Hub dashboard/control plane does not modify firewall configuration, restore backups, reboot firewalls, or store OPNsense admin passwords. The only firewall-side configuration change is performed by the OPNsense plugin on that firewall to create its own WireGuard client tunnel.
 
@@ -68,6 +68,7 @@ docker-compose.yml
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, connector access, and optional relay access, with throttled `device.view` entries to reduce browsing noise.
 - Default local connector that carries opaque browser TLS bytes over an authenticated, device-scoped WSS connection; the Hub never terminates firewall TLS or receives WebGUI credentials.
+- Optional `FIREWALL_ACCESS_MODE=hub_proxy` browser-only mode that proxies authenticated WebGUI HTTP(S) through the Hub and WireGuard sidecar, avoiding local connector installs at the cost of exposing WebGUI requests/responses to the Hub process.
 - Optional, disabled-by-default public raw L4 relay for deployments where each OPNsense WebGUI enforces client certificates.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
 - Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
@@ -148,6 +149,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    APP_ENV=production
    PUBLIC_URL=https://hub.example.com
    PROXY_PUBLIC_URL=https://relay.example.com
+   FIREWALL_ACCESS_MODE=connector
    ALLOWED_HOSTS=hub.example.com,relay.example.com
    TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
    RATE_LIMIT_BACKEND=redis
@@ -169,7 +171,9 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    PUBLIC_L4_RELAY_MTLS_REQUIRED=false
    ```
 
-   `PROXY_PUBLIC_URL` is retained as the base hostname used to construct optional raw relay names; it is not an L7 proxy origin and serves no `/proxy/*` routes. Production validation currently requires it to be a valid HTTPS URL on a hostname distinct from `PUBLIC_URL`, even while the relay is disabled. Wildcard DNS and relay ports are unnecessary until the relay is explicitly enabled.
+   `FIREWALL_ACCESS_MODE` defaults to `connector`, which shows the local connector handoff and keeps firewall TLS end-to-end between the browser and OPNsense. Set `FIREWALL_ACCESS_MODE=hub_proxy` only when admins need browser-only access without installing or running a local connector; in that mode the Open action redirects to `/proxy/devices/{device_id}/`, the authenticated Hub/sidecar proxies WebGUI HTTP(S), and the Hub process can see WebGUI request paths, headers, cookies, and response bodies. Keep `PROXY_VERIFY_TLS=true` unless each firewall WebGUI certificate cannot be validated from the Hub sidecar; disabling verification weakens upstream TLS protection and should be an explicit operational exception.
+
+   `PROXY_PUBLIC_URL` is retained as the base hostname used to construct optional raw relay names; it is not an L7 proxy origin. Production validation currently requires it to be a valid HTTPS URL on a hostname distinct from `PUBLIC_URL`, even while the relay is disabled. Wildcard DNS and relay ports are unnecessary until the relay is explicitly enabled.
 
    `docker-compose.yml` sets `WG_AGENT_URL=http://opnsense-hub-wireguard:8084` for the web container and `WG_AGENT_MODE=true` for the sidecar. Set `WG_AGENT_TOKEN` to the same long random value for both services through `.env`; production startup rejects the development placeholder.
 
@@ -180,6 +184,10 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    - Edit `deploy/Caddyfile` and replace `hub.example.com` and the email address.
    - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service; do not route public traffic to `opnsense-hub-wireguard:8084`.
    - Caddy handles public dashboard HTTP(S), including the WSS upgrade on `/api/v1/connector/devices/{id}`. It does not terminate or proxy the optional raw L4 relay. Keep direct TCP `8083` access on loopback or remove that port publication entirely in production environments that do not need local host access.
+
+   Firewall access settings added in `dashboard/app/config.py`:
+
+   - `FIREWALL_ACCESS_MODE` — `connector` for the default local connector flow, or `hub_proxy` for browser-only access through authenticated Hub routes; default `connector`.
 
    Connector settings added in `dashboard/app/config.py`:
 

@@ -3,9 +3,6 @@
 }
 
 hub.example.com {
-  @proxy_routes path /proxy /proxy/*
-  respond @proxy_routes 404
-
   reverse_proxy opnsense-hub-api:8083
 }
 
