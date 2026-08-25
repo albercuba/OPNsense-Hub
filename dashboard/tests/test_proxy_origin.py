@@ -383,6 +383,10 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
             post_response = client.post(
                 f"/proxy/devices/{device.id}/index.php",
                 data={"username": "root"},
+                headers={
+                    "referer": f"https://hub.example.com/proxy/devices/{device.id}/index.php?logout",
+                    "origin": "https://hub.example.com",
+                },
                 follow_redirects=False,
             )
 
@@ -390,6 +394,10 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
         _url, post_kwargs = FakeAgentHttpClient.calls[-1]
         assert post_kwargs["json"]["method"] == "POST"
         assert base64.b64decode(post_kwargs["json"]["body_b64"]) == b"username=root"
+        assert post_kwargs["json"]["headers"]["referer"] == (
+            "https://100.96.0.10:443/index.php?logout"
+        )
+        assert post_kwargs["json"]["headers"]["origin"] == "https://100.96.0.10:443"
 
         app.dependency_overrides.clear()
 

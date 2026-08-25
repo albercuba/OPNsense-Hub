@@ -206,12 +206,40 @@ def _hub_proxy_cookie_prefix(device_id: uuid.UUID) -> str:
     return f"{HUB_PROXY_COOKIE_PREFIX}{device_id.hex}_"
 
 
-def _request_headers_for_firewall(request: Request, device_id: uuid.UUID) -> dict[str, str]:
+def _firewall_origin(target_host: str) -> str:
+    return f"https://{target_host}:{settings.opnsense_gui_port}"
+
+
+def _rewrite_firewall_request_referer(
+    value: str, device_id: uuid.UUID, target_host: str
+) -> str:
+    parsed = urlparse(value)
+    proxy_prefix = f"/proxy/devices/{device_id}"
+    if parsed.scheme in {"http", "https"} and parsed.path.startswith(proxy_prefix):
+        firewall_path = parsed.path.removeprefix(proxy_prefix) or "/"
+        rewritten = _firewall_origin(target_host) + firewall_path
+        if parsed.query:
+            rewritten += "?" + parsed.query
+        return rewritten
+    return value
+
+
+def _request_headers_for_firewall(
+    request: Request, device_id: uuid.UUID, target_host: str
+) -> dict[str, str]:
     headers = {
         key: value
         for key, value in request.headers.items()
         if key.lower() not in HUB_PROXY_EXCLUDED_REQUEST_HEADERS and key.lower() != "cookie"
     }
+    for key in tuple(headers):
+        normalized_key = key.lower()
+        if normalized_key == "referer":
+            headers[key] = _rewrite_firewall_request_referer(
+                headers[key], device_id, target_host
+            )
+        elif normalized_key == "origin":
+            headers[key] = _firewall_origin(target_host)
     cookie_prefix = _hub_proxy_cookie_prefix(device_id)
     upstream_cookies = []
     for name, value in request.cookies.items():
@@ -337,7 +365,7 @@ async def _hub_proxy_request(
         raise HTTPException(status_code=413, detail="proxy request body is too large")
     proxy_path = "/" + path.lstrip("/")
     query = request.url.query
-    headers = _request_headers_for_firewall(request, device_id)
+    headers = _request_headers_for_firewall(request, device_id, target_host)
     if settings.wg_agent_url:
         if not settings.wg_agent_token:
             raise HTTPException(status_code=503, detail="WG_AGENT_TOKEN is not configured")
