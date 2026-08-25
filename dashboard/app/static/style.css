@@ -1812,6 +1812,7 @@ td {
 
 @media (max-width: 900px) {
     .app-layout {
+        grid-template-columns: 1fr;
         padding: 0 0.5rem;
     }
     .acknowledgement-grid {
@@ -2568,6 +2569,7 @@ td {
 }
 
 @media (max-width: 900px) {
+    .app-layout,
     .dashboard-filters-form {
         grid-template-columns: 1fr;
     }
