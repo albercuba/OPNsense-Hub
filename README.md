@@ -101,7 +101,7 @@ INITIAL_ADMIN_PASSWORD=change-me
 
 `.env.example` now includes the full set of supported runtime variables, including retention, archive, rate-limit, health-check, migration, branding, and WireGuard-related settings.
 
-By default, the Compose stack separates the public web process from privileged WireGuard operations. `opnsense-hub-api` runs as an unprivileged UID with all Linux capabilities dropped and no WireGuard key volume. It delegates server-key, interface, peer, and runtime-peer operations to the authenticated internal `opnsense-hub-wireguard` sidecar. Only that sidecar runs with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the `opnsense_hub_wg` volume. The sidecar generates and persists the Hub server private key, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, restores enrolled peers supplied by the web process, disables IP forwarding inside its container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
+By default, the Compose stack separates the public web process from privileged WireGuard operations. `opnsense-hub-api` runs as an unprivileged UID with all Linux capabilities dropped and no WireGuard key volume. Its direct FastAPI port is bound only to `127.0.0.1:8083` for local administration/development; public deployments should expose the dashboard through Caddy on TCP `80`/`443`. The API delegates server-key, interface, peer, and runtime-peer operations to the authenticated internal `opnsense-hub-wireguard` sidecar. Only that sidecar runs with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the `opnsense_hub_wg` volume. The sidecar generates and persists the Hub server private key, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, restores enrolled peers supplied by the web process, disables IP forwarding inside its container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
 
 Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
 
@@ -132,7 +132,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    - Install Docker Engine with the Compose plugin.
    - Ensure `/dev/net/tun` exists and the host allows the WireGuard sidecar container to use `NET_ADMIN`.
-   - Open inbound TCP `80`/`443` for the dashboard and authenticated connector WSS endpoint, and UDP `51820` for the WireGuard sidecar.
+   - Open inbound TCP `80`/`443` for the dashboard and authenticated connector WSS endpoint, and UDP `51820` for the WireGuard sidecar. Do not publish FastAPI TCP `8083` publicly; the bundled Compose file binds it to `127.0.0.1` only.
    - Point the dashboard DNS name, for example `hub.example.com`, at the Docker host and provision a valid TLS certificate.
    - Do not open TCP `55000-55099` for the default connector design. Those ports are only for the optional public L4 relay described below.
 
@@ -179,7 +179,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    - Edit `deploy/Caddyfile` and replace `hub.example.com` and the email address.
    - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service; do not route public traffic to `opnsense-hub-wireguard:8084`.
-   - Caddy handles dashboard HTTP(S), including the WSS upgrade on `/api/v1/connector/devices/{id}`. It does not terminate or proxy the optional raw L4 relay.
+   - Caddy handles public dashboard HTTP(S), including the WSS upgrade on `/api/v1/connector/devices/{id}`. It does not terminate or proxy the optional raw L4 relay. Keep direct TCP `8083` access on loopback or remove that port publication entirely in production environments that do not need local host access.
 
    Connector settings added in `dashboard/app/config.py`:
 
@@ -339,7 +339,7 @@ Set `HUB_WG_ENDPOINT` to the public UDP endpoint that OPNsense firewalls can rea
 
 Required inbound ports for a typical deployment:
 
-- TCP `443` to the dashboard reverse proxy for browser access, enrollment APIs, and authenticated connector WSS traffic. If running the development Compose file directly, TCP `8083` reaches the FastAPI app instead.
+- TCP `443` to the dashboard reverse proxy for browser access, enrollment APIs, and authenticated connector WSS traffic. The bundled Compose file binds direct TCP `8083` to `127.0.0.1` only for local access; do not expose it on public interfaces.
 - UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
 - No public WebGUI relay ports for the default connector path. TCP `55000-55099` is required only when the optional L4 relay is enabled.
 

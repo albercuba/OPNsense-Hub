@@ -7,7 +7,7 @@
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.
-- In the default Compose deployment, the public FastAPI web container runs as unprivileged UID `10001` with all capabilities dropped and no `/dev/net/tun` or `/etc/wireguard` mount; only the `opnsense-hub-wireguard` sidecar runs as root with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the WireGuard server key volume.
+- In the default Compose deployment, the public FastAPI web container runs as unprivileged UID `10001` with all capabilities dropped and no `/dev/net/tun` or `/etc/wireguard` mount; its direct `8083` publication is bound only to `127.0.0.1` so Caddy remains the public HTTP(S) entry point. Only the `opnsense-hub-wireguard` sidecar runs as root with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the WireGuard server key volume.
 - Hub only installs `/32` WireGuard `AllowedIPs` for each firewall tunnel IP and never routes customer LAN subnets.
 - Production startup fails closed whenever inline tunnel isolation is disabled or network control is external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, an explicit operator attestation that the external policy was independently verified.
 - Inline startup installs and verifies a complete nftables or iptables/ip6tables policy: established return traffic is allowed, new tunnel input is limited to `HUB_WG_CIDR -> HUB_WG_ADDRESS:HUB_CONTROL_PLANE_PORT/TCP`, all other tunnel input is dropped, and all forwarding originating from `wg0` is dropped regardless of output interface.
