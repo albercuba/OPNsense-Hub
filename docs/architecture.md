@@ -87,7 +87,7 @@ The public relay range is published with `deploy/docker-compose.l4.yml` and bypa
 The plugin is scaffolded using standard OPNsense MVC/configd layout:
 
 - PHP MVC controllers only save settings and invoke configd actions.
-- Privileged operations live in Python scripts under `src/opnsense/scripts/OPNsense/OPNsenseHub`.
+- Privileged operations live in Python scripts under `src/opnsense/scripts/OPNsense/OPNsenseHub` and any unavoidable `config.xml` edits hold a platform lock across read/modify/write, write a same-directory temporary file, fsync it, and atomically replace the configuration.
 - The plugin generates the WireGuard private key locally; the private key is never sent to Hub.
 - The plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the WireGuard client.
 - The plugin checks the Hub heartbeat response for pending firmware-check requests, runs the firmware probe locally on the firewall, and reports normalized status back to the Hub.

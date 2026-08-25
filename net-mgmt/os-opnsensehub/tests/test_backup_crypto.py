@@ -16,6 +16,7 @@ SCRIPT_DIR = (
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import connect  # noqa: E402
 import heartbeat  # noqa: E402
 from backup_crypto import (  # noqa: E402
     BACKUP_FORMAT,
@@ -54,6 +55,85 @@ class FakeHttpResponse:
 
 
 class BackupCryptoTests(unittest.TestCase):
+    def test_connect_config_update_locks_parse_and_atomic_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config = root / "config.xml"
+            lock = root / "run" / "opnsensehub-config.lock"
+            config.write_text(
+                """
+<opnsense>
+  <system><webgui><protocol>https</protocol></webgui></system>
+  <interfaces />
+  <filter />
+</opnsense>
+""".strip()
+            )
+            calls = []
+
+            real_flock = connect.fcntl.flock
+            real_parse = connect.ET.parse
+            real_replace = connect.os.replace
+
+            def tracking_flock(fd, operation):
+                calls.append("lock" if operation == connect.fcntl.LOCK_EX else "unlock")
+                return real_flock(fd, operation)
+
+            def tracking_parse(path):
+                calls.append("parse")
+                self.assertIn("lock", calls)
+                self.assertNotIn("unlock", calls)
+                return real_parse(path)
+
+            def tracking_replace(source, destination):
+                calls.append(("replace", Path(source).name, Path(destination).name))
+                self.assertTrue(Path(source).name.startswith(".config.xml.opnsensehub."))
+                return real_replace(source, destination)
+
+            with patch.object(connect, "CONFIG_XML", config), patch.object(
+                connect, "CONFIG_LOCK", lock
+            ), patch.object(connect.fcntl, "flock", tracking_flock), patch.object(
+                connect.ET, "parse", tracking_parse
+            ), patch.object(
+                connect.os, "replace", tracking_replace
+            ), patch.object(
+                connect, "run_cmd", lambda *_args, **_kwargs: ""
+            ):
+                result = connect.ensure_opnsense_integration(
+                    {
+                        "interface_address": "100.96.0.10/32",
+                        "allowed_ips": "100.96.0.1/32",
+                    }
+                )
+
+            self.assertEqual(result["description"], connect.ASSIGNED_IF_DESCR)
+            self.assertLess(calls.index("lock"), calls.index("parse"))
+            self.assertLess(calls.index("parse"), calls.index("unlock"))
+            self.assertIn("<descr>OPNHUB</descr>", config.read_text())
+            self.assertFalse(list(root.glob(".config.xml.opnsensehub.*.tmp")))
+            self.assertTrue(list(root.glob("config.xml.opnsensehub.*.bak")))
+
+    def test_connect_config_update_removes_temp_file_after_write_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config = root / "config.xml"
+            lock = root / "run" / "opnsensehub-config.lock"
+            config.write_text("<opnsense><interfaces /></opnsense>")
+            original = config.read_text()
+            parsed_root = connect.ET.fromstring(original)
+
+            with patch.object(connect, "CONFIG_XML", config), patch.object(
+                connect, "CONFIG_LOCK", lock
+            ), patch.object(
+                connect.os, "replace", side_effect=OSError("replace failed")
+            ):
+                with self.assertRaises(OSError):
+                    with connect.locked_config_root():
+                        connect.write_config_root(parsed_root)
+
+            self.assertEqual(config.read_text(), original)
+            self.assertFalse(list(root.glob(".config.xml.opnsensehub.*.tmp")))
+
     def test_encrypt_decrypt_round_trip_and_no_plaintext_in_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

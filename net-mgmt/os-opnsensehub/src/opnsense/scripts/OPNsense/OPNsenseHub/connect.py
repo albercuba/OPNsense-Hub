@@ -1,6 +1,8 @@
 #!/usr/local/bin/python3
 """Enroll this firewall in OPNsense Hub and start the local WireGuard tunnel."""
 
+import contextlib
+import fcntl
 import ipaddress
 import json
 import os
@@ -9,6 +11,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -21,6 +24,7 @@ STATE_FILE = STATE_DIR / "state.json"
 KEY_FILE = STATE_DIR / "wg_private.key"
 WG_CONF = Path("/usr/local/etc/wireguard/opnsensehub.conf")
 CONFIG_XML = Path("/conf/config.xml")
+CONFIG_LOCK = Path("/var/run/opnsensehub-config.lock")
 WG_IFACE = "wgopnhub"
 ASSIGNED_IF_DESCR = "OPNHUB"
 RULE_DESCR = "Allow OPNsense Hub WebGUI proxy"
@@ -80,14 +84,54 @@ def load_config_root():
     return ET.parse(CONFIG_XML).getroot()
 
 
+@contextlib.contextmanager
+def locked_config_root():
+    CONFIG_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with CONFIG_LOCK.open("w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield load_config_root()
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def write_config_root(root):
     backup = CONFIG_XML.with_name(f"config.xml.opnsensehub.{int(time.time())}.bak")
     shutil.copy2(CONFIG_XML, backup)
+    original_mode = CONFIG_XML.stat().st_mode & 0o777
     try:
         ET.indent(root, space="  ")
     except AttributeError:
         pass
-    ET.ElementTree(root).write(CONFIG_XML, encoding="utf-8", xml_declaration=True)
+
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            dir=str(CONFIG_XML.parent),
+            prefix=".config.xml.opnsensehub.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_name = temp_file.name
+            ET.ElementTree(root).write(
+                temp_file, encoding="utf-8", xml_declaration=True
+            )
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.chmod(temp_name, original_mode)
+        os.replace(temp_name, CONFIG_XML)
+        open_dir_flags = getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY
+        dir_fd = os.open(CONFIG_XML.parent, open_dir_flags)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        if temp_name:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(temp_name)
+        raise
 
 
 def load_settings():
@@ -616,27 +660,29 @@ def remove_assigned_interface(root):
 
 
 def cleanup_opnsense_integration():
-    root = load_config_root()
-    interface_key = assigned_interface_key = None
-    interfaces = root.find("interfaces")
-    if interfaces is not None:
-        for child in list(interfaces):
-            if (
-                child.findtext("if") == WG_IFACE
-                or child.findtext("descr") == ASSIGNED_IF_DESCR
-            ):
-                assigned_interface_key = child.tag
-                break
+    with locked_config_root() as root:
+        interface_key = assigned_interface_key = None
+        interfaces = root.find("interfaces")
+        if interfaces is not None:
+            for child in list(interfaces):
+                if (
+                    child.findtext("if") == WG_IFACE
+                    or child.findtext("descr") == ASSIGNED_IF_DESCR
+                ):
+                    assigned_interface_key = child.tag
+                    break
 
-    changed = False
-    if assigned_interface_key:
-        changed |= remove_webgui_listen_interface(root, assigned_interface_key)
-    changed |= remove_matching_firewall_rules(root, [RULE_DESCR, FLOATING_RULE_DESCR])
-    interface_key, interface_removed = remove_assigned_interface(root)
-    changed |= interface_removed
+        changed = False
+        if assigned_interface_key:
+            changed |= remove_webgui_listen_interface(root, assigned_interface_key)
+        changed |= remove_matching_firewall_rules(root, [RULE_DESCR, FLOATING_RULE_DESCR])
+        interface_key, interface_removed = remove_assigned_interface(root)
+        changed |= interface_removed
+
+        if changed:
+            write_config_root(root)
 
     if changed:
-        write_config_root(root)
         run_cmd(["configctl", "filter", "reload"], check=False)
         run_cmd(["service", "lighttpd", "onerestart"], check=False)
 
@@ -647,7 +693,6 @@ def cleanup_opnsense_integration():
 
 
 def ensure_opnsense_integration(wg):
-    root = load_config_root()
     allowed_ips = [
         item.strip() for item in wg["allowed_ips"].split(",") if item.strip()
     ]
@@ -655,25 +700,29 @@ def ensure_opnsense_integration(wg):
         fail("WireGuard allowed_ips is empty")
     hub_ip = str(ipaddress.ip_network(allowed_ips[0], strict=False).network_address)
     firewall_ip = str(ipaddress.ip_interface(wg["interface_address"]).ip)
-    interface_key, changed = ensure_assigned_interface(root, wg["interface_address"])
-    port = webgui_port(root)
-    changed |= ensure_firewall_rule(
-        root, interface_key, hub_ip, firewall_ip, port, RULE_DESCR
-    )
-    changed |= ensure_firewall_rule(
-        root,
-        interface_key,
-        hub_ip,
-        firewall_ip,
-        port,
-        FLOATING_RULE_DESCR,
-        floating=True,
-    )
-    webgui_listen_changed = ensure_webgui_listen_interface(root, interface_key)
-    changed |= webgui_listen_changed
+
+    with locked_config_root() as root:
+        interface_key, changed = ensure_assigned_interface(root, wg["interface_address"])
+        port = webgui_port(root)
+        changed |= ensure_firewall_rule(
+            root, interface_key, hub_ip, firewall_ip, port, RULE_DESCR
+        )
+        changed |= ensure_firewall_rule(
+            root,
+            interface_key,
+            hub_ip,
+            firewall_ip,
+            port,
+            FLOATING_RULE_DESCR,
+            floating=True,
+        )
+        webgui_listen_changed = ensure_webgui_listen_interface(root, interface_key)
+        changed |= webgui_listen_changed
+
+        if changed:
+            write_config_root(root)
 
     if changed:
-        write_config_root(root)
         run_cmd(["configctl", "interface", "reconfigure", interface_key], check=False)
         run_cmd(["configctl", "filter", "reload"], check=False)
         if webgui_listen_changed:
