@@ -23,7 +23,7 @@ from app.models import (
     UserDashboardFilter,
 )
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
-from app.services.backup_service import parse_backup_bundle
+from app.services.backup_service import parse_backup_bundle, restore_backup_bundle
 from app.services.device_backup_crypto import (
     ENCRYPTED_DEVICE_BACKUP_FORMAT,
     ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES,
@@ -902,6 +902,106 @@ def test_parse_backup_bundle_rejects_unexpected_archive_members(monkeypatch, tmp
     except Exception as exc:
         assert getattr(exc, "status_code", None) == 400
         assert "unexpected files" in str(getattr(exc, "detail", exc))
+
+
+def test_parse_backup_bundle_rejects_empty_data_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-empty-data")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-empty-data" / "server.key"),
+    )
+    with sqlite_session(tmp_path, "backup_empty_data_source") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    mutated = rewrite_backup_bundle(
+        bundle,
+        lambda members: members.__setitem__("data.json", b"{}"),
+    )
+
+    try:
+        parse_backup_bundle(mutated)
+        assert False, "expected empty data.json to be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "missing required tables" in str(getattr(exc, "detail", exc)).lower()
+
+
+def test_parse_backup_bundle_rejects_manifest_row_count_mismatch(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-count-mismatch")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-count-mismatch" / "server.key"),
+    )
+    with sqlite_session(tmp_path, "backup_count_source") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    def mutate(members):
+        manifest = json.loads(members["manifest.json"])
+        manifest["tables"]["users"] = manifest["tables"]["users"] + 1
+        members["manifest.json"] = json.dumps(manifest).encode("utf-8")
+
+    mutated = rewrite_backup_bundle(bundle, mutate)
+
+    try:
+        parse_backup_bundle(mutated)
+        assert False, "expected manifest count mismatch to be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+        assert "manifest count" in str(getattr(exc, "detail", exc)).lower()
+
+
+def test_restore_backup_bundle_stages_before_deleting_existing_rows(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "branding_upload_dir", str(tmp_path / "branding-staging")
+    )
+    monkeypatch.setattr(
+        settings,
+        "wg_server_private_key_path",
+        str(tmp_path / "wireguard-staging" / "server.key"),
+    )
+    with sqlite_session(tmp_path, "backup_staging_source") as source_session:
+        seed_backup_source(source_session)
+        bundle, _filename, _media_type = export_backup_bundle(source_session)
+
+    def duplicate_user_email(members):
+        manifest = json.loads(members["manifest.json"])
+        payload = json.loads(members["data.json"])
+        duplicate = dict(payload["users"][0])
+        duplicate["id"] = str(uuid4())
+        payload["users"].append(duplicate)
+        manifest["tables"]["users"] = len(payload["users"])
+        members["manifest.json"] = json.dumps(manifest).encode("utf-8")
+        members["data.json"] = json.dumps(payload).encode("utf-8")
+
+    mutated = rewrite_backup_bundle(bundle, duplicate_user_email)
+    _manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(mutated)
+
+    with sqlite_session(tmp_path, "backup_staging_target") as target_session:
+        seed_restore_target(target_session)
+        old_company_id = target_session.scalar(
+            select(Company.id).where(Company.name == "Old Company")
+        )
+        assert old_company_id is not None
+
+        try:
+            restore_backup_bundle(target_session, data, logo_file, wireguard_private_key)
+            assert False, "expected staging validation to reject duplicate user email"
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 400
+            assert "staging database validation" in str(
+                getattr(exc, "detail", exc)
+            ).lower()
+
+        assert target_session.get(Company, old_company_id) is not None
+        assert target_session.scalar(select(User).where(User.email == "admin@example.com")) is None
 
 
 def test_parse_backup_bundle_rejects_string_boolean_values(monkeypatch, tmp_path):

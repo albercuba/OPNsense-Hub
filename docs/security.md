@@ -61,6 +61,7 @@ The Hub enforces these limits:
 - retention ordering uses Hub receipt time, preventing a device-supplied future timestamp from pinning a backup
 - PostgreSQL stores only `backup_format` and canonical `encrypted_payload`; downloads are opaque `.opnenc` files with `Cache-Control: no-store`
 - Hub export format version `2` rejects archives that could restore legacy plaintext firewall backups
+- Hub restore requires every expected table in `data.json`, verifies manifest row counts, validates row fields and foreign-key references, and flushes all restored rows in an isolated staging database before deleting existing Hub rows
 
 The Hub cannot verify the HMAC because it intentionally lacks the key. Verification happens before local decryption with `hmac.compare_digest()` on OPNsense. A stolen device token can still submit structurally valid garbage for a pending request, so device-token protection and backup monitoring remain important.
 

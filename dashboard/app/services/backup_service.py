@@ -17,8 +17,19 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from fastapi import HTTPException
-from sqlalchemy import Boolean, DateTime, Integer, delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Integer,
+    create_engine,
+    delete,
+    event,
+    func,
+    select,
+)
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from ..backups import (
     DEVICE_BACKUP_INTERVAL_HOURS_MAX,
@@ -32,6 +43,7 @@ from ..branding import (
     save_uploaded_logo,
     uploaded_logo_path,
 )
+from ..database import Base
 from ..models import (
     AuditLog,
     Company,
@@ -75,6 +87,8 @@ BACKUP_TABLE_MODELS = (
     ("device_events", DeviceEvent),
     ("audit_logs", AuditLog),
 )
+BACKUP_TABLE_NAMES: Final = tuple(table_name for table_name, _model in BACKUP_TABLE_MODELS)
+
 BACKUP_RESTORE_DELETE_ORDER = (
     DeviceProxySession,
     SessionToken,
@@ -135,7 +149,7 @@ def backup_json_value(value: object) -> object:
 
 
 def serialize_model_row(row: object) -> dict[str, object]:
-    table = getattr(row, "__table__")
+    table = row.__table__
     return {
         column.name: backup_json_value(getattr(row, column.name))
         for column in table.columns
@@ -177,6 +191,126 @@ def deserialize_model_row(model: type, payload: dict[str, object]):
         else:
             values[column.name] = raw_value
     return model(**values)
+
+
+def _backup_table_columns(model: type) -> set[str]:
+    return {column.name for column in model.__table__.columns}
+
+
+def _validate_backup_row_shape(
+    table_name: str, model: type, row: dict[str, object]
+) -> None:
+    expected_columns = _backup_table_columns(model)
+    row_columns = set(row)
+    missing_columns = expected_columns.difference(row_columns)
+    if missing_columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"backup table '{table_name}' is missing required fields: "
+                f"{', '.join(sorted(missing_columns))}"
+            ),
+        )
+    unexpected_columns = row_columns.difference(expected_columns)
+    if unexpected_columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"backup table '{table_name}' contains unexpected fields: "
+                f"{', '.join(sorted(unexpected_columns))}"
+            ),
+        )
+    null_columns = [
+        column.name
+        for column in model.__table__.columns
+        if not column.nullable and row.get(column.name) is None
+    ]
+    if null_columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"backup table '{table_name}' contains null required fields: "
+                f"{', '.join(sorted(null_columns))}"
+            ),
+        )
+
+
+def validate_backup_manifest(
+    manifest: dict[str, object], data: dict[str, list[dict[str, object]]]
+) -> None:
+    tables = manifest.get("tables")
+    if not isinstance(tables, dict):
+        raise HTTPException(
+            status_code=400, detail="backup archive manifest is missing table counts"
+        )
+    table_names = set(BACKUP_TABLE_NAMES)
+    manifest_table_names = set(tables)
+    missing_tables = table_names.difference(manifest_table_names)
+    if missing_tables:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "backup archive manifest is missing table counts: "
+                f"{', '.join(sorted(missing_tables))}"
+            ),
+        )
+    unexpected_tables = manifest_table_names.difference(table_names)
+    if unexpected_tables:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "backup archive manifest contains unexpected table counts: "
+                f"{', '.join(sorted(unexpected_tables))}"
+            ),
+        )
+    for table_name in BACKUP_TABLE_NAMES:
+        expected_count = tables.get(table_name)
+        if not isinstance(expected_count, int) or expected_count < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"backup archive manifest count for '{table_name}' is invalid",
+            )
+        actual_count = len(data[table_name])
+        if expected_count != actual_count:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"backup archive manifest count for '{table_name}' does not "
+                    "match data.json"
+                ),
+            )
+
+
+def validate_backup_tables_present(
+    data: dict[str, list[dict[str, object]]]
+) -> None:
+    data_table_names = set(data)
+    expected_table_names = set(BACKUP_TABLE_NAMES)
+    missing_tables = expected_table_names.difference(data_table_names)
+    if missing_tables:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "backup archive data is missing required tables: "
+                f"{', '.join(sorted(missing_tables))}"
+            ),
+        )
+    unexpected_tables = data_table_names.difference(expected_table_names)
+    if unexpected_tables:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "backup archive data contains unexpected tables: "
+                f"{', '.join(sorted(unexpected_tables))}"
+            ),
+        )
+
+
+def _backup_uuid(value: object, *, detail: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=detail) from exc
 
 
 def _ensure_string_max_length(value: object, *, field_name: str, maximum: int) -> None:
@@ -235,33 +369,57 @@ def validate_backup_data(
     logo_file: tuple[str, bytes] | None,
     wireguard_private_key: str | None,
 ) -> None:
-    for table_name, model in BACKUP_TABLE_MODELS:
-        rows = data.get(table_name, [])
-        if not isinstance(rows, list):
-            raise HTTPException(
-                status_code=400, detail=f"backup table '{table_name}' is invalid"
-            )
-        for row in rows:
-            if not isinstance(row, dict):
+    validate_backup_tables_present(data)
+    try:
+        for table_name, model in BACKUP_TABLE_MODELS:
+            rows = data[table_name]
+            if not isinstance(rows, list):
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"backup table '{table_name}' contains an invalid row",
+                    status_code=400, detail=f"backup table '{table_name}' is invalid"
                 )
-            deserialize_model_row(model, row)
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"backup table '{table_name}' contains an invalid row",
+                    )
+                if table_name == "device_backups" and "content" in row:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="legacy Hub archives containing plaintext firewall backups are not supported",
+                    )
+                _validate_backup_row_shape(table_name, model, row)
+                deserialize_model_row(model, row)
+    except HTTPException:
+        raise
+    except (TypeError, ValueError, KeyError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="backup archive contains invalid table data",
+        ) from exc
 
-    settings_rows = data.get("integration_settings", [])
+    settings_rows = data["integration_settings"]
     if len(settings_rows) != 1 or str(settings_rows[0].get("id")) != "1":
         raise HTTPException(
             status_code=400,
             detail="backup archive must contain exactly one integration settings row with id=1",
         )
 
-    user_ids = {uuid.UUID(str(row["id"])) for row in data.get("users", [])}
-    company_ids = {uuid.UUID(str(row["id"])) for row in data.get("companies", [])}
-    device_ids = {uuid.UUID(str(row["id"])) for row in data.get("devices", [])}
+    user_ids = {
+        _backup_uuid(row["id"], detail="backup archive contains an invalid user id")
+        for row in data["users"]
+    }
+    company_ids = {
+        _backup_uuid(row["id"], detail="backup archive contains an invalid company id")
+        for row in data["companies"]
+    }
+    device_ids = {
+        _backup_uuid(row["id"], detail="backup archive contains an invalid device id")
+        for row in data["devices"]
+    }
     tunnel_ips_seen: set[str] = set()
 
-    for row in data.get("users", []):
+    for row in data["users"]:
         role = str(row.get("role") or "").strip().lower()
         if role not in ALLOWED_USER_ROLES:
             raise HTTPException(
@@ -285,15 +443,23 @@ def validate_backup_data(
             row.get("last_name"), field_name="user last name", maximum=120
         )
 
-    for row in data.get("companies", []):
+    for row in data["companies"]:
         _ensure_string_max_length(
             row.get("name"), field_name="company name", maximum=200
         )
 
-    for row in data.get("company_users", []):
+    for row in data["company_users"]:
         if (
-            uuid.UUID(str(row.get("company_id"))) not in company_ids
-            or uuid.UUID(str(row.get("user_id"))) not in user_ids
+            _backup_uuid(
+                row.get("company_id"),
+                detail="backup archive contains an invalid company membership company id",
+            )
+            not in company_ids
+            or _backup_uuid(
+                row.get("user_id"),
+                detail="backup archive contains an invalid company membership user id",
+            )
+            not in user_ids
         ):
             raise HTTPException(
                 status_code=400,
@@ -306,8 +472,11 @@ def validate_backup_data(
                 detail="backup archive contains an invalid company role",
             )
 
-    for row in data.get("devices", []):
-        if uuid.UUID(str(row.get("company_id"))) not in company_ids:
+    for row in data["devices"]:
+        if _backup_uuid(
+            row.get("company_id"),
+            detail="backup archive contains an invalid device company id",
+        ) not in company_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains a device with a missing company",
@@ -418,8 +587,11 @@ def validate_backup_data(
             maximum=500,
         )
 
-    for row in data.get("device_backups", []):
-        device_id = uuid.UUID(str(row.get("device_id")))
+    for row in data["device_backups"]:
+        device_id = _backup_uuid(
+            row.get("device_id"),
+            detail="backup archive contains an invalid stored backup device id",
+        )
         if device_id not in device_ids:
             raise HTTPException(
                 status_code=400,
@@ -455,8 +627,11 @@ def validate_backup_data(
             envelope, expected_device_id=device_id
         )
 
-    for row in data.get("device_events", []):
-        if uuid.UUID(str(row.get("device_id"))) not in device_ids:
+    for row in data["device_events"]:
+        if _backup_uuid(
+            row.get("device_id"),
+            detail="backup archive contains an invalid device event device id",
+        ) not in device_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains a device event with a missing device",
@@ -468,21 +643,27 @@ def validate_backup_data(
             row.get("message"), field_name="device event message", maximum=1000
         )
 
-    for row in data.get("audit_logs", []):
+    for row in data["audit_logs"]:
         user_id = row.get("user_id")
         company_id = row.get("company_id")
         device_id = row.get("device_id")
-        if user_id is not None and uuid.UUID(str(user_id)) not in user_ids:
+        if user_id is not None and _backup_uuid(
+            user_id, detail="backup archive contains an invalid audit log user id"
+        ) not in user_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an audit log with a missing user",
             )
-        if company_id is not None and uuid.UUID(str(company_id)) not in company_ids:
+        if company_id is not None and _backup_uuid(
+            company_id, detail="backup archive contains an invalid audit log company id"
+        ) not in company_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an audit log with a missing company",
             )
-        if device_id is not None and uuid.UUID(str(device_id)) not in device_ids:
+        if device_id is not None and _backup_uuid(
+            device_id, detail="backup archive contains an invalid audit log device id"
+        ) not in device_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an audit log with a missing device",
@@ -494,14 +675,19 @@ def validate_backup_data(
             row.get("user_agent"), field_name="audit user agent", maximum=500
         )
 
-    for row in data.get("enrollment_codes", []):
-        if uuid.UUID(str(row.get("company_id"))) not in company_ids:
+    for row in data["enrollment_codes"]:
+        if _backup_uuid(
+            row.get("company_id"),
+            detail="backup archive contains an invalid enrollment code company id",
+        ) not in company_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an enrollment code with a missing company",
             )
         created_by = row.get("created_by")
-        if created_by is not None and uuid.UUID(str(created_by)) not in user_ids:
+        if created_by is not None and _backup_uuid(
+            created_by, detail="backup archive contains an invalid enrollment code creator id"
+        ) not in user_ids:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an enrollment code with a missing creator",
@@ -523,6 +709,41 @@ def validate_backup_data(
 
     if wireguard_private_key is not None:
         _validate_private_key(wireguard_private_key)
+
+
+def validate_backup_data_in_staging(
+    data: dict[str, list[dict[str, object]]]
+) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    Base.metadata.create_all(engine)
+    staging = SessionLocal()
+    try:
+        for table_name, model in BACKUP_TABLE_MODELS:
+            for row in data[table_name]:
+                staging.add(deserialize_model_row(model, row))
+            staging.flush()
+        staging.rollback()
+    except SQLAlchemyError as exc:
+        staging.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="backup archive failed staging database validation",
+        ) from exc
+    finally:
+        staging.close()
+        engine.dispose()
 
 
 def build_backup_manifest(
@@ -781,12 +1002,8 @@ def parse_backup_bundle(
             raise HTTPException(
                 status_code=400, detail="backup archive format version is not supported"
             )
-        for table_name, _model in BACKUP_TABLE_MODELS:
-            rows = data.get(table_name, [])
-            if not isinstance(rows, list):
-                raise HTTPException(
-                    status_code=400, detail=f"backup table '{table_name}' is invalid"
-                )
+        validate_backup_tables_present(data)
+        validate_backup_manifest(manifest, data)
         logo_entry = next(
             (
                 name
@@ -814,6 +1031,7 @@ def restore_backup_bundle(
     wireguard_private_key: str | None,
 ) -> None:
     validate_backup_data(data, logo_file, wireguard_private_key)
+    validate_backup_data_in_staging(data)
     existing_devices = db.scalars(
         select(Device).where(Device.revoked_at.is_(None))
     ).all()
