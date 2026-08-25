@@ -71,7 +71,7 @@ docker-compose.yml
 - Optional `FIREWALL_ACCESS_MODE=hub_proxy` browser-only mode that proxies authenticated WebGUI HTTP(S) through the Hub and WireGuard sidecar, avoiding local connector installs at the cost of exposing WebGUI requests/responses to the Hub process.
 - Optional, disabled-by-default public raw L4 relay for deployments where each OPNsense WebGUI enforces client certificates.
 - Server-rendered dashboard with an Ephemeral-Link-inspired style.
-- Side-menu settings area for adding companies, managing users, branding, email settings, Microsoft 365, and Local AD configuration.
+- Grouped Settings side-menu for organization, integrations, system, and network/security administration, including companies, users, branding, email, Microsoft 365, Local AD, backups, retention, network, and sessions/secrets management.
 - Branding logo upload with persistent storage and login/app-shell rendering.
 - Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.
 - Configurable database-backed retention management for audit logs and device events, with batched cleanup and local archive export from the Hub UI.
@@ -254,6 +254,8 @@ After the stack is running, open `PUBLIC_URL`, sign in with the initial admin cr
 
 ### Connector install and usage
 
+Use this section when `FIREWALL_ACCESS_MODE=connector`, the default mode. It requires a small local connector process on the administrator's workstation and keeps browser-to-OPNsense TLS end to end.
+
 Install the connector on the administrator's workstation with Python 3.11 or newer:
 
 ```sh
@@ -283,9 +285,15 @@ The connector also supports `OPNSENSE_HUB_CONNECTOR_TOKEN`, but process environm
 
 The connector listens on `127.0.0.1:8443` by default and prints the local HTTPS URL. OPNsense terminates that TLS connection, so browser trust, hostname checks, redirects, and client-certificate behavior come from the target firewall's WebGUI certificate. If the certificate expects `firewall.example.test`, map it to loopback locally, for example `127.0.0.1 firewall.example.test`, and run with `--browser-host firewall.example.test`. `--browser-host` changes the printed URL only; it does not change DNS or the listener address. A non-loopback `--listen` value is rejected unless `--allow-non-loopback` is also supplied. Use that override only when exposing the unauthenticated local TCP listener is deliberate and protected by the workstation firewall. Any local process or user that can connect to the listener can use the active connector token to reach the selected firewall.
 
+### Browser-only Hub proxy mode
+
+Set `FIREWALL_ACCESS_MODE=hub_proxy` when administrators must open OPNsense WebGUI sessions directly in the browser without installing or running the local connector. In this mode, clicking `Open OPNsense UI` redirects to `/proxy/devices/{device_id}/` on `PUBLIC_URL`; the Hub verifies the dashboard session and company access, then proxies WebGUI HTTP(S) through the WireGuard sidecar to the firewall's `/32` tunnel address.
+
+This mode is less private than the connector: the Hub web process and sidecar can see proxied OPNsense paths, headers, cookies, request bodies, and response bodies. Keep `PROXY_VERIFY_TLS=true` so the sidecar validates the firewall WebGUI certificate. The proxy rewrites root-relative OPNsense links/forms, isolates firewall cookies with per-device names, rewrites same-firewall redirects back under `/proxy/devices/{device_id}/`, and rewrites proxied `Referer`/`Origin` headers so OPNsense WebGUI referer checks continue to work.
+
 ### Optional public L4 relay
 
-The public relay is disabled by default and is not required for normal connector access. Enable it only when every participating firewall has all of the following controls in place:
+The public relay is disabled by default and is not required for normal connector or Hub proxy access. Enable it only when every participating firewall has all of the following controls in place:
 
 - the OPNsense WebGUI requires and validates a trusted browser client certificate, with no password-only fallback on the relay listener
 - the WebGUI presents a certificate valid for the exact generated per-device hostname `d-{device-uuid-without-dashes}.<PROXY_PUBLIC_URL hostname>`
@@ -314,7 +322,7 @@ Relay state and port allocation are process-local, so this design is single-node
 
 OPNsense Hub is a management overlay for opening each firewall's own web UI. It is not a site-to-site VPN router and does not route customer LANs.
 
-The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY_RUN=false` and `NETWORK_CONTROL_MODE=inline`:
+In the bundled Compose deployment, the `opnsense-hub-wireguard` sidecar configures WireGuard automatically when `WG_DRY_RUN=false` and `NETWORK_CONTROL_MODE=inline`:
 
 1. Validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` before allocating peers.
 2. Generates `/etc/wireguard/server.key` if it does not exist.
@@ -351,9 +359,11 @@ Required inbound ports for a typical deployment:
 - UDP `51820` to the Hub WireGuard listener for enrolled firewalls.
 - No public WebGUI relay ports for the default connector path. TCP `55000-55099` is required only when the optional L4 relay is enabled.
 
-`Open OPNsense UI` sends a CSRF-protected POST to the dashboard. After session and company-scope RBAC authorization, the Hub creates a short-lived, device-scoped connector token, stores only its hash, and displays connector instructions in a `no-store` response. The user runs the local connector, which listens on loopback and opens an authenticated WSS connection to `/api/v1/connector/devices/{device_id}` for each accepted local TCP connection. The Hub connects to `OPNSENSE_GUI_PORT` (default TCP `443`) at that firewall's WireGuard `/32` and copies opaque binary bytes in both directions. Browser-to-firewall TLS remains end to end, so the Hub never receives the OPNsense administrator password, session cookie, or plaintext WebGUI traffic.
+`Open OPNsense UI` sends a CSRF-protected POST to the dashboard. After session and company-scope RBAC authorization, `FIREWALL_ACCESS_MODE=connector` creates a short-lived, device-scoped connector token, stores only its hash, and displays connector instructions in a `no-store` response. The user runs the local connector, which listens on loopback and opens an authenticated WSS connection to `/api/v1/connector/devices/{device_id}` for each accepted local TCP connection. The Hub connects to `OPNSENSE_GUI_PORT` (default TCP `443`) at that firewall's WireGuard `/32` and copies opaque binary bytes in both directions. Browser-to-firewall TLS remains end to end, so the Hub never receives the OPNsense administrator password, session cookie, or plaintext WebGUI traffic.
 
-The firewall WebGUI does not need to be exposed to the internet. The Hub container must have a working WireGuard interface and be able to reach the firewall tunnel IP over `wg0`.
+With `FIREWALL_ACCESS_MODE=hub_proxy`, the same authorized Open action redirects the browser to `/proxy/devices/{device_id}/` instead of issuing a connector token. The Hub proxies WebGUI HTTP(S) through the WireGuard sidecar, so no workstation install is required, but the Hub can see proxied OPNsense WebGUI content.
+
+The firewall WebGUI does not need to be exposed to the internet. The component that opens WebGUI connections must be able to reach the firewall tunnel IP over `wg0`: the bundled deployment delegates those connections to the `opnsense-hub-wireguard` sidecar, while non-sidecar deployments must provide equivalent WireGuard reachability to the web process.
 
 On connect, the OPNsense plugin provisions the firewall side for Hub access:
 
@@ -429,6 +439,7 @@ Set `APP_ENV=production` to enable strict startup validation. In production the 
 - `SESSION_SECURE=false`
 - `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
 - `PROXY_PUBLIC_URL`, which supplies the optional relay base hostname, is not HTTPS, is invalid, or is not distinct from `PUBLIC_URL`
+- `FIREWALL_ACCESS_MODE` is not `connector` or `hub_proxy`
 - connector limits are invalid, or the public relay is enabled without `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` and valid relay limits
 - `HUB_CONTROL_PLANE_PORT` is invalid, or inline tunnel policy management is disabled/external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`
 - the retained `PROXY_VERIFY_TLS` setting is `false` without `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`; the default connector still leaves firewall TLS validation to the user's browser
@@ -441,7 +452,7 @@ The Branding settings page accepts uploaded PNG, JPEG, or WebP logos up to `BRAN
 
 ## CSRF protection
 
-Browser-facing POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions (including connector token creation at `POST /devices/{device_id}/proxy/open` and optional relay allocation at `POST /devices/{device_id}/relay/open`), and backup export/restore. The connector then authenticates its WSS upgrade with the short-lived bearer token; it does not use the dashboard session or CSRF cookie. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
+Browser-facing Hub POST routes use CSRF protection with a signed cookie plus matching form token. This applies to login, settings, user/company management, branding, device actions (including the `POST /devices/{device_id}/proxy/open` Open action and optional relay allocation at `POST /devices/{device_id}/relay/open`), and backup export/restore. The connector then authenticates its WSS upgrade with the short-lived bearer token; it does not use the dashboard session or CSRF cookie. In `hub_proxy` mode, proxied OPNsense form POSTs under `/proxy/devices/{device_id}/...` remain dashboard-session/RBAC protected but are exempt from Hub CSRF because OPNsense performs its own WebGUI form protections. Device bearer-token API routes such as enrollment, heartbeat, and backup upload remain exempt.
 
 ## Rate limiting
 
@@ -632,11 +643,12 @@ Devices:
 - `POST /api/v1/devices/{device_id}/revoke`
 
 Firewall access:
-- Dashboard: `POST /devices/{device_id}/proxy/open` — CSRF/RBAC-authorized connector token creation and instructions
-- Dashboard WSS: `/api/v1/connector/devices/{device_id}` — bearer-authenticated opaque binary stream to the selected firewall
+- Dashboard: `POST /devices/{device_id}/proxy/open` — CSRF/RBAC-authorized Open action; in connector mode it creates connector instructions, and in `hub_proxy` mode it redirects to the authenticated Hub proxy path
+- Dashboard WSS: `/api/v1/connector/devices/{device_id}` — bearer-authenticated opaque binary stream to the selected firewall in connector mode
+- Dashboard: `/proxy/devices/{device_id}/...` — authenticated browser-only Hub proxy route when `FIREWALL_ACCESS_MODE=hub_proxy`; returns `404` in connector mode
 - Dashboard: `POST /devices/{device_id}/relay/open` — optional CSRF/RBAC-authorized raw L4 relay allocation; returns `404` while disabled
 
-Legacy `/proxy/bootstrap` and `/proxy/devices/*` routes are not part of this design and return `404`.
+Legacy `/proxy/bootstrap` is not part of this design and returns `404`.
 
 ## Validation
 
@@ -651,7 +663,8 @@ docker compose build
 
 ## Known limitations
 
-- Connector access requires the user to install and run the local Python connector. Browser trust and hostname behavior still depend on the certificate presented by the target OPNsense WebGUI.
+- Default connector access requires the user to install and run the local Python connector. Browser trust and hostname behavior still depend on the certificate presented by the target OPNsense WebGUI.
+- `FIREWALL_ACCESS_MODE=hub_proxy` avoids local workstation installs, but the Hub web process and WireGuard sidecar can see proxied OPNsense WebGUI requests, cookies, credentials, and responses.
 - Connector connection counts and immediate socket cleanup are process-local. The shipped deployment uses one Uvicorn process; active streams also poll shared database authorization so session revocation, RBAC removal, and device revocation are enforced across workers within `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`. Multi-process deployments need shared accounting if a global connection cap is required.
 - The optional public L4 relay is single-node/single-process and source-IP filtering cannot distinguish users behind the same NAT.
 - OPNsense plugin service integration may require adjustment for the exact installed WireGuard plugin/version.
