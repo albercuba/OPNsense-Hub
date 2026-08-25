@@ -50,6 +50,12 @@ def csrf_cookie_value_for_request(request: Request) -> str:
     return sign_csrf_token(get_or_create_csrf_token(request))
 
 
+def _is_hub_proxy_device_path(path: str) -> bool:
+    return settings.firewall_access_mode.strip().lower() == "hub_proxy" and (
+        path == "/proxy/devices" or path.startswith("/proxy/devices/")
+    )
+
+
 def should_enforce_csrf(request: Request) -> bool:
     if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
@@ -59,6 +65,8 @@ def should_enforce_csrf(request: Request) -> bool:
         "/auth/microsoft/callback",
     }
     if path in exempt_paths:
+        return False
+    if _is_hub_proxy_device_path(path):
         return False
     if path.startswith("/api/v1/devices/") and (
         path.endswith("/heartbeat") or path.endswith("/backups")

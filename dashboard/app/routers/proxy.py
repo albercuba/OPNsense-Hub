@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
+import re
 import uuid
 from datetime import timezone
 from http.cookies import SimpleCookie
@@ -63,6 +64,11 @@ HUB_PROXY_EXCLUDED_RESPONSE_HEADERS = {
     "set-cookie",
     "transfer-encoding",
 }
+HUB_PROXY_HTML_URL_ATTR_RE = re.compile(
+    r'(?P<prefix>\b(?:href|src|action)=(["\']))/(?P<path>[^"\']*)',
+    re.IGNORECASE,
+)
+HUB_PROXY_CSS_URL_RE = re.compile(r'url\((?P<quote>["\']?)/(?P<path>[^)"\']*)')
 
 relay_manager = (
     TcpRelayManager(
@@ -250,6 +256,34 @@ def _copy_firewall_cookies(
         )
 
 
+def _rewrite_firewall_body(
+    body: bytes, content_type: str | None, device_id: uuid.UUID
+) -> bytes:
+    if not content_type:
+        return body
+    normalized = content_type.lower()
+    proxy_base = f"/proxy/devices/{device_id}/"
+    if "text/html" in normalized:
+        text = body.decode("utf-8", errors="ignore")
+        text = HUB_PROXY_HTML_URL_ATTR_RE.sub(
+            lambda match: f"{match.group('prefix')}{proxy_base}{match.group('path')}",
+            text,
+        )
+        text = HUB_PROXY_CSS_URL_RE.sub(
+            lambda match: f"url({match.group('quote')}{proxy_base}{match.group('path')}",
+            text,
+        )
+        return text.encode("utf-8")
+    if "text/css" in normalized:
+        text = body.decode("utf-8", errors="ignore")
+        text = HUB_PROXY_CSS_URL_RE.sub(
+            lambda match: f"url({match.group('quote')}{proxy_base}{match.group('path')}",
+            text,
+        )
+        return text.encode("utf-8")
+    return body
+
+
 def _agent_header_pairs(payload: dict[str, object]) -> list[tuple[str, str]]:
     raw_headers = payload.get("headers") or []
     if not isinstance(raw_headers, list):
@@ -284,6 +318,7 @@ def _proxy_response_from_agent_payload(
                 value, device_id, target_host
             )
             break
+    body = _rewrite_firewall_body(body, headers.get("content-type"), device_id)
     response = Response(content=body, status_code=status_code, headers=headers)
     for key, value in all_header_pairs:
         if key.lower() == "set-cookie":

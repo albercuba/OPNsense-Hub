@@ -229,7 +229,11 @@ class FakeAgentHttpClient:
                     ["set-cookie", "PHPSESSID=abc123; Path=/; Secure; HttpOnly"],
                     ["location", "https://100.96.0.10:443/ui/"],
                 ],
-                "body_b64": base64.b64encode(b"<html>firewall</html>").decode("ascii"),
+                "body_b64": base64.b64encode(
+                    b'<html><head><link href="/ui/css/main.css"></head>'
+                    b'<body><img src="/ui/images/logo.png">'
+                    b'<form action="/index.php" method="post"></form></body></html>'
+                ).decode("ascii"),
             }
         )
 
@@ -356,9 +360,10 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
                 follow_redirects=False,
             )
 
-        app.dependency_overrides.clear()
         assert response.status_code == 200
-        assert response.text == "<html>firewall</html>"
+        assert f'href="/proxy/devices/{device.id}/ui/css/main.css"' in response.text
+        assert f'src="/proxy/devices/{device.id}/ui/images/logo.png"' in response.text
+        assert f'action="/proxy/devices/{device.id}/index.php"' in response.text
         assert response.headers["location"] == f"/proxy/devices/{device.id}/ui/"
         assert f"opnhub_fw_{device.id.hex}_PHPSESSID=abc123" in response.headers[
             "set-cookie"
@@ -373,6 +378,20 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
         assert settings.session_cookie_name not in kwargs["json"]["headers"].get(
             "cookie", ""
         )
+
+        with TestClient(app) as client:
+            post_response = client.post(
+                f"/proxy/devices/{device.id}/index.php",
+                data={"username": "root"},
+                follow_redirects=False,
+            )
+
+        assert post_response.status_code == 200
+        _url, post_kwargs = FakeAgentHttpClient.calls[-1]
+        assert post_kwargs["json"]["method"] == "POST"
+        assert base64.b64decode(post_kwargs["json"]["body_b64"]) == b"username=root"
+
+        app.dependency_overrides.clear()
 
 
 def test_connector_open_rejects_cross_company_viewer(monkeypatch):
