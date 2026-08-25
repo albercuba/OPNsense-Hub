@@ -64,8 +64,21 @@ def test_backup_now_uses_green_backup_action_style():
     assert "secondary" not in parser.backup_now_button_classes
 
 
+class SettingsNavigationParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.settings_section_details: list[HtmlAttrs] = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "details" and "data-settings-section" in attrs_dict:
+            self.settings_section_details.append(attrs_dict)
+
+
 def test_settings_navigation_is_grouped_by_admin_area():
     source = BASE_TEMPLATE.read_text()
+    parser = SettingsNavigationParser()
+    parser.feed(source)
 
     expected_order = [
         "Organization",
@@ -86,6 +99,12 @@ def test_settings_navigation_is_grouped_by_admin_area():
     positions = [source.index(label) for label in expected_order]
 
     assert positions == sorted(positions)
+    assert len(parser.settings_section_details) == 4
+    assert all("open" not in section for section in parser.settings_section_details)
+    assert 'data-settings-submenu' in source
+    assert 'data-settings-section' in source
+    assert 'addEventListener("toggle"' in source
+    assert "\ndiv>" not in source
     assert ">Security</a" not in source
 
 

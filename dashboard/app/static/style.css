@@ -380,13 +380,44 @@ a {
     display: grid;
     gap: 0.15rem;
 }
+.side-menu-section summary {
+    list-style: none;
+}
+.side-menu-section summary::-webkit-details-marker {
+    display: none;
+}
 .side-menu-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
     margin: 0.35rem 0 0.1rem;
-    padding: 0 0.6rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius);
     color: var(--text);
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.02em;
+    cursor: pointer;
+}
+.side-menu-section-title:hover {
+    color: var(--accent);
+    background: var(--surface-hover);
+}
+.side-menu-section-title::after {
+    content: "\f078";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.68rem;
+    transition: transform 0.16s ease;
+}
+.side-menu-section[open] .side-menu-section-title::after {
+    transform: rotate(180deg);
+}
+.side-menu-section-items {
+    display: grid;
+    gap: 0.15rem;
 }
 .side-menu-sublink {
     font-size: inherit;
