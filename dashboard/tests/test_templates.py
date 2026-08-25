@@ -106,6 +106,9 @@ def test_settings_navigation_is_grouped_by_admin_area():
     assert 'addEventListener("toggle"' in source
     assert "document</script>" not in source
     assert "\ndiv>" not in source
+    assert "</details>=" not in source
+    assert "class</details>" not in source
+    assert "<summary</details>" not in source
     assert ">Security</a" not in source
 
 
