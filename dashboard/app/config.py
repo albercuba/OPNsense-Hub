@@ -122,6 +122,7 @@ class Settings(BaseSettings):
     device_event_min_retention_days: int = 7
     log_retention_run_on_startup: bool = True
     log_retention_enabled: bool = True
+    scheduler_lock_poll_seconds: int = 30
     audit_device_view_throttle_minutes: int = 15
     run_db_migrations_on_startup: bool = True
     allow_legacy_schema_bootstrap: bool = True

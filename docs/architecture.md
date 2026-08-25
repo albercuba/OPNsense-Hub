@@ -58,7 +58,7 @@ sequenceDiagram
 - The Hub accepts binary WSS frames only and copies bytes between WSS and the firewall TCP socket. It does not terminate the browser-to-firewall TLS session, parse HTTP, inject cookies, or receive OPNsense credentials.
 - `/proxy/bootstrap` and `/proxy/devices/*` are not routed. `PROXY_PUBLIC_URL` now supplies only the optional raw relay's base DNS hostname; it is not an L7 browser proxy origin.
 - The bundled Caddy configuration handles dashboard HTTP(S), including the connector WSS upgrade. Raw public relay ports bypass Caddy.
-- A lightweight background scheduler marks active, non-revoked devices for a firmware status check once per day at `23:00` in the Hub process timezone.
+- Background scheduler loops for health checks, firmware-check marking, and log retention run under PostgreSQL advisory locks so only one application process performs each scheduled job at a time. Non-leader processes poll for the lock and take over if the holder exits.
 - The Hub only stores and displays reported firmware status; it does not probe or install firewall updates itself.
 - Branding uploads are stored in a persistent directory and served back through `/branding/logo`, with uploaded assets taking precedence over any configured fallback logo URL.
 

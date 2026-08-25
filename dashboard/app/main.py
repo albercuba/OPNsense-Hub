@@ -51,6 +51,7 @@ from .services.notification_service import (
     maybe_send_health_notification,
     send_notification_email,
 )
+from .services.scheduler_locks import run_cluster_singleton_loop
 from .web import APP_DIR, current_brand_logo_url, format_datetime, settings, templates
 
 
@@ -58,12 +59,16 @@ from .web import APP_DIR, current_brand_logo_url, format_datetime, settings, tem
 async def lifespan(app: FastAPI):
     apply_startup_hardening(settings)
     bootstrap()
-    app.state.health_check_task = asyncio.create_task(device_health_check_loop())
+    app.state.health_check_task = asyncio.create_task(
+        run_cluster_singleton_loop("device_health_checks", device_health_check_loop)
+    )
     app.state.firmware_schedule_task = asyncio.create_task(
-        firmware_check_schedule_loop()
+        run_cluster_singleton_loop("firmware_schedule", firmware_check_schedule_loop)
     )
     app.state.log_retention_task = (
-        asyncio.create_task(log_retention_loop())
+        asyncio.create_task(
+            run_cluster_singleton_loop("log_retention", log_retention_loop)
+        )
         if settings.log_retention_enabled
         else None
     )

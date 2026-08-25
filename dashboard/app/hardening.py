@@ -263,6 +263,8 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append(
             f"Set LOG_RETENTION_DELETE_BATCH_SIZE to {MAX_LOG_RETENTION_DELETE_BATCH_SIZE} or less"
         )
+    if settings.scheduler_lock_poll_seconds <= 0:
+        errors.append("Set SCHEDULER_LOCK_POLL_SECONDS to a positive value")
     if settings.audit_device_view_throttle_minutes <= 0:
         errors.append("Set AUDIT_DEVICE_VIEW_THROTTLE_MINUTES to a positive value")
     if settings.audit_log_min_retention_days <= 0:
