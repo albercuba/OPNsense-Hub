@@ -216,6 +216,16 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append("Set RATE_LIMIT_BACKEND to memory, redis, or edge")
     if settings.network_control_mode.strip().lower() not in {"inline", "external"}:
         errors.append("Set NETWORK_CONTROL_MODE to inline or external")
+    if settings.wg_agent_url and not settings.wg_agent_token:
+        errors.append("Set WG_AGENT_TOKEN when WG_AGENT_URL is configured")
+    if settings.wg_agent_token and (
+        len(settings.wg_agent_token) < 32
+        or "change-me" in settings.wg_agent_token.lower()
+        or "development-only" in settings.wg_agent_token.lower()
+    ):
+        errors.append("Set WG_AGENT_TOKEN to a random value at least 32 characters long")
+    if settings.wg_agent_url and settings.wg_agent_mode:
+        errors.append("Do not set WG_AGENT_URL inside the WireGuard agent process")
     if settings.rate_limit_backend.strip().lower() == "memory":
         errors.append("Set RATE_LIMIT_BACKEND to redis or edge in production")
     if (
@@ -735,5 +745,10 @@ def install_firewall_rules(
 
 def apply_startup_hardening(settings: Settings) -> None:
     validate_runtime_settings(settings)
+    if settings.wg_agent_url and not settings.wg_agent_mode:
+        logger.info(
+            "Skipping privileged network hardening in web process; WireGuard agent is configured"
+        )
+        return
     configure_ip_forwarding(settings)
     install_firewall_rules(settings)

@@ -47,9 +47,9 @@ sequenceDiagram
 - PostgreSQL stores users, companies, enrollment codes, devices, sessions, events, and audit logs.
 - Dashboard auth uses random server-side session tokens stored hashed with expiration and revocation.
 - Device token bearer auth protects post-enrollment device endpoints.
-- WireGuard server setup is bootstrapped by the app container on startup.
-- Startup validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS`, generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
-- WireGuard peers are managed by a small validated wrapper around `wg set`.
+- The internet-facing FastAPI web process runs without Linux capabilities and delegates privileged WireGuard operations to the narrow `opnsense-hub-wireguard` sidecar over an authenticated internal agent API.
+- Startup validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS`; the sidecar generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, installs/verifies tunnel isolation, and restores non-revoked peers received from the web process after database migration/bootstrap.
+- WireGuard peers are managed by a small validated wrapper around the agent API and sidecar-local `wg set` calls.
 - Enrollment atomically claims one unexpired OTP, reserves the device row before touching WireGuard runtime state, and enforces unique WireGuard public keys and tunnel `/32` addresses. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
 - By default the Hub disables IPv4/IPv6 forwarding and installs a verified tunnel policy. All forwarding originating from `wg0` is dropped regardless of output interface. Input from `wg0` permits established/related return traffic plus new IPv4 TCP connections from `HUB_WG_CIDR` to the exact `HUB_WG_ADDRESS` and `HUB_CONTROL_PLANE_PORT`; every other IPv4/IPv6 tunnel-input packet is dropped.
 - `PUBLIC_URL` is the dashboard/control-plane origin. It serves normal HTTPS routes and the authenticated WSS connector upgrade at `/api/v1/connector/devices/{device_id}`.
@@ -62,7 +62,7 @@ sequenceDiagram
 - The Hub only stores and displays reported firmware status; it does not probe or install firewall updates itself.
 - Branding uploads are stored in a persistent directory and served back through `/branding/logo`, with uploaded assets taking precedence over any configured fallback logo URL.
 
-For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels, the app container runs with `NET_ADMIN` and `/dev/net/tun` so it can configure `wg0` itself.
+For local development without kernel WireGuard access, set `WG_DRY_RUN=true`. For real tunnels in the Compose deployment, only the WireGuard sidecar runs as root with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the `/etc/wireguard` volume; the public web process remains an unprivileged UID with all capabilities dropped.
 
 ## Local connector
 
@@ -102,7 +102,7 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 
 - OTPs are hashed at rest and single-use.
 - Dashboard session tokens and device tokens are generated randomly and stored hashed in the Hub database.
-- Device revocation removes the WireGuard peer and marks the device revoked.
+- Device revocation removes the WireGuard peer through the authenticated sidecar agent and marks the device revoked.
 - Dashboard users are authorized at company scope through `company_users`.
 - The Hub never stores OPNsense administrator passwords.
 - Default firewall access is authorized by dashboard session, CSRF, and company RBAC before a hashed, expiring connector token is issued. Authenticated WSS then carries opaque TLS ciphertext through WireGuard and is audit logged.

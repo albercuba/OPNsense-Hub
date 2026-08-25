@@ -101,7 +101,7 @@ INITIAL_ADMIN_PASSWORD=change-me
 
 `.env.example` now includes the full set of supported runtime variables, including retention, archive, rate-limit, health-check, migration, branding, and WireGuard-related settings.
 
-By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, restores enrolled peers from the database, disables IP forwarding inside the container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
+By default, the Compose stack separates the public web process from privileged WireGuard operations. `opnsense-hub-api` runs as an unprivileged UID with all Linux capabilities dropped and no WireGuard key volume. It delegates server-key, interface, peer, and runtime-peer operations to the authenticated internal `opnsense-hub-wireguard` sidecar. Only that sidecar runs with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the `opnsense_hub_wg` volume. The sidecar generates and persists the Hub server private key, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, restores enrolled peers supplied by the web process, disables IP forwarding inside its container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
 
 Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
 
@@ -131,8 +131,8 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 1. Prepare the host:
 
    - Install Docker Engine with the Compose plugin.
-   - Ensure `/dev/net/tun` exists and the host allows containers to use `NET_ADMIN`.
-   - Open inbound TCP `80`/`443` for the dashboard and authenticated connector WSS endpoint, and UDP `51820` for WireGuard.
+   - Ensure `/dev/net/tun` exists and the host allows the WireGuard sidecar container to use `NET_ADMIN`.
+   - Open inbound TCP `80`/`443` for the dashboard and authenticated connector WSS endpoint, and UDP `51820` for the WireGuard sidecar.
    - Point the dashboard DNS name, for example `hub.example.com`, at the Docker host and provision a valid TLS certificate.
    - Do not open TCP `55000-55099` for the default connector design. Those ports are only for the optional public L4 relay described below.
 
@@ -158,6 +158,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    HUB_CONTROL_PLANE_PORT=8083
    HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=false
    HUB_WG_ENDPOINT=hub.example.com:51820
+   WG_AGENT_TOKEN=<long-random-sidecar-token>
    SECRET_KEY=<long-random-secret>
    SECRET_ENCRYPTION_KEY=<separate-long-random-secret>
    INITIAL_ADMIN_EMAIL=<admin-email>
@@ -170,12 +171,14 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    `PROXY_PUBLIC_URL` is retained as the base hostname used to construct optional raw relay names; it is not an L7 proxy origin and serves no `/proxy/*` routes. Production validation currently requires it to be a valid HTTPS URL on a hostname distinct from `PUBLIC_URL`, even while the relay is disabled. Wildcard DNS and relay ports are unnecessary until the relay is explicitly enabled.
 
-   If you change the PostgreSQL username, password, database, Redis service name, or service hostnames, keep `DATABASE_URL` and `RATE_LIMIT_REDIS_URL` in `.env` aligned with `docker-compose.yml`.
+   `docker-compose.yml` sets `WG_AGENT_URL=http://opnsense-hub-wireguard:8084` for the web container and `WG_AGENT_MODE=true` for the sidecar. Set `WG_AGENT_TOKEN` to the same long random value for both services through `.env`; production startup rejects the development placeholder.
+
+   If you change the PostgreSQL username, password, database, Redis service name, WireGuard sidecar name, or service hostnames, keep `DATABASE_URL`, `RATE_LIMIT_REDIS_URL`, and `WG_AGENT_URL` aligned with `docker-compose.yml`.
 
 3. Configure the bundled Caddy profile when required:
 
    - Edit `deploy/Caddyfile` and replace `hub.example.com` and the email address.
-   - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service.
+   - Keep the upstream as `opnsense-hub-api:8083` when using the default Compose service; do not route public traffic to `opnsense-hub-wireguard:8084`.
    - Caddy handles dashboard HTTP(S), including the WSS upgrade on `/api/v1/connector/devices/{id}`. It does not terminate or proxy the optional raw L4 relay.
 
    Connector settings added in `dashboard/app/config.py`:
@@ -198,7 +201,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    - `PUBLIC_L4_RELAY_IDLE_TIMEOUT_SECONDS` — inactivity timeout per raw connection; default `120`.
    - `PUBLIC_L4_RELAY_MAX_CONNECTIONS` — concurrent connections allowed per allocated relay; default `16`.
 
-   Other production-focused variables include `ALLOWED_HOSTS`, `TRUSTED_PROXY_CIDRS`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_MFA_ATTEMPTS`, `RATE_LIMIT_MFA_WINDOW_SECONDS`, `NETWORK_CONTROL_MODE`, browser security-header controls, and backup/restore size limits.
+   Other production-focused variables include `ALLOWED_HOSTS`, `TRUSTED_PROXY_CIDRS`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_MFA_ATTEMPTS`, `RATE_LIMIT_MFA_WINDOW_SECONDS`, `NETWORK_CONTROL_MODE`, `WG_AGENT_URL`, `WG_AGENT_TOKEN`, `WG_AGENT_MODE`, browser security-header controls, and backup/restore size limits.
 
 4. Validate and start the default stack:
 
@@ -223,8 +226,8 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 6. Back up the persistent Docker volumes:
 
    - `opnsense_hub_db` for PostgreSQL data.
-   - `opnsense_hub_wg` for the Hub WireGuard server key and config.
-   - `opnsense_hub_branding` for uploaded branding assets.
+   - `opnsense_hub_wg` for the Hub WireGuard server key and config; this is mounted only into the WireGuard sidecar.
+   - `opnsense_hub_branding` for uploaded branding assets; this is mounted into the unprivileged web container.
    - `opnsense_hub_caddy` when using the bundled Caddy profile.
 
    Losing the WireGuard volume changes the Hub server key and requires re-enrollment or careful key rotation for existing firewalls.

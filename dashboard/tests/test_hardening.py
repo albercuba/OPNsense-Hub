@@ -5,6 +5,7 @@ from app.hardening import (
     MAX_PROXY_SESSION_TTL_MINUTES,
     CommandResult,
     StartupHardeningError,
+    apply_startup_hardening,
     configure_ip_forwarding,
     install_firewall_rules,
     isolation_invariant_errors,
@@ -54,6 +55,38 @@ def test_runtime_validation_errors_include_insecure_defaults():
 
 def test_runtime_validation_accepts_secure_proxy_settings():
     assert runtime_validation_errors(production_settings()) == []
+
+
+def test_runtime_validation_requires_strong_wireguard_agent_token():
+    errors = runtime_validation_errors(
+        production_settings(
+            wg_agent_url="http://opnsense-hub-wireguard:8084",
+            wg_agent_token="development-only-wireguard-agent-token-change-me",
+        )
+    )
+
+    assert any("WG_AGENT_TOKEN" in error for error in errors)
+
+
+def test_web_startup_hardening_delegates_privileged_network_changes(monkeypatch):
+    settings = production_settings(
+        wg_agent_url="http://opnsense-hub-wireguard:8084",
+        wg_agent_token="a" * 32,
+    )
+    calls = []
+
+    monkeypatch.setattr(
+        "app.hardening.configure_ip_forwarding",
+        lambda _settings: calls.append("ip_forwarding"),
+    )
+    monkeypatch.setattr(
+        "app.hardening.install_firewall_rules",
+        lambda _settings: calls.append("firewall"),
+    )
+
+    apply_startup_hardening(settings)
+
+    assert calls == []
 
 
 def test_runtime_validation_rejects_insecure_proxy_public_url():

@@ -6,12 +6,14 @@ import ipaddress
 import uuid
 from datetime import timezone
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
+import websockets
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
+from websockets.exceptions import WebSocketException
 
 from ..audit import write_audit
 from ..database import SessionLocal, get_db
@@ -447,6 +449,66 @@ async def _relay_connector_stream(
         task.result()
 
 
+def _wireguard_agent_connect_url(target_host: str, target_port: int) -> str:
+    if not settings.wg_agent_url:
+        raise RuntimeError("WG_AGENT_URL is not configured")
+    base = settings.wg_agent_url.rstrip("/")
+    if base.startswith("https://"):
+        base = "wss://" + base.removeprefix("https://")
+    elif base.startswith("http://"):
+        base = "ws://" + base.removeprefix("http://")
+    else:
+        raise RuntimeError("WG_AGENT_URL must start with http:// or https://")
+    return f"{base}/connect?host={quote(target_host, safe='')}&port={target_port}"
+
+
+async def _pipe_websocket_to_agent(websocket: WebSocket, agent) -> None:
+    while True:
+        message = await websocket.receive()
+        message_type = message.get("type")
+        if message_type == "websocket.disconnect":
+            return
+        data = message.get("bytes")
+        if not isinstance(data, bytes):
+            await websocket.close(code=1003, reason="binary frames required")
+            return
+        await agent.send(data)
+
+
+async def _pipe_agent_to_websocket(agent, websocket: WebSocket) -> None:
+    async for message in agent:
+        if not isinstance(message, bytes):
+            await websocket.close(code=1003, reason="binary frames required")
+            return
+        await websocket.send_bytes(message)
+
+
+async def _relay_connector_stream_via_agent(
+    websocket: WebSocket,
+    agent,
+    connector_session_id: uuid.UUID,
+    device_id: uuid.UUID,
+) -> None:
+    tasks = {
+        asyncio.create_task(_pipe_websocket_to_agent(websocket, agent)),
+        asyncio.create_task(_pipe_agent_to_websocket(agent, websocket)),
+        asyncio.create_task(
+            _monitor_connector_authorization(connector_session_id, device_id)
+        ),
+    }
+    done: set[asyncio.Task[None]] = set()
+    try:
+        done, _pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    for task in done:
+        task.result()
+
+
 @router.websocket("/api/v1/connector/devices/{device_id}")
 async def connector_device_tunnel(websocket: WebSocket, device_id: uuid.UUID):
     token = _bearer_token(websocket)
@@ -484,16 +546,32 @@ async def connector_device_tunnel(websocket: WebSocket, device_id: uuid.UUID):
             await websocket.close(code=4401, reason="invalid connector authorization")
             return
 
+        agent = None
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(
-                    target_host,
-                    settings.opnsense_gui_port,
-                    limit=CONNECTOR_CHUNK_SIZE,
-                ),
-                timeout=settings.connector_upstream_connect_timeout_seconds,
-            )
-        except (OSError, asyncio.TimeoutError):
+            if settings.wg_agent_url:
+                if not settings.wg_agent_token:
+                    await websocket.close(code=4502, reason="firewall connection failed")
+                    return
+                agent = await websockets.connect(
+                    _wireguard_agent_connect_url(
+                        target_host, settings.opnsense_gui_port
+                    ),
+                    additional_headers={
+                        "Authorization": f"Bearer {settings.wg_agent_token}"
+                    },
+                    open_timeout=settings.connector_upstream_connect_timeout_seconds,
+                    max_size=None,
+                )
+            else:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(
+                        target_host,
+                        settings.opnsense_gui_port,
+                        limit=CONNECTOR_CHUNK_SIZE,
+                    ),
+                    timeout=settings.connector_upstream_connect_timeout_seconds,
+                )
+        except (OSError, asyncio.TimeoutError, WebSocketException):
             await websocket.close(code=4502, reason="firewall connection failed")
             return
 
@@ -512,16 +590,27 @@ async def connector_device_tunnel(websocket: WebSocket, device_id: uuid.UUID):
             await websocket.close(code=4401, reason="connector session expired")
             return
         try:
-            await asyncio.wait_for(
-                _relay_connector_stream(
-                    websocket,
-                    reader,
-                    writer,
-                    connector_session_id,
-                    device_id,
-                ),
-                timeout=min(remaining, settings.connector_connection_max_seconds),
-            )
+            if agent is not None:
+                await asyncio.wait_for(
+                    _relay_connector_stream_via_agent(
+                        websocket,
+                        agent,
+                        connector_session_id,
+                        device_id,
+                    ),
+                    timeout=min(remaining, settings.connector_connection_max_seconds),
+                )
+            elif writer is not None:
+                await asyncio.wait_for(
+                    _relay_connector_stream(
+                        websocket,
+                        reader,
+                        writer,
+                        connector_session_id,
+                        device_id,
+                    ),
+                    timeout=min(remaining, settings.connector_connection_max_seconds),
+                )
         except asyncio.TimeoutError:
             await websocket.close(code=1000, reason="connector session ended")
         except ConnectorAuthorizationEnded:
@@ -529,6 +618,8 @@ async def connector_device_tunnel(websocket: WebSocket, device_id: uuid.UUID):
     except (RuntimeError, WebSocketDisconnect):
         pass
     finally:
+        if agent is not None:
+            await agent.close()
         if writer is not None:
             writer.close()
             with contextlib.suppress(OSError, ConnectionError):

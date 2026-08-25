@@ -25,21 +25,44 @@ services:
   opnsense-hub-api:
     build: ./dashboard
     env_file: .env
+    environment:
+      WG_AGENT_URL: http://opnsense-hub-wireguard:8084
+      WG_AGENT_TOKEN: ${WG_AGENT_TOKEN:-development-only-wireguard-agent-token-change-me}
     depends_on:
       opnsense-hub-db:
         condition: service_healthy
       opnsense-hub-redis:
         condition: service_healthy
+      opnsense-hub-wireguard:
+        condition: service_started
     ports:
       - "8083:8083"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - opnsense_hub_branding:/var/lib/opnsense-hub/branding
+
+  opnsense-hub-wireguard:
+    build: ./dashboard
+    env_file: .env
+    environment:
+      WG_AGENT_MODE: "true"
+      WG_AGENT_TOKEN: ${WG_AGENT_TOKEN:-development-only-wireguard-agent-token-change-me}
+    depends_on:
+      opnsense-hub-db:
+        condition: service_healthy
+    command: ["uvicorn", "app.wireguard_agent:app", "--host", "0.0.0.0", "--port", "8084"]
+    ports:
       - "51820:51820/udp"
+    user: "0:0"
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - opnsense_hub_wg:/etc/wireguard
-      - opnsense_hub_branding:/var/lib/opnsense-hub/branding
 
   opnsense-hub-web:
     build: ./dashboard

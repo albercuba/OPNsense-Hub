@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+import app.wireguard as wireguard
 from app.wireguard import (
     WireGuardError,
     client_allowed_ips,
@@ -275,6 +276,83 @@ def test_parse_wg_show_dump_accepts_off_keepalive():
     assert peers[0].persistent_keepalive == 0
 
 
+class FakeAgentResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def agent_settings():
+    return SimpleNamespace(
+        wg_agent_url="http://opnsense-hub-wireguard:8084",
+        wg_agent_token="a" * 32,
+        wg_agent_mode=False,
+        wg_dry_run=False,
+        wg_server_public_key="replace-with-server-public-key",
+        hub_wg_cidr="100.96.0.0/16",
+        hub_wg_address="100.96.0.1/16",
+        allow_broad_wg_cidr=False,
+    )
+
+
+def test_get_server_public_key_delegates_to_wireguard_agent(monkeypatch):
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return FakeAgentResponse(
+            {"public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+        )
+
+    monkeypatch.setattr(wireguard, "get_settings", agent_settings)
+    monkeypatch.setattr(wireguard.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        wireguard,
+        "_ensure_server_keypair_local",
+        lambda: (_ for _ in ()).throw(AssertionError("local wg key generation used")),
+    )
+
+    assert wireguard.get_server_public_key() == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    assert requests[0][0].full_url == "http://opnsense-hub-wireguard:8084/server-public-key"
+    assert requests[0][0].headers["Authorization"] == "Bearer " + "a" * 32
+
+
+def test_add_peer_delegates_to_wireguard_agent(monkeypatch):
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return FakeAgentResponse({"status": "ok"})
+
+    monkeypatch.setattr(wireguard, "get_settings", agent_settings)
+    monkeypatch.setattr(wireguard.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        wireguard,
+        "_add_peer_local",
+        lambda _public_key, _tunnel_ip: (_ for _ in ()).throw(
+            AssertionError("local wg peer add used")
+        ),
+    )
+
+    wireguard.add_peer("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "100.96.0.10")
+
+    request = requests[0][0]
+    assert request.full_url == "http://opnsense-hub-wireguard:8084/peers"
+    assert request.get_method() == "POST"
+    assert json.loads(request.data.decode("utf-8")) == {
+        "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "tunnel_ip": "100.96.0.10",
+    }
+
+
 def test_plugin_firmware_parser_maps_error_payload():
     firmware_status = load_firmware_status_module()
 
@@ -357,13 +435,7 @@ def test_plugin_heartbeat_removes_local_state_only_on_revocation(
     cleanup_reasons = []
 
     def fake_send_heartbeat(_state, _payload):
-        raise urllib.error.HTTPError(
-            url="https://hub.example.com/api/v1/devices/device-1/heartbeat",
-            code=410,
-            msg="Gone",
-            hdrs=None,
-            fp=None,
-        )
+        raise heartbeat.HeartbeatRevoked("heartbeat revoked by Hub")
 
     def fake_remove_local_artifacts(reason=None):
         cleanup_reasons.append(reason)
@@ -383,11 +455,11 @@ def test_plugin_heartbeat_removes_local_state_only_on_revocation(
         heartbeat.main()
 
     assert exc_info.value.code == 1
-    assert cleanup_reasons == ["heartbeat failed with HTTP 410"]
-    assert saved_states[-1]["last_error"] == "heartbeat failed with HTTP 410"
+    assert cleanup_reasons == ["heartbeat revoked by Hub"]
+    assert saved_states[-1]["last_error"] == "heartbeat revoked by Hub"
     output = json.loads(capsys.readouterr().out.strip())
     assert output["status"] == "revoked"
-    assert output["reason"] == "heartbeat failed with HTTP 410"
+    assert output["reason"] == "heartbeat revoked by Hub"
     assert output["message"] == (
-        "Hub revoked this device; removed local OPNsense Hub tunnel and state"
+        "Hub explicitly revoked this device; removed local OPNsense Hub tunnel and state"
     )

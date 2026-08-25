@@ -1,10 +1,14 @@
 import ipaddress
+import json
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+import urllib.error
+import urllib.request
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -112,7 +116,69 @@ def _paths() -> tuple[Path, Path]:
     return config_path, key_path
 
 
+def _agent_enabled() -> bool:
+    settings = get_settings()
+    return bool(settings.wg_agent_url and not settings.wg_agent_mode)
+
+
+def _agent_headers() -> dict[str, str]:
+    settings = get_settings()
+    if not settings.wg_agent_token:
+        raise WireGuardError("WG_AGENT_TOKEN is required when WG_AGENT_URL is set")
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.wg_agent_token}",
+    }
+
+
+def _agent_request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    timeout: int = 20,
+) -> Any:
+    settings = get_settings()
+    if not settings.wg_agent_url:
+        raise WireGuardError("WG_AGENT_URL is not configured")
+    url = settings.wg_agent_url.rstrip("/") + path
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers=_agent_headers(),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        raise WireGuardError(
+            f"WireGuard agent request failed with HTTP {exc.code}: {detail or exc.reason}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise WireGuardError(f"WireGuard agent is unavailable: {exc.reason}") from exc
+    if not body:
+        return None
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise WireGuardError("WireGuard agent returned invalid JSON") from exc
+
+
 def ensure_server_keypair() -> str:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return settings.wg_server_public_key
+    if _agent_enabled():
+        body = _agent_request("GET", "/server-public-key")
+        public_key = str(body.get("public_key", ""))
+        validate_public_key(public_key)
+        return public_key
+    return _ensure_server_keypair_local()
+
+
+def _ensure_server_keypair_local() -> str:
     """Create/persist the Hub WireGuard server key and return its public key."""
     settings = get_settings()
     get_validated_hub_wireguard_config()
@@ -142,11 +208,21 @@ def get_server_public_key() -> str:
 
 def render_server_config() -> None:
     settings = get_settings()
+    if settings.wg_dry_run:
+        return
+    if _agent_enabled():
+        _agent_request("POST", "/render-config", {})
+        return
+    _render_server_config_local()
+
+
+def _render_server_config_local() -> None:
+    settings = get_settings()
     validated = get_validated_hub_wireguard_config()
     if settings.wg_dry_run:
         return
     config_path, key_path = _paths()
-    ensure_server_keypair()
+    _ensure_server_keypair_local()
     text = f"""[Interface]
 PrivateKey = {key_path.read_text().strip()}
 Address = {validated.hub_interface}
@@ -161,11 +237,22 @@ def interface_exists() -> bool:
     settings = get_settings()
     if settings.wg_dry_run:
         return True
+    if _agent_enabled():
+        body = _agent_request("GET", "/interface")
+        return bool(body.get("exists"))
+    return _interface_exists_local()
+
+
+def _interface_exists_local() -> bool:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return True
     result = subprocess.run(
         ["wg", "show", settings.wg_interface],
         capture_output=True,
         text=True,
         timeout=5,
+        check=False,
     )
     return result.returncode == 0
 
@@ -175,9 +262,19 @@ def ensure_server_interface() -> None:
     settings = get_settings()
     if settings.wg_dry_run:
         return
-    render_server_config()
+    if _agent_enabled():
+        _agent_request("POST", "/interface", {})
+        return
+    _ensure_server_interface_local()
+
+
+def _ensure_server_interface_local() -> None:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return
+    _render_server_config_local()
     config_path, key_path = _paths()
-    if not interface_exists():
+    if not _interface_exists_local():
         _run(["wg-quick", "up", str(config_path)], timeout=20)
     _run(
         [
@@ -196,10 +293,24 @@ def sync_existing_peers(db: Session) -> None:
     settings = get_settings()
     if settings.wg_dry_run:
         return
-    ensure_server_interface()
     devices = db.scalars(select(Device).where(Device.revoked_at.is_(None))).all()
-    for device in devices:
-        add_peer(device.wg_public_key, str(device.wg_tunnel_ip))
+    peers = [
+        {"public_key": device.wg_public_key, "tunnel_ip": str(device.wg_tunnel_ip)}
+        for device in devices
+    ]
+    if _agent_enabled():
+        _agent_request("POST", "/sync-peers", {"peers": peers})
+        return
+    _sync_peer_payloads_local(peers)
+
+
+def _sync_peer_payloads_local(peers: list[dict[str, str]]) -> None:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return
+    _ensure_server_interface_local()
+    for peer in peers:
+        _add_peer_local(peer["public_key"], peer["tunnel_ip"])
 
 
 def bootstrap_wireguard(db: Session) -> None:
@@ -208,8 +319,16 @@ def bootstrap_wireguard(db: Session) -> None:
     get_validated_hub_wireguard_config()
     if settings.wg_dry_run:
         return
-    ensure_server_interface()
-    sync_existing_peers(db)
+    devices = db.scalars(select(Device).where(Device.revoked_at.is_(None))).all()
+    peers = [
+        {"public_key": device.wg_public_key, "tunnel_ip": str(device.wg_tunnel_ip)}
+        for device in devices
+    ]
+    if _agent_enabled():
+        _agent_request("POST", "/bootstrap", {"peers": peers})
+        return
+    _ensure_server_interface_local()
+    _sync_peer_payloads_local(peers)
 
 
 def peer_allowed_ips(tunnel_ip: str) -> str:
@@ -278,7 +397,33 @@ def add_peer(public_key: str, tunnel_ip: str) -> None:
         raise WireGuardError("tunnel_ip must not equal HUB_WG_ADDRESS")
     if settings.wg_dry_run:
         return
-    ensure_server_interface()
+    if _agent_enabled():
+        _agent_request(
+            "POST",
+            "/peers",
+            {"public_key": public_key, "tunnel_ip": str(ip)},
+            timeout=15,
+        )
+        return
+    _add_peer_local(public_key, str(ip))
+
+
+def _add_peer_local(public_key: str, tunnel_ip: str) -> None:
+    settings = get_settings()
+    validated = get_validated_hub_wireguard_config()
+    validate_public_key(public_key)
+    ip = ipaddress.ip_address(tunnel_ip)
+    if not isinstance(ip, ipaddress.IPv4Address):
+        raise WireGuardError("tunnel_ip must be IPv4")
+    if ip not in validated.network:
+        raise WireGuardError(
+            f"tunnel_ip {ip} is outside HUB_WG_CIDR {validated.network}"
+        )
+    if ip == validated.hub_ip:
+        raise WireGuardError("tunnel_ip must not equal HUB_WG_ADDRESS")
+    if settings.wg_dry_run:
+        return
+    _ensure_server_interface_local()
     cmd = [
         "wg",
         "set",
@@ -343,7 +488,42 @@ def parse_wg_show_dump(output: str) -> list[RuntimeWireGuardPeer]:
     return peers
 
 
+def _runtime_peer_to_payload(peer: RuntimeWireGuardPeer) -> dict[str, Any]:
+    payload = asdict(peer)
+    payload["last_handshake_at"] = (
+        peer.last_handshake_at.isoformat() if peer.last_handshake_at else None
+    )
+    return payload
+
+
+def _runtime_peer_from_payload(payload: dict[str, Any]) -> RuntimeWireGuardPeer:
+    last_handshake_at = payload.get("last_handshake_at")
+    parsed_handshake = None
+    if last_handshake_at:
+        parsed_handshake = datetime.fromisoformat(str(last_handshake_at))
+    return RuntimeWireGuardPeer(
+        public_key=str(payload["public_key"]),
+        preshared_key=str(payload.get("preshared_key", "")),
+        endpoint=payload.get("endpoint"),
+        allowed_ips=[str(value) for value in payload.get("allowed_ips", [])],
+        last_handshake_at=parsed_handshake,
+        rx_bytes=int(payload.get("rx_bytes", 0)),
+        tx_bytes=int(payload.get("tx_bytes", 0)),
+        persistent_keepalive=int(payload.get("persistent_keepalive", 0)),
+    )
+
+
 def get_runtime_peers() -> list[RuntimeWireGuardPeer]:
+    settings = get_settings()
+    if settings.wg_dry_run:
+        return []
+    if _agent_enabled():
+        body = _agent_request("GET", "/peers", timeout=15)
+        return [_runtime_peer_from_payload(peer) for peer in body.get("peers", [])]
+    return _get_runtime_peers_local()
+
+
+def _get_runtime_peers_local() -> list[RuntimeWireGuardPeer]:
     settings = get_settings()
     if settings.wg_dry_run:
         return []
@@ -356,6 +536,17 @@ def remove_peer(public_key: str) -> None:
     validate_public_key(public_key)
     if settings.wg_dry_run:
         return
-    ensure_server_interface()
+    if _agent_enabled():
+        _agent_request("POST", "/peers/remove", {"public_key": public_key}, timeout=15)
+        return
+    _remove_peer_local(public_key)
+
+
+def _remove_peer_local(public_key: str) -> None:
+    settings = get_settings()
+    validate_public_key(public_key)
+    if settings.wg_dry_run:
+        return
+    _ensure_server_interface_local()
     cmd = ["wg", "set", settings.wg_interface, "peer", public_key, "remove"]
     _run(cmd, timeout=10)

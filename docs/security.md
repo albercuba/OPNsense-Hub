@@ -7,6 +7,7 @@
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.
+- In the default Compose deployment, the public FastAPI web container runs as unprivileged UID `10001` with all capabilities dropped and no `/dev/net/tun` or `/etc/wireguard` mount; only the `opnsense-hub-wireguard` sidecar runs as root with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the WireGuard server key volume.
 - Hub only installs `/32` WireGuard `AllowedIPs` for each firewall tunnel IP and never routes customer LAN subnets.
 - Production startup fails closed whenever inline tunnel isolation is disabled or network control is external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, an explicit operator attestation that the external policy was independently verified.
 - Inline startup installs and verifies a complete nftables or iptables/ip6tables policy: established return traffic is allowed, new tunnel input is limited to `HUB_WG_CIDR -> HUB_WG_ADDRESS:HUB_CONTROL_PLANE_PORT/TCP`, all other tunnel input is dropped, and all forwarding originating from `wg0` is dropped regardless of output interface.
@@ -33,7 +34,7 @@ This is intentional:
 - customer LANs must never be routed through the management overlay
 - overlapping customer LANs remain safe because they are never advertised as WireGuard `AllowedIPs`
 
-The forwarding boundary is interface-origin based, not peer-destination based: every packet entering through `wg0` and reaching the forwarding hook is dropped. This blocks `wg0 -> wg0`, `wg0 -> eth0`, the Docker bridge, and any later routed interface even if kernel forwarding is enabled. The input boundary separately permits established return traffic needed by Hub-initiated WebGUI connections and only one new inbound service tuple: source within `HUB_WG_CIDR`, destination equal to the `HUB_WG_ADDRESS`, TCP destination port `HUB_CONTROL_PLANE_PORT`. New ICMP, UDP, alternate-address, alternate-port, and IPv6 input from peers is dropped.
+The forwarding boundary is enforced in the WireGuard sidecar and is interface-origin based, not peer-destination based: every packet entering through `wg0` and reaching the forwarding hook is dropped. This blocks `wg0 -> wg0`, `wg0 -> eth0`, the Docker bridge, and any later routed interface even if kernel forwarding is enabled. The input boundary separately permits established return traffic needed by Hub-initiated WebGUI connections and only one new inbound service tuple: source within `HUB_WG_CIDR`, destination equal to the `HUB_WG_ADDRESS`, TCP destination port `HUB_CONTROL_PLANE_PORT`. New ICMP, UDP, alternate-address, alternate-port, and IPv6 input from peers is dropped.
 
 `NETWORK_CONTROL_MODE=external` and `HUB_MANAGE_FIREWALL_RULES=false` are production-safe only when an equivalent host/sidecar policy has actually been verified and `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true` records that operator attestation. The assertion does not verify policy automatically. The `/32`-only peer-route invariant remains defense in depth and is covered by unit tests so customer LAN CIDRs are not added accidentally.
 

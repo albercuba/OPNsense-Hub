@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     wg_server_private_key_path: str = "/etc/wireguard/server.key"
     wg_server_public_key: str = "replace-with-server-public-key"
     wg_dry_run: bool = False
+    wg_agent_url: str | None = None
+    wg_agent_token: str | None = None
+    wg_agent_mode: bool = False
     hub_enable_ip_forwarding: bool = False
     hub_manage_firewall_rules: bool = True
     hub_control_plane_port: int = 8083
