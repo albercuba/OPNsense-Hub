@@ -72,6 +72,7 @@ from ..services.notification_service import send_security_alert_email
 from ..web import render_template, settings
 
 router = APIRouter()
+RESTORE_CONFIRMATION_PHRASE = "RESTORE HUB"
 
 
 def validate_branding_logo_url(value: str | None) -> str | None:
@@ -175,6 +176,7 @@ def render_settings_template(
             "security_checks": security_checks,
             "active_sessions": active_sessions,
             "backup_verification_result": backup_verification_result,
+            "restore_confirmation_phrase": RESTORE_CONFIRMATION_PHRASE,
             "network_diagnostics": network_diagnostics,
         },
         status_code=status_code,
@@ -796,6 +798,7 @@ async def restore_settings_backup(
     user: Annotated[User, Depends(current_user)],
     backup_file: UploadFile = File(...),
     backup_passphrase: str = Form(""),
+    restore_confirmation: str = Form(""),
 ):
     require_admin(user)
     try:
@@ -819,6 +822,21 @@ async def restore_settings_backup(
             f"Backup restore requests were rate limited for {user.email}.",
         )
         raise exc
+    if restore_confirmation.strip() != RESTORE_CONFIRMATION_PHRASE:
+        write_audit(db, request, "settings.backup.restore.failed", user=user)
+        db.commit()
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=400,
+            backup_verification_result={
+                "ok": False,
+                "filename": backup_file.filename or "backup file",
+                "message": f'Type "{RESTORE_CONFIRMATION_PHRASE}" to confirm replacing this Hub configuration.',
+            },
+        )
     content = await read_upload_limited(
         backup_file,
         settings.max_backup_restore_bytes,

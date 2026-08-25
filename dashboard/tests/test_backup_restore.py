@@ -23,6 +23,7 @@ from app.models import (
     UserDashboardFilter,
 )
 from app.security import hash_secret, hash_session_token, totp_code, utc_now
+from app.routers.settings import RESTORE_CONFIRMATION_PHRASE
 from app.services.backup_service import parse_backup_bundle, restore_backup_bundle
 from app.services.device_backup_crypto import (
     ENCRYPTED_DEVICE_BACKUP_FORMAT,
@@ -1514,7 +1515,10 @@ def test_backup_restore_commits_before_reporting_wireguard_reconcile_failure(mon
             csrf_token = get_csrf(client)
             response = client.post(
                 "/settings/backup/restore",
-                data={"csrf_token": csrf_token},
+                data={
+                    "csrf_token": csrf_token,
+                    "restore_confirmation": RESTORE_CONFIRMATION_PHRASE,
+                },
                 files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
                 follow_redirects=False,
             )
@@ -1535,6 +1539,57 @@ def test_backup_restore_commits_before_reporting_wireguard_reconcile_failure(mon
     assert restored_sessions == []
     assert (target_branding_dir / "logo.png").read_bytes() == PNG_BYTES
     assert target_wg_key_path.read_text().strip() == VALID_WG_PRIVATE_KEY
+
+
+def test_backup_restore_requires_typed_destructive_confirmation(monkeypatch, tmp_path):
+    source_branding_dir = tmp_path / "branding-source-confirmation"
+    source_branding_dir.mkdir(parents=True, exist_ok=True)
+    source_wg_key_path = tmp_path / "wireguard-source-confirmation" / "server.key"
+    source_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
+    source_wg_key_path.write_text(VALID_WG_PRIVATE_KEY + "\n")
+
+    with sqlite_session(tmp_path, "source_restore_confirmation") as source_session:
+        seed_backup_source(source_session)
+        monkeypatch.setattr(settings, "branding_upload_dir", str(source_branding_dir))
+        monkeypatch.setattr(
+            settings, "wg_server_private_key_path", str(source_wg_key_path)
+        )
+        bundle, _filename, _media_type = export_backup_bundle(source_session)
+
+    target_branding_dir = tmp_path / "branding-target-confirmation"
+    target_branding_dir.mkdir(parents=True, exist_ok=True)
+    target_wg_key_path = tmp_path / "wireguard-target-confirmation" / "server.key"
+    target_wg_key_path.parent.mkdir(parents=True, exist_ok=True)
+    target_wg_key_path.write_text(VALID_WG_PRIVATE_KEY_2 + "\n")
+    monkeypatch.setattr(settings, "branding_upload_dir", str(target_branding_dir))
+    monkeypatch.setattr(settings, "wg_server_private_key_path", str(target_wg_key_path))
+
+    with sqlite_session(tmp_path, "target_restore_confirmation") as target_session:
+        acting_admin = seed_restore_target(target_session)
+        configure_test_client(monkeypatch, target_session, acting_admin)
+        with TestClient(app) as client:
+            csrf_token = get_csrf(client)
+            response = client.post(
+                "/settings/backup/restore",
+                data={"csrf_token": csrf_token, "restore_confirmation": "restore hub"},
+                files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
+                follow_redirects=False,
+            )
+        app.dependency_overrides.clear()
+
+        restored_users = target_session.scalars(select(User).order_by(User.email)).all()
+        restored_companies = target_session.scalars(
+            select(Company).order_by(Company.name)
+        ).all()
+        restored_sessions = target_session.scalars(select(SessionToken)).all()
+
+    assert response.status_code == 400
+    assert RESTORE_CONFIRMATION_PHRASE in response.text
+    assert "confirm replacing this Hub configuration" in response.text
+    assert [user.email for user in restored_users] == ["restore-admin@example.com"]
+    assert [company.name for company in restored_companies] == ["Old Company"]
+    assert len(restored_sessions) == 1
+    assert target_wg_key_path.read_text().strip() == VALID_WG_PRIVATE_KEY_2
 
 
 def test_backup_restore_replaces_configuration_and_clears_sessions(
@@ -1571,7 +1626,10 @@ def test_backup_restore_replaces_configuration_and_clears_sessions(
             csrf_token = get_csrf(client)
             response = client.post(
                 "/settings/backup/restore",
-                data={"csrf_token": csrf_token},
+                data={
+                    "csrf_token": csrf_token,
+                    "restore_confirmation": RESTORE_CONFIRMATION_PHRASE,
+                },
                 files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
                 follow_redirects=False,
             )

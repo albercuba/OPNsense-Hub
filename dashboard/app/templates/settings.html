@@ -884,6 +884,26 @@
                 placeholder="Required for encrypted .opnhub backups"
             />
         </label>
+        <div class="inline-note-card" data-state="warning">
+            <strong>Restore replaces this Hub</strong>
+            <p>
+                Restoring a backup replaces users, companies, enrolled devices,
+                integration settings, branding, stored firewall backups, dashboard
+                sessions, and may replace the Hub WireGuard private key. Current
+                users will be signed out after a successful restore.
+            </p>
+        </div>
+        <label class="form-row"
+            >Type {{ restore_confirmation_phrase }} to confirm
+            <input
+                name="restore_confirmation"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                placeholder="{{ restore_confirmation_phrase }}"
+                required
+            />
+        </label>
         <button class="button restore-action" type="submit">
             <i class="fa-solid fa-rotate-left"></i> Restore configuration
         </button>
