@@ -13,6 +13,7 @@ class BackupIntervalOptionParser(HTMLParser):
         self.options: list[dict[str, str]] = []
         self.strong_depth = 0
         self.unmatched_strong_closes = 0
+        self.backup_now_button_classes: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -20,6 +21,10 @@ class BackupIntervalOptionParser(HTMLParser):
             self.in_backup_interval_options = True
         if self.in_backup_interval_options and tag == "option":
             self.options.append(attrs_dict)
+        if tag == "button" and attrs_dict.get("formaction", "").endswith(
+            "/backup-now"
+        ):
+            self.backup_now_button_classes = attrs_dict.get("class", "").split()
         if tag == "strong":
             self.strong_depth += 1
 
@@ -43,3 +48,12 @@ def test_backup_interval_options_are_well_formed():
         {"value": "Months", "data-unit-value": "months"},
     ]
     assert parser.unmatched_strong_closes == 0
+
+
+def test_backup_now_uses_green_backup_action_style():
+    parser = BackupIntervalOptionParser()
+    parser.feed(DEVICE_TEMPLATE.read_text())
+
+    assert "button" in parser.backup_now_button_classes
+    assert "backup-action" in parser.backup_now_button_classes
+    assert "secondary" not in parser.backup_now_button_classes
