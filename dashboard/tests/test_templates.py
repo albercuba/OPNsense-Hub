@@ -100,6 +100,10 @@ def test_settings_navigation_is_grouped_by_admin_area():
 
     assert positions == sorted(positions)
     assert len(parser.settings_section_details) == 4
+    assert all(
+        "side-menu-group" in (section.get("class") or "")
+        for section in parser.settings_section_details
+    )
     assert "['manage-companies', 'manage-users', 'branding'] %}open" in source
     assert "['microsoft-365', 'local-ad', 'email-settings'] %}open" in source
     assert "['backup', 'retention'] %}open" in source
