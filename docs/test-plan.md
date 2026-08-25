@@ -117,6 +117,8 @@ On a disposable OPNsense VM:
 
 ## Migration and production readiness tests
 
+- Verify revision `0001_current_schema_baseline` is frozen as explicit Alembic operations and does not import current ORM models, `Base.metadata`, `create_all`, or `drop_all`.
+- Generate PostgreSQL offline SQL for a fresh `head` upgrade, a legacy `0001_current_schema_baseline:head` upgrade, and an incremental `0014_pending_mfa_login_attempts:head` upgrade; verify representative baseline tables and later schema changes are present and Alembic reports a single current head.
 - Upgrade a database at revision `0010_device_proxy_sessions` to `0011_connector_access_sessions`; verify the phase constraint accepts `connector` records, `dashboard_session_id` references `sessions(id)` with cascade deletion, and existing access-session rows remain intact.
 - Downgrade only in a disposable database; verify connector rows are removed before the old phase constraint is restored.
 - Upgrade both a revision-`0011` database containing plaintext `device_backups.content` and a fresh database to `0012_encrypted_device_backups`. Verify plaintext rows are deleted, backup timestamps are reset, the encrypted columns/constraint exist, and enabled capable devices upload replacements.

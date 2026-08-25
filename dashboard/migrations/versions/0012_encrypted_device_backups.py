@@ -12,6 +12,7 @@ from importlib import import_module
 import sqlalchemy as sa
 
 op = import_module("alembic.op")
+context = import_module("alembic.context")
 
 revision = "0012_encrypted_device_backups"
 down_revision = "0011_connector_access_sessions"
@@ -47,6 +48,27 @@ def upgrade() -> None:
         "UPDATE devices SET backup_last_uploaded_at = NULL, "
         "backup_last_requested_at = CASE WHEN backup_enabled THEN now() ELSE NULL END"
     )
+
+    if context.is_offline_mode():
+        op.alter_column(
+            "device_backups", "content", new_column_name="encrypted_payload"
+        )
+        op.add_column(
+            "device_backups",
+            sa.Column(
+                "backup_format",
+                sa.String(length=64),
+                nullable=False,
+                server_default=_FORMAT,
+            ),
+        )
+        op.alter_column("device_backups", "backup_format", server_default=None)
+        op.create_check_constraint(
+            _CONSTRAINT,
+            "device_backups",
+            f"backup_format = '{_FORMAT}'",
+        )
+        return
 
     columns = _column_names()
     if "content" in columns and "encrypted_payload" not in columns:
@@ -89,6 +111,14 @@ def downgrade() -> None:
         "UPDATE devices SET backup_last_uploaded_at = NULL, "
         "backup_last_requested_at = NULL"
     )
+    if context.is_offline_mode():
+        op.drop_constraint(_CONSTRAINT, "device_backups", type_="check")
+        op.drop_column("device_backups", "backup_format")
+        op.alter_column(
+            "device_backups", "encrypted_payload", new_column_name="content"
+        )
+        return
+
     if _CONSTRAINT in _constraint_names():
         op.drop_constraint(_CONSTRAINT, "device_backups", type_="check")
 

@@ -12,6 +12,7 @@ from importlib import import_module
 import sqlalchemy as sa
 
 op = import_module("alembic.op")
+context = import_module("alembic.context")
 
 revision = "0011_connector_access_sessions"
 down_revision = "0010_device_proxy_sessions"
@@ -34,6 +35,29 @@ def _phase_constraint() -> dict[str, object] | None:
 
 
 def upgrade() -> None:
+    if context.is_offline_mode():
+        op.drop_constraint(_PHASE_CONSTRAINT, "device_proxy_sessions", type_="check")
+        op.create_check_constraint(
+            _PHASE_CONSTRAINT,
+            "device_proxy_sessions",
+            "phase IN ('grant', 'session', 'connector')",
+        )
+        op.add_column(
+            "device_proxy_sessions",
+            sa.Column(
+                "dashboard_session_id",
+                sa.Uuid(),
+                sa.ForeignKey("sessions.id", ondelete="CASCADE"),
+                nullable=True,
+            ),
+        )
+        op.create_index(
+            _SESSION_INDEX,
+            "device_proxy_sessions",
+            ["dashboard_session_id"],
+        )
+        return
+
     phase_constraint = _phase_constraint()
     phase_sql = str((phase_constraint or {}).get("sqltext") or "").lower()
     if "connector" not in phase_sql:
@@ -75,6 +99,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DELETE FROM device_proxy_sessions WHERE phase = 'connector'")
+    if context.is_offline_mode():
+        op.drop_index(_SESSION_INDEX, table_name="device_proxy_sessions")
+        op.drop_column("device_proxy_sessions", "dashboard_session_id")
+        op.drop_constraint(_PHASE_CONSTRAINT, "device_proxy_sessions", type_="check")
+        op.create_check_constraint(
+            _PHASE_CONSTRAINT,
+            "device_proxy_sessions",
+            "phase IN ('grant', 'session')",
+        )
+        return
+
     indexes = {
         index["name"]
         for index in _inspector().get_indexes("device_proxy_sessions")
