@@ -104,6 +104,7 @@ def test_settings_navigation_is_grouped_by_admin_area():
     assert 'data-settings-submenu' in source
     assert 'data-settings-section' in source
     assert 'addEventListener("toggle"' in source
+    assert "document</script>" not in source
     assert "\ndiv>" not in source
     assert ">Security</a" not in source
 
