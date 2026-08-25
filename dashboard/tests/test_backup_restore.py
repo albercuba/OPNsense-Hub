@@ -582,7 +582,7 @@ def test_network_settings_page_renders_diagnostics(monkeypatch, tmp_path):
             ],
         )
         monkeypatch.setattr(
-            "app.services.network_diagnostics.verify_nftables_rule_present",
+            "app.services.network_diagnostics.verify_firewall_rules_present",
             lambda _settings: None,
         )
         configure_test_client(monkeypatch, session, admin)
@@ -608,7 +608,7 @@ def test_build_isolation_check_distinguishes_external_isolation(monkeypatch, tmp
     )
     monkeypatch.setattr(
         network_diagnostics,
-        "verify_nftables_rule_present",
+        "verify_firewall_rules_present",
         lambda _settings: (_ for _ in ()).throw(RuntimeError("should not run")),
     )
 

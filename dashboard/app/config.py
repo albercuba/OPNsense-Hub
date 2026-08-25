@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     wg_dry_run: bool = False
     hub_enable_ip_forwarding: bool = False
     hub_manage_firewall_rules: bool = True
+    hub_control_plane_port: int = 8083
+    hub_external_isolation_policy_verified: bool = False
     proxy_verify_tls: bool = True
     allow_insecure_proxy_tls_in_production: bool = False
     opnsense_gui_port: int = 443

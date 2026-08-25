@@ -8,11 +8,10 @@
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.
 - Hub only installs `/32` WireGuard `AllowedIPs` for each firewall tunnel IP and never routes customer LAN subnets.
-- Startup validation now fails closed on unsafe forwarding/isolation combinations, such as enabling IP forwarding while moving network control outside the app or disabling inline isolation rule management.
-- When inline isolation is enabled, startup explicitly verifies that the `wg0 -> wg0` drop rule exists after installation.
+- Production startup fails closed whenever inline tunnel isolation is disabled or network control is external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, an explicit operator attestation that the external policy was independently verified.
+- Inline startup installs and verifies a complete nftables or iptables/ip6tables policy: established return traffic is allowed, new tunnel input is limited to `HUB_WG_CIDR -> HUB_WG_ADDRESS:HUB_CONTROL_PLANE_PORT/TCP`, all other tunnel input is dropped, and all forwarding originating from `wg0` is dropped regardless of output interface.
 - The OPNsense plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the tunnel.
-- Hub disables IPv4 and IPv6 forwarding by default unless `HUB_ENABLE_IP_FORWARDING=true`.
-- When enabled, Hub startup installs an idempotent `wg0 -> wg0` forward-drop isolation rule using nftables or iptables so one firewall cannot talk to another through the Hub.
+- Hub disables IPv4 and IPv6 forwarding by default unless `HUB_ENABLE_IP_FORWARDING=true`. Even when kernel forwarding is enabled, the managed tunnel policy continues to default-drop forwarding from `wg0`.
 - Dashboard session, CSRF, company-scoped RBAC, device target validation, and revocation checks happen before a connector token is issued.
 - Connector tokens are random, short-lived, device-scoped, bound to the issuing dashboard session, stored only as hashes, returned in `no-store` pages, and sent to WSS only in an `Authorization: Bearer` header.
 - The connector accepts the token only from a hidden prompt, standard input, or `OPNSENSE_HUB_CONNECTOR_TOKEN`; no CLI token option or token-bearing URL exists.
@@ -33,7 +32,9 @@ This is intentional:
 - customer LANs must never be routed through the management overlay
 - overlapping customer LANs remain safe because they are never advertised as WireGuard `AllowedIPs`
 
-The `wg0 -> wg0` forward-drop rule is a defense-in-depth control that prevents firewall-to-firewall forwarding on the Hub even if OS forwarding or other host routing changes are introduced later. The runtime now hard-fails if unsafe forwarding/isolation settings are combined, and the `/32`-only peer-route invariant is covered by unit tests so customer LAN CIDRs are not added to peer routes by accident.
+The forwarding boundary is interface-origin based, not peer-destination based: every packet entering through `wg0` and reaching the forwarding hook is dropped. This blocks `wg0 -> wg0`, `wg0 -> eth0`, the Docker bridge, and any later routed interface even if kernel forwarding is enabled. The input boundary separately permits established return traffic needed by Hub-initiated WebGUI connections and only one new inbound service tuple: source within `HUB_WG_CIDR`, destination equal to the `HUB_WG_ADDRESS`, TCP destination port `HUB_CONTROL_PLANE_PORT`. New ICMP, UDP, alternate-address, alternate-port, and IPv6 input from peers is dropped.
+
+`NETWORK_CONTROL_MODE=external` and `HUB_MANAGE_FIREWALL_RULES=false` are production-safe only when an equivalent host/sidecar policy has actually been verified and `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true` records that operator attestation. The assertion does not verify policy automatically. The `/32`-only peer-route invariant remains defense in depth and is covered by unit tests so customer LAN CIDRs are not added accidentally.
 
 ## Default connector boundary
 
@@ -107,11 +108,11 @@ Never log or display these values:
 - `security: use a production rate-limit backend` — prefer `RATE_LIMIT_BACKEND=redis` with `RATE_LIMIT_REDIS_URL` configured, or enforce rate limits at the edge when using `RATE_LIMIT_BACKEND=edge`.
 - `security: keep MFA throttling enabled` — tune `RATE_LIMIT_MFA_ATTEMPTS` and `RATE_LIMIT_MFA_WINDOW_SECONDS` conservatively for internet-facing deployments.
 - `security: bound connector, relay, and restore resources` — review `CONNECTOR_SESSION_TTL_MINUTES`, `CONNECTOR_MAX_CONNECTIONS`, `CONNECTOR_CONNECTION_MAX_SECONDS`, `CONNECTOR_AUTHORIZATION_RECHECK_SECONDS`, device-access launch rate limits, all `PUBLIC_L4_RELAY_*` limits, and backup/restore size limits for your deployment.
-- `security: minimize web-app privilege` — use `NETWORK_CONTROL_MODE=external` when WireGuard bootstrap and runtime firewall management are handled by a sidecar or host service.
+- `security: minimize web-app privilege` — use `NETWORK_CONTROL_MODE=external` only when a sidecar or host service owns WireGuard and an equivalent full tunnel input/forward policy has been independently verified; then set `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`.
 - `security: keep browser hardening headers enabled` — leave `SECURITY_HEADERS_ENABLED=true` and only relax `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, or `PERMISSIONS_POLICY` intentionally.
 - `security: keep management-only routing` — continue rejecting customer LAN routes in WireGuard `AllowedIPs` to avoid cross-company routing and overlapping subnet conflicts.
-- `security: keep IP forwarding disabled` — leave `HUB_ENABLE_IP_FORWARDING=false` unless you intentionally manage peer routing outside the app.
-- `security: keep Hub firewall isolation enabled` — leave `HUB_MANAGE_FIREWALL_RULES=true` so startup installs the `wg0 -> wg0` forward-drop rule.
+- `security: keep IP forwarding disabled` — leave `HUB_ENABLE_IP_FORWARDING=false` unless other application routing requires it; enabling it never permits forwarding from `wg0`.
+- `security: keep Hub firewall isolation enabled` — use `NETWORK_CONTROL_MODE=inline`, `HUB_MANAGE_FIREWALL_RULES=true`, `HUB_CONTROL_PLANE_PORT=8083`, and `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=false` for the bundled deployment.
 - `security: manage firewall certificates` — use an internal/public CA or explicit trust so local connector hostnames and exact optional relay hostnames validate without trust bypasses.
 - `security: isolate WireGuard management` — for higher-assurance deployments, consider moving WireGuard bootstrap and peer updates into a minimal privileged sidecar or host service.
 - `security: keep login and enrollment rate limits enabled` — tune the existing IP/user limits conservatively and use a shared production backend.

@@ -63,7 +63,7 @@ docker-compose.yml
 - Device tokens stored hashed; heartbeat uses bearer token auth.
 - Automatic Hub WireGuard server bootstrap and peer restore on container startup.
 - `/32`-only WireGuard routes for firewall web UI access; customer LAN subnets are never routed.
-- Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and optional automatic Hub firewall isolation rules.
+- Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and verified default-deny tunnel input/forwarding rules or an explicitly attested external equivalent.
 - WireGuard peer add/remove wrapper with public-key/IP validation.
 - Firewall revoke flow invalidates device token and removes WireGuard peer.
 - Audit logs for login, company creation, enrollment, revoke, connector access, and optional relay access, with throttled `device.view` entries to reduce browsing noise.
@@ -101,7 +101,7 @@ INITIAL_ADMIN_PASSWORD=change-me
 
 `.env.example` now includes the full set of supported runtime variables, including retention, archive, rate-limit, health-check, migration, branding, and WireGuard-related settings.
 
-By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, restores enrolled peers from the database, disables IP forwarding inside the container, and installs an idempotent `wg0 -> wg0` forward-drop rule unless you explicitly opt out.
+By default, the app container automatically configures the Hub WireGuard server interface on startup. It generates and persists the Hub server private key under the `opnsense_hub_wg` Docker volume, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, exposes UDP `51820`, restores enrolled peers from the database, disables IP forwarding inside the container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
 
 Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
 
@@ -152,7 +152,11 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    TRUSTED_PROXY_CIDRS=<reverse-proxy-ip-or-cidr>
    RATE_LIMIT_BACKEND=redis
    RATE_LIMIT_REDIS_URL=redis://opnsense-hub-redis:6379/0
-   NETWORK_CONTROL_MODE=external
+   NETWORK_CONTROL_MODE=inline
+   HUB_MANAGE_FIREWALL_RULES=true
+   HUB_ENABLE_IP_FORWARDING=false
+   HUB_CONTROL_PLANE_PORT=8083
+   HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=false
    HUB_WG_ENDPOINT=hub.example.com:51820
    SECRET_KEY=<long-random-secret>
    SECRET_ENCRYPTION_KEY=<separate-long-random-secret>
@@ -309,7 +313,15 @@ The `opnsense-hub-api` container configures WireGuard automatically when `WG_DRY
 6. Restores all non-revoked device peers from the database on startup.
 7. Adds each newly enrolled firewall as a `/32` peer.
 8. Disables IPv4/IPv6 forwarding unless `HUB_ENABLE_IP_FORWARDING=true`.
-9. Installs an idempotent isolation rule that drops forwarded `wg0 -> wg0` traffic when `HUB_MANAGE_FIREWALL_RULES=true`.
+9. Installs and verifies a complete nftables or iptables/ip6tables tunnel policy when `HUB_MANAGE_FIREWALL_RULES=true`:
+   - accept established/related return traffic entering `wg0`, preserving Hub-initiated WebGUI, health-check, connector, and relay connections
+   - accept new IPv4 TCP connections only from `HUB_WG_CIDR` to the exact `HUB_WG_ADDRESS` and `HUB_CONTROL_PLANE_PORT`
+   - drop every other IPv4/IPv6 packet entering from `wg0`
+   - drop every forwarded packet whose input interface is `wg0`, regardless of output interface
+
+`HUB_CONTROL_PLANE_PORT` must be the TCP port bound by the control-plane process inside the WireGuard network namespace; the bundled API container uses `8083`. Keep `NETWORK_CONTROL_MODE=inline`, `HUB_MANAGE_FIREWALL_RULES=true`, and `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=false` for the bundled deployment.
+
+When a sidecar or host firewall owns networking, set `NETWORK_CONTROL_MODE=external` or disable `HUB_MANAGE_FIREWALL_RULES` only after independently verifying an equivalent policy, then set `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true` as an operator attestation. Production startup fails without that attestation. The external policy must allow established return traffic, allow new tunnel input only to the exact Hub address/control-plane TCP port, default-drop all other tunnel input, and default-drop all forwarding originating from the WireGuard interface. `HUB_ENABLE_IP_FORWARDING=true` does not relax these requirements.
 
 AllowedIPs are intentionally narrow:
 
@@ -340,7 +352,7 @@ On connect, the OPNsense plugin provisions the firewall side for Hub access:
 - Adds one narrow pass rule allowing the Hub tunnel IP, for example `100.96.0.1/32`, to reach `This Firewall` on the configured WebGUI port.
 - If WebGUI listen interfaces are explicitly restricted, adds the assigned `OPNHUB` interface to that list.
 
-It does not add customer LAN routes or broad allow rules, and the Hub host drops forwarded `wg0 -> wg0` traffic so enrolled firewalls cannot talk to one another through the overlay.
+It does not add customer LAN routes or broad allow rules. The Hub drops all forwarding originating from `wg0`, so an enrolled firewall cannot reach another peer, the container's Docker network, `eth0`, or another routed network. Tunnel input is limited to established return traffic and the exact control-plane destination.
 
 ## Firmware update status checks
 
@@ -407,6 +419,7 @@ Set `APP_ENV=production` to enable strict startup validation. In production the 
 - `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
 - `PROXY_PUBLIC_URL`, which supplies the optional relay base hostname, is not HTTPS, is invalid, or is not distinct from `PUBLIC_URL`
 - connector limits are invalid, or the public relay is enabled without `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` and valid relay limits
+- `HUB_CONTROL_PLANE_PORT` is invalid, or inline tunnel policy management is disabled/external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`
 - the retained `PROXY_VERIFY_TLS` setting is `false` without `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`; the default connector still leaves firewall TLS validation to the user's browser
 
 In development the same conditions remain usable but are logged as warnings.

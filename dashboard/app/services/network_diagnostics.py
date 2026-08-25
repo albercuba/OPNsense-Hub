@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import get_settings
-from ..hardening import isolation_invariant_errors, verify_nftables_rule_present
+from ..hardening import isolation_invariant_errors, verify_firewall_rules_present
 from ..models import AuditLog, Company, Device
 from ..security import utc_now
 from ..wireguard import (
@@ -141,7 +141,7 @@ def build_isolation_check() -> dict[str, Any]:
 
     runtime_error = None
     try:
-        verify_nftables_rule_present(settings)
+        verify_firewall_rules_present(settings)
     except Exception as exc:  # pragma: no cover - defensive runtime check
         runtime_error = str(exc)
     if runtime_error:
@@ -157,7 +157,7 @@ def build_isolation_check() -> dict[str, Any]:
         "label": "Isolation verified",
         "summary": "No firewall should be able to reach another firewall through the Hub tunnel.",
         "details": [
-            f"Inline isolation rule present on {settings.wg_interface}.",
+            f"Inline tunnel input/forward isolation policy present on {settings.wg_interface}.",
             "Hub routes each firewall only to its own tunnel /32.",
             f"Firewall clients should route only the Hub tunnel IP {client_allowed_ips()}.",
         ],

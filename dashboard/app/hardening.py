@@ -1,5 +1,6 @@
 import ipaddress
 import logging
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -68,18 +69,16 @@ def _trusted_proxy_networks(
 def isolation_invariant_errors(settings: Settings) -> list[str]:
     errors: list[str] = []
     mode = settings.network_control_mode.strip().lower()
-    if settings.hub_enable_ip_forwarding and mode == "external":
-        errors.append(
-            "Do not set HUB_ENABLE_IP_FORWARDING=true with NETWORK_CONTROL_MODE=external unless isolation is enforced and verified outside the app"
-        )
+    app_manages_isolation = mode == "inline" and settings.hub_manage_firewall_rules
     if (
-        settings.hub_enable_ip_forwarding
-        and mode == "inline"
-        and not settings.hub_manage_firewall_rules
+        not app_manages_isolation
+        and not settings.hub_external_isolation_policy_verified
     ):
         errors.append(
-            "Set HUB_MANAGE_FIREWALL_RULES=true when HUB_ENABLE_IP_FORWARDING=true in NETWORK_CONTROL_MODE=inline"
+            "Set HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true only after an external policy has been verified to default-drop forwarding from the WireGuard interface and restrict tunnel input to the Hub control plane"
         )
+    if not 1 <= settings.hub_control_plane_port <= 65535:
+        errors.append("Set HUB_CONTROL_PLANE_PORT to a valid TCP port")
     return errors
 
 
@@ -312,7 +311,8 @@ def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
         return
     if settings.hub_enable_ip_forwarding:
         logger.warning(
-            "HUB_ENABLE_IP_FORWARDING=true: routing between tunnel peers must be controlled externally"
+            "HUB_ENABLE_IP_FORWARDING=true: kernel forwarding remains enabled, but managed policy still drops every forwarded packet originating from %s",
+            settings.wg_interface,
         )
         return
     commands = [
@@ -332,97 +332,325 @@ def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
     logger.info("Disabled IPv4 and IPv6 forwarding inside the Hub runtime")
 
 
-NFT_DROP_RULE = 'iifname "{iface}" oifname "{iface}" counter drop'
+NFT_FORWARD_DROP_RULE = 'iifname "{iface}" counter drop'
+NFT_INPUT_ESTABLISHED_RULE = (
+    'iifname "{iface}" ct state established,related counter accept'
+)
+NFT_INPUT_CONTROL_RULE = (
+    'iifname "{iface}" ip saddr {network} ip daddr {hub_ip} '
+    "tcp dport {port} ct state new counter accept"
+)
+NFT_INPUT_DROP_RULE = 'iifname "{iface}" counter drop'
+IPTABLES_INPUT_CHAIN = "OPNHUB_INPUT"
+IPTABLES_FORWARD_CHAIN = "OPNHUB_FORWARD"
+
+
+def _wireguard_rule_context(
+    settings: Settings,
+) -> tuple[str, ipaddress.IPv4Network, ipaddress.IPv4Address, int]:
+    try:
+        network = ipaddress.ip_network(settings.hub_wg_cidr, strict=False)
+        hub_interface = ipaddress.ip_interface(settings.hub_wg_address)
+    except ValueError as exc:
+        raise StartupHardeningError(
+            "HUB_WG_CIDR and HUB_WG_ADDRESS must be valid before installing isolation rules"
+        ) from exc
+    if not isinstance(network, ipaddress.IPv4Network) or not isinstance(
+        hub_interface, ipaddress.IPv4Interface
+    ):
+        raise StartupHardeningError("Hub WireGuard isolation currently requires IPv4")
+    if hub_interface.ip not in network:
+        raise StartupHardeningError("HUB_WG_ADDRESS must be inside HUB_WG_CIDR")
+    if not 1 <= settings.hub_control_plane_port <= 65535:
+        raise StartupHardeningError("HUB_CONTROL_PLANE_PORT must be a valid TCP port")
+    return (
+        settings.wg_interface,
+        network,
+        hub_interface.ip,
+        settings.hub_control_plane_port,
+    )
+
+
+def _normalized_nft_rule_output(value: str) -> str:
+    return re.sub(r"counter(?: packets \d+ bytes \d+)?", "counter", value)
 
 
 def verify_nftables_rule_present(settings: Settings, runner=run_command) -> None:
-    iface = settings.wg_interface
-    chain_args = ["nft", "list", "chain", "inet", "opnsense_hub", "forward"]
-    chain_result = runner(chain_args)
-    ensure_command_ok(chain_result, chain_args)
-    rule_text = NFT_DROP_RULE.format(iface=iface)
-    if rule_text not in f"{chain_result.stdout}\n{chain_result.stderr}":
+    iface, network, hub_ip, port = _wireguard_rule_context(settings)
+    input_args = ["nft", "list", "chain", "inet", "opnsense_hub", "input"]
+    forward_args = ["nft", "list", "chain", "inet", "opnsense_hub", "forward"]
+    input_result = runner(input_args)
+    forward_result = runner(forward_args)
+    ensure_command_ok(input_result, input_args)
+    ensure_command_ok(forward_result, forward_args)
+    input_text = _normalized_nft_rule_output(
+        f"{input_result.stdout}\n{input_result.stderr}"
+    )
+    forward_text = _normalized_nft_rule_output(
+        f"{forward_result.stdout}\n{forward_result.stderr}"
+    )
+    required_input_rules = (
+        NFT_INPUT_ESTABLISHED_RULE.format(iface=iface),
+        NFT_INPUT_CONTROL_RULE.format(
+            iface=iface, network=network, hub_ip=hub_ip, port=port
+        ),
+        NFT_INPUT_DROP_RULE.format(iface=iface),
+    )
+    if any(rule not in input_text for rule in required_input_rules):
         raise StartupHardeningError(
-            f"Hub firewall isolation rule for {iface} is missing after installation"
+            f"Hub tunnel input policy for {iface} is incomplete after installation"
         )
+    if NFT_FORWARD_DROP_RULE.format(iface=iface) not in forward_text:
+        raise StartupHardeningError(
+            f"Hub forwarding default-drop rule for {iface} is missing after installation"
+        )
+
+
+def _iptables_input_rules(settings: Settings) -> list[list[str]]:
+    iface, network, hub_ip, port = _wireguard_rule_context(settings)
+    return [
+        [
+            "-i",
+            iface,
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED,RELATED",
+            "-j",
+            "ACCEPT",
+        ],
+        [
+            "-i",
+            iface,
+            "-s",
+            str(network),
+            "-d",
+            f"{hub_ip}/32",
+            "-p",
+            "tcp",
+            "--dport",
+            str(port),
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "NEW",
+            "-j",
+            "ACCEPT",
+        ],
+        ["-i", iface, "-j", "DROP"],
+    ]
 
 
 def verify_iptables_rule_present(settings: Settings, runner=run_command) -> None:
-    iface = settings.wg_interface
-    check_args = ["iptables", "-C", "FORWARD", "-i", iface, "-o", iface, "-j", "DROP"]
-    ensure_command_ok(runner(check_args), check_args)
+    iface, _network, _hub_ip, _port = _wireguard_rule_context(settings)
+    checks = [
+        ["iptables", "-C", "INPUT", "-i", iface, "-j", IPTABLES_INPUT_CHAIN],
+        *(
+            ["iptables", "-C", IPTABLES_INPUT_CHAIN, *rule]
+            for rule in _iptables_input_rules(settings)
+        ),
+        [
+            "iptables",
+            "-C",
+            "FORWARD",
+            "-i",
+            iface,
+            "-j",
+            IPTABLES_FORWARD_CHAIN,
+        ],
+        ["iptables", "-C", IPTABLES_FORWARD_CHAIN, "-j", "DROP"],
+        ["ip6tables", "-C", "INPUT", "-i", iface, "-j", "DROP"],
+        ["ip6tables", "-C", "FORWARD", "-i", iface, "-j", "DROP"],
+    ]
+    for args in checks:
+        ensure_command_ok(runner(args), args)
 
 
 def install_nftables_rules(settings: Settings, runner=run_command) -> None:
-    iface = settings.wg_interface
+    iface, network, hub_ip, port = _wireguard_rule_context(settings)
     table_args = ["nft", "list", "table", "inet", "opnsense_hub"]
-    if runner(table_args).returncode != 0:
-        ensure_command_ok(
-            runner(["nft", "add", "table", "inet", "opnsense_hub"]),
-            ["nft", "add", "table", "inet", "opnsense_hub"],
-        )
-    chain_args = ["nft", "list", "chain", "inet", "opnsense_hub", "forward"]
-    chain_result = runner(chain_args)
-    if chain_result.returncode != 0:
-        ensure_command_ok(
-            runner(
-                [
-                    "nft",
-                    "add",
-                    "chain",
-                    "inet",
-                    "opnsense_hub",
-                    "forward",
-                    "{",
-                    "type",
-                    "filter",
-                    "hook",
-                    "forward",
-                    "priority",
-                    "0",
-                    ";",
-                    "policy",
-                    "accept",
-                    ";",
-                    "}",
-                ]
-            ),
-            ["nft", "add", "chain", "inet", "opnsense_hub", "forward", "..."],
-        )
-        chain_result = runner(chain_args)
-    rule_text = NFT_DROP_RULE.format(iface=iface)
-    if rule_text not in f"{chain_result.stdout}\n{chain_result.stderr}":
-        ensure_command_ok(
-            runner(
-                [
-                    "nft",
-                    "add",
-                    "rule",
-                    "inet",
-                    "opnsense_hub",
-                    "forward",
-                    "iifname",
-                    iface,
-                    "oifname",
-                    iface,
-                    "counter",
-                    "drop",
-                ]
-            ),
-            ["nft", "add", "rule", "inet", "opnsense_hub", "forward", "..."],
-        )
+    if runner(table_args).returncode == 0:
+        delete_args = ["nft", "delete", "table", "inet", "opnsense_hub"]
+        ensure_command_ok(runner(delete_args), delete_args)
+    add_table_args = ["nft", "add", "table", "inet", "opnsense_hub"]
+    ensure_command_ok(runner(add_table_args), add_table_args)
+    for chain, hook in (("input", "input"), ("forward", "forward")):
+        args = [
+            "nft",
+            "add",
+            "chain",
+            "inet",
+            "opnsense_hub",
+            chain,
+            "{",
+            "type",
+            "filter",
+            "hook",
+            hook,
+            "priority",
+            "-100",
+            ";",
+            "policy",
+            "accept",
+            ";",
+            "}",
+        ]
+        ensure_command_ok(runner(args), args)
+    rules = [
+        [
+            "nft",
+            "add",
+            "rule",
+            "inet",
+            "opnsense_hub",
+            "input",
+            "iifname",
+            iface,
+            "ct",
+            "state",
+            "established,related",
+            "counter",
+            "accept",
+        ],
+        [
+            "nft",
+            "add",
+            "rule",
+            "inet",
+            "opnsense_hub",
+            "input",
+            "iifname",
+            iface,
+            "ip",
+            "saddr",
+            str(network),
+            "ip",
+            "daddr",
+            str(hub_ip),
+            "tcp",
+            "dport",
+            str(port),
+            "ct",
+            "state",
+            "new",
+            "counter",
+            "accept",
+        ],
+        [
+            "nft",
+            "add",
+            "rule",
+            "inet",
+            "opnsense_hub",
+            "input",
+            "iifname",
+            iface,
+            "counter",
+            "drop",
+        ],
+        [
+            "nft",
+            "add",
+            "rule",
+            "inet",
+            "opnsense_hub",
+            "forward",
+            "iifname",
+            iface,
+            "counter",
+            "drop",
+        ],
+    ]
+    for args in rules:
+        ensure_command_ok(runner(args), args)
+
+
+def _ensure_iptables_chain(
+    command: str, chain: str, runner=run_command
+) -> None:
+    if runner([command, "-L", chain, "-n"]).returncode != 0:
+        create_args = [command, "-N", chain]
+        ensure_command_ok(runner(create_args), create_args)
+    flush_args = [command, "-F", chain]
+    ensure_command_ok(runner(flush_args), flush_args)
+
+
+def _install_iptables_jump(
+    parent_chain: str, iface: str, target_chain: str, runner=run_command
+) -> None:
+    check_args = [
+        "iptables",
+        "-C",
+        parent_chain,
+        "-i",
+        iface,
+        "-j",
+        target_chain,
+    ]
+    if runner(check_args).returncode == 0:
+        delete_args = [
+            "iptables",
+            "-D",
+            parent_chain,
+            "-i",
+            iface,
+            "-j",
+            target_chain,
+        ]
+        ensure_command_ok(runner(delete_args), delete_args)
+    insert_args = [
+        "iptables",
+        "-I",
+        parent_chain,
+        "1",
+        "-i",
+        iface,
+        "-j",
+        target_chain,
+    ]
+    ensure_command_ok(runner(insert_args), insert_args)
 
 
 def install_iptables_rules(settings: Settings, runner=run_command) -> None:
-    iface = settings.wg_interface
-    check_args = ["iptables", "-C", "FORWARD", "-i", iface, "-o", iface, "-j", "DROP"]
-    if runner(check_args).returncode == 0:
+    iface, _network, _hub_ip, _port = _wireguard_rule_context(settings)
+    _ensure_iptables_chain("iptables", IPTABLES_INPUT_CHAIN, runner=runner)
+    _ensure_iptables_chain("iptables", IPTABLES_FORWARD_CHAIN, runner=runner)
+    for rule in _iptables_input_rules(settings):
+        args = ["iptables", "-A", IPTABLES_INPUT_CHAIN, *rule]
+        ensure_command_ok(runner(args), args)
+    forward_drop_args = ["iptables", "-A", IPTABLES_FORWARD_CHAIN, "-j", "DROP"]
+    ensure_command_ok(runner(forward_drop_args), forward_drop_args)
+    _install_iptables_jump("INPUT", iface, IPTABLES_INPUT_CHAIN, runner=runner)
+    _install_iptables_jump("FORWARD", iface, IPTABLES_FORWARD_CHAIN, runner=runner)
+    for chain in ("INPUT", "FORWARD"):
+        check_args = ["ip6tables", "-C", chain, "-i", iface, "-j", "DROP"]
+        if runner(check_args).returncode != 0:
+            insert_args = [
+                "ip6tables",
+                "-I",
+                chain,
+                "1",
+                "-i",
+                iface,
+                "-j",
+                "DROP",
+            ]
+            ensure_command_ok(runner(insert_args), insert_args)
+
+
+def verify_firewall_rules_present(
+    settings: Settings,
+    runner=run_command,
+    which=shutil.which,
+) -> None:
+    if which("nft"):
+        verify_nftables_rule_present(settings, runner=runner)
         return
-    ensure_command_ok(
-        runner(
-            ["iptables", "-I", "FORWARD", "1", "-i", iface, "-o", iface, "-j", "DROP"]
-        ),
-        ["iptables", "-I", "FORWARD", "1", "-i", iface, "-o", iface, "-j", "DROP"],
+    if which("iptables") and which("ip6tables"):
+        verify_iptables_rule_present(settings, runner=runner)
+        return
+    raise StartupHardeningError(
+        "Neither nftables nor the complete iptables/ip6tables toolset is available to verify Hub isolation rules"
     )
 
 
@@ -445,22 +673,22 @@ def install_firewall_rules(
     try:
         if which("nft"):
             install_nftables_rules(settings, runner=runner)
-            verify_nftables_rule_present(settings, runner=runner)
+            verify_firewall_rules_present(settings, runner=runner, which=which)
             logger.info(
-                "Installed and verified nftables isolation rule for %s",
+                "Installed and verified nftables tunnel isolation policy for %s",
                 settings.wg_interface,
             )
             return
-        if which("iptables"):
+        if which("iptables") and which("ip6tables"):
             install_iptables_rules(settings, runner=runner)
-            verify_iptables_rule_present(settings, runner=runner)
+            verify_firewall_rules_present(settings, runner=runner, which=which)
             logger.info(
-                "Installed and verified iptables isolation rule for %s",
+                "Installed and verified iptables/ip6tables tunnel isolation policy for %s",
                 settings.wg_interface,
             )
             return
         raise StartupHardeningError(
-            "Neither nft nor iptables is available to install Hub isolation rules"
+            "Neither nftables nor the complete iptables/ip6tables toolset is available to install Hub isolation rules"
         )
     except Exception as exc:
         if should_fail_closed(settings):

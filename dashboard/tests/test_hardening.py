@@ -25,7 +25,7 @@ def production_settings(**overrides):
         "session_secure": True,
         "proxy_verify_tls": True,
         "wg_dry_run": False,
-        "allowed_hosts": "hub.example.com",
+        "allowed_hosts": "hub.example.com,proxy.example.com",
         "rate_limit_backend": "edge",
     }
     values.update(overrides)
@@ -158,22 +158,61 @@ def test_runtime_validation_accepts_explicit_hardened_public_l4_relay():
     )
 
 
-def test_isolation_invariant_errors_reject_unsafe_forwarding_combinations():
-    external = production_settings(
-        network_control_mode="external",
-        hub_enable_ip_forwarding=True,
-    )
-    inline_without_rules = production_settings(
-        network_control_mode="inline",
-        hub_enable_ip_forwarding=True,
-        hub_manage_firewall_rules=False,
-    )
+def test_isolation_invariant_errors_require_managed_or_verified_external_policy():
+    external = production_settings(network_control_mode="external")
+    inline_without_rules = production_settings(hub_manage_firewall_rules=False)
 
     external_errors = isolation_invariant_errors(external)
     inline_errors = isolation_invariant_errors(inline_without_rules)
 
-    assert any("NETWORK_CONTROL_MODE=external" in error for error in external_errors)
-    assert any("HUB_MANAGE_FIREWALL_RULES=true" in error for error in inline_errors)
+    assert any("HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED" in error for error in external_errors)
+    assert any(
+        "HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED" in error
+        for error in inline_errors
+    )
+
+
+def test_isolation_invariant_accepts_managed_forwarding_or_verified_external_policy():
+    managed = production_settings(hub_enable_ip_forwarding=True)
+    external = production_settings(
+        network_control_mode="external",
+        hub_enable_ip_forwarding=True,
+        hub_external_isolation_policy_verified=True,
+    )
+    inline_external = production_settings(
+        hub_manage_firewall_rules=False,
+        hub_external_isolation_policy_verified=True,
+    )
+
+    assert isolation_invariant_errors(managed) == []
+    assert isolation_invariant_errors(external) == []
+    assert isolation_invariant_errors(inline_external) == []
+
+
+def test_isolation_invariant_rejects_invalid_control_plane_port():
+    errors = isolation_invariant_errors(
+        production_settings(hub_control_plane_port=0)
+    )
+
+    assert any("HUB_CONTROL_PLANE_PORT" in error for error in errors)
+
+
+def test_validate_runtime_settings_fails_production_without_verified_external_isolation():
+    with pytest.raises(StartupHardeningError) as exc_info:
+        validate_runtime_settings(
+            production_settings(network_control_mode="external")
+        )
+
+    assert "HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED" in str(exc_info.value)
+
+
+def test_validate_runtime_settings_accepts_verified_external_isolation():
+    validate_runtime_settings(
+        production_settings(
+            network_control_mode="external",
+            hub_external_isolation_policy_verified=True,
+        )
+    )
 
 
 def test_validate_runtime_settings_rejects_insecure_production_defaults():
@@ -202,12 +241,18 @@ def test_configure_ip_forwarding_fails_closed_in_production():
 
 
 def test_install_firewall_rules_skips_when_disabled():
-    settings = production_settings(hub_manage_firewall_rules=False)
+    settings = production_settings(
+        hub_manage_firewall_rules=False,
+        hub_external_isolation_policy_verified=True,
+    )
     install_firewall_rules(settings, runner=lambda _args: CommandResult(returncode=0))
 
 
 def test_network_control_mode_external_skips_runtime_network_changes():
-    settings = production_settings(network_control_mode="external")
+    settings = production_settings(
+        network_control_mode="external",
+        hub_external_isolation_policy_verified=True,
+    )
     calls = []
 
     def runner(args):
@@ -219,40 +264,189 @@ def test_network_control_mode_external_skips_runtime_network_changes():
     assert calls == []
 
 
-def test_install_firewall_rules_uses_iptables_idempotently_and_verifies_rule():
+def test_install_firewall_rules_uses_complete_nftables_policy_and_verifies_it():
     settings = production_settings()
     calls = []
+    input_policy = (
+        'iifname "wg0" ct state established,related counter packets 2 bytes 120 accept\n'
+        'iifname "wg0" ip saddr 100.96.0.0/16 ip daddr 100.96.0.1 '
+        'tcp dport 8083 ct state new counter packets 1 bytes 60 accept\n'
+        'iifname "wg0" counter packets 0 bytes 0 drop'
+    )
+    forward_policy = 'iifname "wg0" counter packets 0 bytes 0 drop'
 
     def runner(args):
         calls.append(args)
-        if args[:2] == ["iptables", "-C"]:
-            return CommandResult(returncode=0)
+        if args == ["nft", "list", "table", "inet", "opnsense_hub"]:
+            return CommandResult(returncode=1)
+        if args == ["nft", "list", "chain", "inet", "opnsense_hub", "input"]:
+            return CommandResult(returncode=0, stdout=input_policy)
+        if args == ["nft", "list", "chain", "inet", "opnsense_hub", "forward"]:
+            return CommandResult(returncode=0, stdout=forward_policy)
         return CommandResult(returncode=0)
 
     install_firewall_rules(
-        settings, runner=runner, which=lambda name: name == "iptables"
+        settings, runner=runner, which=lambda name: name == "nft"
     )
-    assert calls == [
-        ["iptables", "-C", "FORWARD", "-i", "wg0", "-o", "wg0", "-j", "DROP"],
-        ["iptables", "-C", "FORWARD", "-i", "wg0", "-o", "wg0", "-j", "DROP"],
-    ]
+
+    assert [
+        "nft",
+        "add",
+        "rule",
+        "inet",
+        "opnsense_hub",
+        "forward",
+        "iifname",
+        "wg0",
+        "counter",
+        "drop",
+    ] in calls
+    assert [
+        "nft",
+        "add",
+        "rule",
+        "inet",
+        "opnsense_hub",
+        "input",
+        "iifname",
+        "wg0",
+        "counter",
+        "drop",
+    ] in calls
+    assert any(
+        args[:7] == [
+            "nft",
+            "add",
+            "rule",
+            "inet",
+            "opnsense_hub",
+            "input",
+            "iifname",
+        ]
+        and "established,related" in args
+        and "accept" in args
+        for args in calls
+    )
+    assert any(
+        "100.96.0.0/16" in args
+        and "100.96.0.1" in args
+        and "8083" in args
+        and "new" in args
+        and "accept" in args
+        for args in calls
+    )
 
 
-def test_install_firewall_rules_fails_if_rule_cannot_be_verified():
+class StatefulIptablesRunner:
+    def __init__(self):
+        self.calls = []
+        self.chains = set()
+        self.rules = set()
+
+    @staticmethod
+    def _rule_key(args):
+        command, operation, chain, *rule = args
+        if operation == "-I" and rule and rule[0] == "1":
+            rule = rule[1:]
+        return command, chain, tuple(rule)
+
+    def __call__(self, args):
+        self.calls.append(args)
+        command, operation = args[:2]
+        if operation == "-L":
+            return CommandResult(
+                returncode=0 if (command, args[2]) in self.chains else 1
+            )
+        if operation == "-N":
+            self.chains.add((command, args[2]))
+            return CommandResult(returncode=0)
+        if operation == "-F":
+            self.rules = {
+                rule
+                for rule in self.rules
+                if not (rule[0] == command and rule[1] == args[2])
+            }
+            return CommandResult(returncode=0)
+        if operation == "-C":
+            return CommandResult(
+                returncode=0 if self._rule_key(args) in self.rules else 1
+            )
+        if operation in {"-A", "-I"}:
+            self.rules.add(self._rule_key(args))
+            return CommandResult(returncode=0)
+        if operation == "-D":
+            self.rules.discard(self._rule_key(args))
+            return CommandResult(returncode=0)
+        return CommandResult(returncode=0)
+
+
+def test_install_firewall_rules_uses_complete_iptables_policy_and_verifies_it():
     settings = production_settings()
-    calls = []
+    runner = StatefulIptablesRunner()
+
+    install_firewall_rules(
+        settings,
+        runner=runner,
+        which=lambda name: name in {"iptables", "ip6tables"},
+    )
+
+    assert (
+        "iptables",
+        "OPNHUB_FORWARD",
+        ("-j", "DROP"),
+    ) in runner.rules
+    assert (
+        "iptables",
+        "OPNHUB_INPUT",
+        ("-i", "wg0", "-j", "DROP"),
+    ) in runner.rules
+    assert any(
+        rule[0:2] == ("iptables", "OPNHUB_INPUT")
+        and "ESTABLISHED,RELATED" in rule[2]
+        and "ACCEPT" in rule[2]
+        for rule in runner.rules
+    )
+    assert any(
+        rule[0:2] == ("iptables", "OPNHUB_INPUT")
+        and "100.96.0.0/16" in rule[2]
+        and "100.96.0.1/32" in rule[2]
+        and "8083" in rule[2]
+        and "NEW" in rule[2]
+        and "ACCEPT" in rule[2]
+        for rule in runner.rules
+    )
+    input_appends = [
+        args
+        for args in runner.calls
+        if args[:3] == ["iptables", "-A", "OPNHUB_INPUT"]
+    ]
+    assert "ESTABLISHED,RELATED" in input_appends[0]
+    assert "NEW" in input_appends[1]
+    assert input_appends[2][-2:] == ["-j", "DROP"]
+    assert (
+        "ip6tables",
+        "INPUT",
+        ("-i", "wg0", "-j", "DROP"),
+    ) in runner.rules
+    assert (
+        "ip6tables",
+        "FORWARD",
+        ("-i", "wg0", "-j", "DROP"),
+    ) in runner.rules
+
+
+def test_install_firewall_rules_fails_if_complete_policy_cannot_be_verified():
+    settings = production_settings()
+    stateful_runner = StatefulIptablesRunner()
 
     def runner(args):
-        calls.append(args)
-        if args[:2] == ["iptables", "-C"] and len(calls) == 1:
-            return CommandResult(returncode=1, stderr="missing")
-        if args[:2] == ["iptables", "-I"]:
-            return CommandResult(returncode=0)
-        if args[:2] == ["iptables", "-C"]:
+        if args == ["iptables", "-C", "OPNHUB_FORWARD", "-j", "DROP"]:
             return CommandResult(returncode=1, stderr="still missing")
-        return CommandResult(returncode=0)
+        return stateful_runner(args)
 
     with pytest.raises(StartupHardeningError):
         install_firewall_rules(
-            settings, runner=runner, which=lambda name: name == "iptables"
+            settings,
+            runner=runner,
+            which=lambda name: name in {"iptables", "ip6tables"},
         )

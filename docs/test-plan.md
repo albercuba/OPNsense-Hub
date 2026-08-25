@@ -28,6 +28,8 @@ Relevant automated coverage must prove:
 - Connector CLI validation accepts the token only from a hidden prompt, stdin, or `OPNSENSE_HUB_CONNECTOR_TOKEN`, never a command argument or URL.
 - The connector defaults to loopback, requires `--allow-non-loopback` for broader listeners, validates device/URL/listener arguments, forwards exact bytes, handles idle timeout, and shuts down cleanly.
 - The raw relay forwards exact bytes, constructs an exact per-device hostname, rejects a nonmatching source IP before upstream connect, enforces connection caps, expires hard, applies idle timeout, atomically replaces per-device allocations, cleans up after handoff failures, and releases ports.
+- Startup validation refuses production external/disabled tunnel isolation without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, rejects an invalid control-plane port, and permits enabled kernel forwarding only while the managed or verified-external default-drop policy remains active.
+- nftables and iptables/ip6tables tests prove established return traffic is allowed, new tunnel input is restricted to `HUB_WG_CIDR -> HUB_WG_ADDRESS:HUB_CONTROL_PLANE_PORT/TCP`, all other IPv4/IPv6 tunnel input is dropped, and every forwarded packet originating from `wg0` is dropped regardless of output interface.
 - Startup validation rejects invalid connector/relay limits and refuses `PUBLIC_L4_RELAY_ENABLED=true` unless `PUBLIC_L4_RELAY_MTLS_REQUIRED=true`.
 - Firewall backup tests use the actual OpenSSL command to prove encryption/decryption, key separation and root-only permissions, MAC tamper rejection, wrong-key rejection, recovery-key export/import, and absence of XML plaintext from the upload request.
 - Hub tests prove capability gating, pending-request enforcement, strict encrypted-envelope validation, server-time retention, plaintext upload rejection, opaque no-store download, and Hub export/restore without a `content` field.
@@ -80,6 +82,19 @@ Run these tests only in a disposable environment whose OPNsense WebGUI is alread
 12. Document the same-NAT risk by confirming source-IP filtering cannot distinguish two clients sharing one public egress IP; client-certificate enforcement must still reject the unauthorized client.
 13. Verify a second Hub API replica cannot share allocations or accept a relay created by the first. Keep the relay deployment single-node/single-process and ensure dashboard POSTs and raw ports reach the same instance.
 
+## WireGuard isolation tests
+
+Run these tests in a disposable Linux/Compose environment with real network namespaces:
+
+1. Start the bundled deployment with `NETWORK_CONTROL_MODE=inline`, `HUB_MANAGE_FIREWALL_RULES=true`, `HUB_ENABLE_IP_FORWARDING=false`, and `HUB_CONTROL_PLANE_PORT=8083`.
+2. Confirm startup reports successful policy verification. Inspect `nft list table inet opnsense_hub` or the `OPNHUB_INPUT`/`OPNHUB_FORWARD` iptables chains.
+3. From an enrolled firewall tunnel address, confirm a new TCP connection to the exact Hub WireGuard address and port `8083` is permitted.
+4. Confirm new connections from `wg0` to another local port, another Hub/container address, ICMP, UDP, and IPv6 are dropped.
+5. Initiate WebGUI TCP traffic from Hub to a firewall and confirm established return packets entering `wg0` remain permitted.
+6. Temporarily enable kernel forwarding and confirm packets originating from `wg0` cannot reach another peer, `eth0`, the Docker bridge, or an external routed address.
+7. Remove or alter one required rule and verify production startup fails policy verification.
+8. Set `NETWORK_CONTROL_MODE=external` or `HUB_MANAGE_FIREWALL_RULES=false` without external-policy attestation and verify production startup fails. Set `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true` only after independently reproducing steps 3-6 against the external policy.
+
 ## Plugin lab tests
 
 On a disposable OPNsense VM:
@@ -106,6 +121,7 @@ On a disposable OPNsense VM:
 - Verify Docker images build from a clean checkout.
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
 - Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet; revocation must remove the peer.
+- Verify the installed tunnel policy default-drops all forwarding from `wg0`, restricts new tunnel input to the exact control-plane address/port, permits established Hub-initiated return traffic, and fails production startup when inline enforcement or verified external enforcement is absent.
 - Verify production HTTPS/WSS works at `PUBLIC_URL`, Caddy forwards WSS upgrades, and connector tokens never appear in URLs, access logs, referrers, or shell command history.
 - Verify `PROXY_PUBLIC_URL` is used only as the optional relay DNS base and that no L7 `/proxy/*` service or proxy cookie remains.
 - Verify logs do not contain OTPs, device tokens, connector tokens, dashboard cookies, OPNsense credentials/session cookies, client-certificate private keys, plaintext firewall configurations, firewall backup recovery keys, private keys, or relayed payload bytes.

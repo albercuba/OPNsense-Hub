@@ -50,7 +50,7 @@ sequenceDiagram
 - Startup validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS`, generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
 - Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
-- By default the Hub disables IPv4/IPv6 forwarding and installs an idempotent firewall rule that drops forwarded `wg0 -> wg0` traffic to preserve peer isolation.
+- By default the Hub disables IPv4/IPv6 forwarding and installs a verified tunnel policy. All forwarding originating from `wg0` is dropped regardless of output interface. Input from `wg0` permits established/related return traffic plus new IPv4 TCP connections from `HUB_WG_CIDR` to the exact `HUB_WG_ADDRESS` and `HUB_CONTROL_PLANE_PORT`; every other IPv4/IPv6 tunnel-input packet is dropped.
 - `PUBLIC_URL` is the dashboard/control-plane origin. It serves normal HTTPS routes and the authenticated WSS connector upgrade at `/api/v1/connector/devices/{device_id}`.
 - Opening a firewall starts with a CSRF-protected `POST /devices/{device_id}/proxy/open`. After dashboard session and company-scoped RBAC checks, the Hub creates a random, short-lived, device-scoped connector token bound to the issuing dashboard session, stores only its hash, writes a `device.connector.open` audit event, and returns `no-store` instructions.
 - Each connector WSS connection authenticates with that token in an `Authorization: Bearer` header. The Hub checks token expiry, device scope, issuing dashboard-session state, user/company access, and device revocation before connecting to `OPNSENSE_GUI_PORT` on the device's validated WireGuard `/32`, immediately before accepting the WSS stream, and periodically while it remains active.
@@ -112,4 +112,4 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - Migration `0012_encrypted_device_backups` purges legacy plaintext rows and resets backup timestamps because the Hub cannot safely convert them without violating the key boundary.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
 - The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.
-- Firewalls must never be able to reach each other or route customer LANs through the Hub overlay.
+- Firewalls must never be able to reach each other, the Hub container network, `eth0`, or any other routed network through the overlay. Production may delegate isolation to an external network controller only with `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`, asserting that an equivalent full input/forward policy was independently verified.
