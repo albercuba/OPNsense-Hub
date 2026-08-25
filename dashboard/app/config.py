@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     permissions_policy: str = "geolocation=(), microphone=(), camera=()"
     rate_limit_backend: str = "memory"
     rate_limit_redis_url: str | None = None
+    rate_limit_memory_max_buckets: int = 10_000
     rate_limit_mfa_attempts: int = 5
     rate_limit_mfa_window_seconds: int = 300
     security_alert_email_enabled: bool = True

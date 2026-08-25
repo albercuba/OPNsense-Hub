@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from time import time
 
 from fastapi import HTTPException, Request
@@ -28,16 +28,44 @@ class RateLimitBackend:
 
 
 class MemoryRateLimitBackend(RateLimitBackend):
-    def __init__(self) -> None:
+    def __init__(self, max_buckets: int | None = None) -> None:
         self._lock = threading.Lock()
-        self._buckets: dict[str, deque[float]] = defaultdict(deque)
+        self._max_buckets = max(1, max_buckets or settings.rate_limit_memory_max_buckets)
+        self._buckets: OrderedDict[str, deque[float]] = OrderedDict()
+
+    def _prune_expired_locked(self, now: float) -> None:
+        empty_keys: list[str] = []
+        for bucket_key, entries in self._buckets.items():
+            newest_window = bucket_key.rsplit(":", 1)[-1]
+            try:
+                window_seconds = int(newest_window)
+            except ValueError:
+                window_seconds = 0
+            cutoff = now - window_seconds
+            while entries and entries[0] <= cutoff:
+                entries.popleft()
+            if not entries:
+                empty_keys.append(bucket_key)
+        for bucket_key in empty_keys:
+            self._buckets.pop(bucket_key, None)
+
+    def _bucket_key(self, bucket: str, key: str, window_seconds: int) -> str:
+        return f"{bucket}:{key}:{window_seconds}"
 
     def hit(self, bucket: str, key: str, limit: int, window_seconds: int) -> None:
         now = time()
-        bucket_key = f"{bucket}:{key}"
+        bucket_key = self._bucket_key(bucket, key, window_seconds)
         cutoff = now - window_seconds
         with self._lock:
-            entries = self._buckets[bucket_key]
+            self._prune_expired_locked(now)
+            entries = self._buckets.get(bucket_key)
+            if entries is None:
+                while len(self._buckets) >= self._max_buckets:
+                    self._buckets.popitem(last=False)
+                entries = deque()
+                self._buckets[bucket_key] = entries
+            else:
+                self._buckets.move_to_end(bucket_key)
             while entries and entries[0] <= cutoff:
                 entries.popleft()
             if len(entries) >= limit:

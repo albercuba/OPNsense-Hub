@@ -437,10 +437,13 @@ Browser-facing POST routes use CSRF protection with a signed cookie plus matchin
 
 ## Rate limiting
 
-Rate limiting is in-process and works in local Docker without Redis. Configure limits with environment variables such as:
+Rate limiting supports a bounded in-process backend for development, Redis for shared application enforcement, or a verified edge limiter. Production startup rejects `RATE_LIMIT_BACKEND=memory`; use `RATE_LIMIT_BACKEND=redis` with `RATE_LIMIT_REDIS_URL`, or `RATE_LIMIT_BACKEND=edge` only when the reverse proxy/load balancer enforces equivalent shared limits. Rate-limit keys use the direct peer IP unless that peer is in `TRUSTED_PROXY_CIDRS`; arbitrary `X-Forwarded-For` values from untrusted clients are ignored. The development memory backend globally prunes expired buckets and caps bucket cardinality with `RATE_LIMIT_MEMORY_MAX_BUCKETS`.
+
+Configure limits with environment variables such as:
 
 - `RATE_LIMIT_LOGIN_ATTEMPTS`
 - `RATE_LIMIT_LOGIN_WINDOW_SECONDS`
+- `RATE_LIMIT_MEMORY_MAX_BUCKETS`
 - `RATE_LIMIT_LOCAL_AD_LOGIN_ATTEMPTS`
 - `RATE_LIMIT_LOCAL_AD_LOGIN_WINDOW_SECONDS`
 - `RATE_LIMIT_MICROSOFT_LOGIN_ATTEMPTS`

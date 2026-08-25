@@ -53,6 +53,14 @@ def test_runtime_validation_errors_include_insecure_defaults():
     assert any("RATE_LIMIT_BACKEND" in error for error in errors)
 
 
+def test_runtime_validation_rejects_invalid_memory_rate_limit_cap():
+    errors = runtime_validation_errors(
+        production_settings(rate_limit_memory_max_buckets=0)
+    )
+
+    assert any("RATE_LIMIT_MEMORY_MAX_BUCKETS" in error for error in errors)
+
+
 def test_runtime_validation_accepts_secure_proxy_settings():
     assert runtime_validation_errors(production_settings()) == []
 

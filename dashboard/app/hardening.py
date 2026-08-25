@@ -214,6 +214,8 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         )
     if settings.rate_limit_backend.strip().lower() not in {"memory", "redis", "edge"}:
         errors.append("Set RATE_LIMIT_BACKEND to memory, redis, or edge")
+    if settings.rate_limit_memory_max_buckets <= 0:
+        errors.append("Set RATE_LIMIT_MEMORY_MAX_BUCKETS to a positive value")
     if settings.network_control_mode.strip().lower() not in {"inline", "external"}:
         errors.append("Set NETWORK_CONTROL_MODE to inline or external")
     if settings.wg_agent_url and not settings.wg_agent_token:

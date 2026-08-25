@@ -12,6 +12,7 @@ from app.security import (
     verify_totp_code,
 )
 from app.security.csrf import should_enforce_csrf
+from app.security.rate_limit import MemoryRateLimitBackend, apply_rate_limit
 from app.security.request_context import (
     allowed_hosts,
     client_ip,
@@ -97,6 +98,83 @@ def test_client_ip_only_trusts_forwarded_header_from_trusted_proxy(monkeypatch):
     assert client_ip(direct_request) == "198.51.100.4"
     trusted_proxy_networks.cache_clear()
     allowed_hosts.cache_clear()
+
+
+def test_apply_rate_limit_ignores_spoofed_forwarded_for_from_untrusted_peer(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "127.0.0.1/32")
+    trusted_proxy_networks.cache_clear()
+    captured = []
+
+    class CapturingLimiter:
+        def hit(self, bucket, key, limit, window_seconds):
+            captured.append((bucket, key, limit, window_seconds))
+
+    monkeypatch.setattr("app.security.rate_limit.rate_limiter", CapturingLimiter())
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("198.51.100.4", 12345),
+        }
+    )
+
+    apply_rate_limit(request, "login", "user@example.com", 5, 300)
+
+    assert captured == [("login", "198.51.100.4:user@example.com", 5, 300)]
+    trusted_proxy_networks.cache_clear()
+
+
+def test_apply_rate_limit_uses_forwarded_for_from_trusted_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "127.0.0.1/32")
+    trusted_proxy_networks.cache_clear()
+    captured = []
+
+    class CapturingLimiter:
+        def hit(self, bucket, key, limit, window_seconds):
+            captured.append((bucket, key, limit, window_seconds))
+
+    monkeypatch.setattr("app.security.rate_limit.rate_limiter", CapturingLimiter())
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+
+    apply_rate_limit(request, "login", "user@example.com", 5, 300)
+
+    assert captured == [("login", "203.0.113.10:user@example.com", 5, 300)]
+    trusted_proxy_networks.cache_clear()
+
+
+def test_memory_rate_limiter_bounds_bucket_count():
+    limiter = MemoryRateLimitBackend(max_buckets=2)
+
+    limiter.hit("login", "198.51.100.1:user-a", 5, 300)
+    limiter.hit("login", "198.51.100.2:user-b", 5, 300)
+    limiter.hit("login", "198.51.100.3:user-c", 5, 300)
+
+    assert len(limiter._buckets) == 2
+    assert "login:198.51.100.1:user-a:300" not in limiter._buckets
+
+
+def test_memory_rate_limiter_prunes_expired_buckets(monkeypatch):
+    current_time = [1000.0]
+    monkeypatch.setattr("app.security.rate_limit.time", lambda: current_time[0])
+    limiter = MemoryRateLimitBackend(max_buckets=10)
+
+    limiter.hit("login", "198.51.100.1:user-a", 5, 10)
+    current_time[0] = 1011.0
+    limiter.hit("login", "198.51.100.2:user-b", 5, 10)
+
+    assert list(limiter._buckets) == ["login:198.51.100.2:user-b:10"]
 
 
 def test_client_ip_uses_last_untrusted_hop_before_trusted_proxy_chain(monkeypatch):
