@@ -607,6 +607,9 @@ def test_build_isolation_check_distinguishes_external_isolation(monkeypatch, tmp
         network_diagnostics.settings, "hub_manage_firewall_rules", False
     )
     monkeypatch.setattr(
+        network_diagnostics.settings, "hub_external_isolation_policy_verified", True
+    )
+    monkeypatch.setattr(
         network_diagnostics,
         "verify_firewall_rules_present",
         lambda _settings: (_ for _ in ()).throw(RuntimeError("should not run")),

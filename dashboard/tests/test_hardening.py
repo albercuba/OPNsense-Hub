@@ -425,8 +425,27 @@ def test_install_firewall_rules_uses_complete_iptables_policy_and_verifies_it():
     assert input_appends[2][-2:] == ["-j", "DROP"]
     assert (
         "ip6tables",
-        "INPUT",
+        "OPNHUB_INPUT6",
+        (
+            "-i",
+            "wg0",
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED,RELATED",
+            "-j",
+            "ACCEPT",
+        ),
+    ) in runner.rules
+    assert (
+        "ip6tables",
+        "OPNHUB_INPUT6",
         ("-i", "wg0", "-j", "DROP"),
+    ) in runner.rules
+    assert (
+        "ip6tables",
+        "INPUT",
+        ("-i", "wg0", "-j", "OPNHUB_INPUT6"),
     ) in runner.rules
     assert (
         "ip6tables",

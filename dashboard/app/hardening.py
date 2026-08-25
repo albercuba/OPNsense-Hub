@@ -342,6 +342,7 @@ NFT_INPUT_CONTROL_RULE = (
 )
 NFT_INPUT_DROP_RULE = 'iifname "{iface}" counter drop'
 IPTABLES_INPUT_CHAIN = "OPNHUB_INPUT"
+IPTABLES_INPUT6_CHAIN = "OPNHUB_INPUT6"
 IPTABLES_FORWARD_CHAIN = "OPNHUB_FORWARD"
 
 
@@ -441,6 +442,22 @@ def _iptables_input_rules(settings: Settings) -> list[list[str]]:
     ]
 
 
+def _ip6tables_input_rules(iface: str) -> list[list[str]]:
+    return [
+        [
+            "-i",
+            iface,
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED,RELATED",
+            "-j",
+            "ACCEPT",
+        ],
+        ["-i", iface, "-j", "DROP"],
+    ]
+
+
 def verify_iptables_rule_present(settings: Settings, runner=run_command) -> None:
     iface, _network, _hub_ip, _port = _wireguard_rule_context(settings)
     checks = [
@@ -459,7 +476,11 @@ def verify_iptables_rule_present(settings: Settings, runner=run_command) -> None
             IPTABLES_FORWARD_CHAIN,
         ],
         ["iptables", "-C", IPTABLES_FORWARD_CHAIN, "-j", "DROP"],
-        ["ip6tables", "-C", "INPUT", "-i", iface, "-j", "DROP"],
+        ["ip6tables", "-C", "INPUT", "-i", iface, "-j", IPTABLES_INPUT6_CHAIN],
+        *(
+            ["ip6tables", "-C", IPTABLES_INPUT6_CHAIN, *rule]
+            for rule in _ip6tables_input_rules(iface)
+        ),
         ["ip6tables", "-C", "FORWARD", "-i", iface, "-j", "DROP"],
     ]
     for args in checks:
@@ -576,10 +597,14 @@ def _ensure_iptables_chain(
 
 
 def _install_iptables_jump(
-    parent_chain: str, iface: str, target_chain: str, runner=run_command
+    parent_chain: str,
+    iface: str,
+    target_chain: str,
+    runner=run_command,
+    command: str = "iptables",
 ) -> None:
     check_args = [
-        "iptables",
+        command,
         "-C",
         parent_chain,
         "-i",
@@ -589,7 +614,7 @@ def _install_iptables_jump(
     ]
     if runner(check_args).returncode == 0:
         delete_args = [
-            "iptables",
+            command,
             "-D",
             parent_chain,
             "-i",
@@ -599,7 +624,7 @@ def _install_iptables_jump(
         ]
         ensure_command_ok(runner(delete_args), delete_args)
     insert_args = [
-        "iptables",
+        command,
         "-I",
         parent_chain,
         "1",
@@ -615,27 +640,37 @@ def install_iptables_rules(settings: Settings, runner=run_command) -> None:
     iface, _network, _hub_ip, _port = _wireguard_rule_context(settings)
     _ensure_iptables_chain("iptables", IPTABLES_INPUT_CHAIN, runner=runner)
     _ensure_iptables_chain("iptables", IPTABLES_FORWARD_CHAIN, runner=runner)
+    _ensure_iptables_chain("ip6tables", IPTABLES_INPUT6_CHAIN, runner=runner)
     for rule in _iptables_input_rules(settings):
         args = ["iptables", "-A", IPTABLES_INPUT_CHAIN, *rule]
+        ensure_command_ok(runner(args), args)
+    for rule in _ip6tables_input_rules(iface):
+        args = ["ip6tables", "-A", IPTABLES_INPUT6_CHAIN, *rule]
         ensure_command_ok(runner(args), args)
     forward_drop_args = ["iptables", "-A", IPTABLES_FORWARD_CHAIN, "-j", "DROP"]
     ensure_command_ok(runner(forward_drop_args), forward_drop_args)
     _install_iptables_jump("INPUT", iface, IPTABLES_INPUT_CHAIN, runner=runner)
     _install_iptables_jump("FORWARD", iface, IPTABLES_FORWARD_CHAIN, runner=runner)
-    for chain in ("INPUT", "FORWARD"):
-        check_args = ["ip6tables", "-C", chain, "-i", iface, "-j", "DROP"]
-        if runner(check_args).returncode != 0:
-            insert_args = [
-                "ip6tables",
-                "-I",
-                chain,
-                "1",
-                "-i",
-                iface,
-                "-j",
-                "DROP",
-            ]
-            ensure_command_ok(runner(insert_args), insert_args)
+    _install_iptables_jump(
+        "INPUT",
+        iface,
+        IPTABLES_INPUT6_CHAIN,
+        runner=runner,
+        command="ip6tables",
+    )
+    check_args = ["ip6tables", "-C", "FORWARD", "-i", iface, "-j", "DROP"]
+    if runner(check_args).returncode != 0:
+        insert_args = [
+            "ip6tables",
+            "-I",
+            "FORWARD",
+            "1",
+            "-i",
+            iface,
+            "-j",
+            "DROP",
+        ]
+        ensure_command_ok(runner(insert_args), insert_args)
 
 
 def verify_firewall_rules_present(
