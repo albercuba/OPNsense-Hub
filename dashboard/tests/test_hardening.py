@@ -296,6 +296,37 @@ def test_configure_ip_forwarding_fails_closed_in_production():
         configure_ip_forwarding(settings, runner=runner)
 
 
+def test_configure_ip_forwarding_accepts_permission_denied_when_already_disabled():
+    settings = production_settings()
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        if args[:2] == ["sysctl", "-n"]:
+            return CommandResult(returncode=0, stdout="0")
+        return CommandResult(
+            returncode=1,
+            stderr='sysctl: permission denied on key "net.ipv4.ip_forward"',
+        )
+
+    configure_ip_forwarding(settings, runner=runner)
+
+    assert ["sysctl", "-n", "net.ipv4.ip_forward"] in calls
+    assert ["sysctl", "-n", "net.ipv6.conf.all.forwarding"] in calls
+
+
+def test_configure_ip_forwarding_still_fails_when_permission_denied_and_enabled():
+    settings = production_settings()
+
+    def runner(args):
+        if args[:2] == ["sysctl", "-n"]:
+            return CommandResult(returncode=0, stdout="1")
+        return CommandResult(returncode=1, stderr="permission denied")
+
+    with pytest.raises(StartupHardeningError):
+        configure_ip_forwarding(settings, runner=runner)
+
+
 def test_install_firewall_rules_skips_when_disabled():
     settings = production_settings(
         hub_manage_firewall_rules=False,

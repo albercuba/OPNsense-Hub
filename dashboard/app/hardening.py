@@ -323,6 +323,11 @@ def ensure_command_ok(result: CommandResult, args: list[str]) -> None:
     raise StartupHardeningError(f"{' '.join(args)} failed: {detail}")
 
 
+def _sysctl_is_already_disabled(key: str, runner) -> bool:
+    result = runner(["sysctl", "-n", key])
+    return result.returncode == 0 and (result.stdout or "").strip() == "0"
+
+
 def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
     if settings.network_control_mode.strip().lower() == "external":
         logger.info(
@@ -336,13 +341,25 @@ def configure_ip_forwarding(settings: Settings, runner=run_command) -> None:
         )
         return
     commands = [
-        ["sysctl", "-w", "net.ipv4.ip_forward=0"],
-        ["sysctl", "-w", "net.ipv6.conf.all.forwarding=0"],
+        ("net.ipv4.ip_forward", ["sysctl", "-w", "net.ipv4.ip_forward=0"]),
+        (
+            "net.ipv6.conf.all.forwarding",
+            ["sysctl", "-w", "net.ipv6.conf.all.forwarding=0"],
+        ),
     ]
-    for args in commands:
+    for key, args in commands:
         try:
             ensure_command_ok(runner(args), args)
+            continue
         except Exception as exc:
+            try:
+                if _sysctl_is_already_disabled(key, runner):
+                    logger.info(
+                        "Could not write %s, but it is already disabled", key
+                    )
+                    continue
+            except Exception:
+                pass
             if should_fail_closed(settings):
                 raise StartupHardeningError(
                     f"Failed to disable IP forwarding: {exc}"
