@@ -7,11 +7,13 @@ import ipaddress
 import json
 import os
 import stat
+import tempfile
 import uuid
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -31,18 +33,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from .device_backup_crypto import (
+    ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    validate_encrypted_device_backup,
+)
 from ..backups import (
     DEVICE_BACKUP_INTERVAL_HOURS_MAX,
     DEVICE_BACKUP_INTERVAL_UNITS,
     DEVICE_BACKUP_INTERVAL_VALUE_MAX,
     DEVICE_BACKUP_RETENTION_MAX,
 )
-from ..branding import (
-    clear_uploaded_logo,
-    detect_image_extension,
-    save_uploaded_logo,
-    uploaded_logo_path,
-)
+from ..branding import clear_uploaded_logo, detect_image_extension, uploaded_logo_path
 from ..database import Base
 from ..models import (
     AuditLog,
@@ -59,15 +60,11 @@ from ..models import (
 )
 from ..security import utc_now
 from ..web import settings
-from .device_backup_crypto import (
-    ENCRYPTED_DEVICE_BACKUP_FORMAT,
-    validate_encrypted_device_backup,
-)
 from ..wireguard import (
     WG_KEY_RE,
-    WireGuardError,
     add_peer,
     bootstrap_wireguard,
+    get_runtime_peers,
     get_validated_hub_wireguard_config,
     remove_peer,
     validate_public_key,
@@ -128,6 +125,14 @@ ALLOWED_LICENSE_TYPES: Final = {None, "community", "business"}
 ALLOWED_AUTH_PROVIDERS: Final = {None, "microsoft", "local_ad"}
 
 
+@dataclass(frozen=True)
+class RestoreFileStage:
+    logo_temp_path: Path | None
+    logo_extension: str | None
+    clear_logo: bool
+    wireguard_key_temp_path: Path | None
+
+
 def backup_json_value(value: object) -> object:
     if isinstance(value, uuid.UUID):
         return str(value)
@@ -148,7 +153,7 @@ def backup_json_value(value: object) -> object:
     return value
 
 
-def serialize_model_row(row: object) -> dict[str, object]:
+def serialize_model_row(row: Any) -> dict[str, object]:
     table = row.__table__
     return {
         column.name: backup_json_value(getattr(row, column.name))
@@ -1024,6 +1029,99 @@ def parse_backup_bundle(
     return manifest, data, logo_file, wireguard_key
 
 
+def _write_staged_file(directory: Path, prefix: str, content: bytes) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=directory)
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as staged:
+            staged.write(content)
+            staged.flush()
+            os.fsync(staged.fileno())
+    except Exception:
+        with contextlib.suppress(OSError):
+            temp_path.unlink(missing_ok=True)
+        raise
+    return temp_path
+
+
+def stage_restore_files(
+    logo_file: tuple[str, bytes] | None,
+    wireguard_private_key: str | None,
+) -> RestoreFileStage:
+    logo_temp_path = None
+    logo_extension = None
+    if logo_file:
+        logo_name, logo_content = logo_file
+        logo_extension = detect_image_extension(logo_content)
+        if logo_name != f"logo{logo_extension}":
+            raise HTTPException(
+                status_code=400,
+                detail="backup archive branding logo filename is invalid",
+            )
+        logo_temp_path = _write_staged_file(
+            Path(settings.branding_upload_dir), "restore-logo-", logo_content
+        )
+
+    wireguard_key_temp_path = None
+    if wireguard_private_key is not None:
+        key_path = Path(settings.wg_server_private_key_path)
+        wireguard_key_temp_path = _write_staged_file(
+            key_path.parent,
+            "restore-server-key-",
+            (wireguard_private_key.strip() + "\n").encode("utf-8"),
+        )
+        with contextlib.suppress(OSError):
+            os.chmod(wireguard_key_temp_path, stat.S_IRUSR | stat.S_IWUSR)
+
+    return RestoreFileStage(
+        logo_temp_path=logo_temp_path,
+        logo_extension=logo_extension,
+        clear_logo=logo_file is None,
+        wireguard_key_temp_path=wireguard_key_temp_path,
+    )
+
+
+def cleanup_staged_restore_files(stage: RestoreFileStage) -> None:
+    for path in (stage.logo_temp_path, stage.wireguard_key_temp_path):
+        if path is not None:
+            with contextlib.suppress(OSError):
+                path.unlink(missing_ok=True)
+
+
+def apply_staged_restore_files(stage: RestoreFileStage) -> None:
+    if stage.logo_temp_path is not None and stage.logo_extension is not None:
+        branding_dir = Path(settings.branding_upload_dir)
+        target_logo_path = branding_dir / f"logo{stage.logo_extension}"
+        for existing in branding_dir.glob("logo.*"):
+            if existing != target_logo_path:
+                existing.unlink(missing_ok=True)
+        os.replace(stage.logo_temp_path, target_logo_path)
+    elif stage.clear_logo:
+        clear_uploaded_logo(settings.branding_upload_dir)
+
+    if stage.wireguard_key_temp_path is not None:
+        key_path = Path(settings.wg_server_private_key_path)
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(stage.wireguard_key_temp_path, key_path)
+        with contextlib.suppress(OSError):
+            os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def reconcile_wireguard_after_restore(db: Session) -> None:
+    bootstrap_wireguard(db)
+    expected_peers = {
+        device.wg_public_key: str(device.wg_tunnel_ip)
+        for device in db.scalars(select(Device).where(Device.revoked_at.is_(None))).all()
+    }
+    runtime_peers = get_runtime_peers()
+    for peer in runtime_peers:
+        if peer.public_key not in expected_peers:
+            remove_peer(peer.public_key)
+    for public_key, tunnel_ip in expected_peers.items():
+        add_peer(public_key, tunnel_ip)
+
+
 def restore_backup_bundle(
     db: Session,
     data: dict[str, list[dict[str, object]]],
@@ -1032,67 +1130,9 @@ def restore_backup_bundle(
 ) -> None:
     validate_backup_data(data, logo_file, wireguard_private_key)
     validate_backup_data_in_staging(data)
-    existing_devices = db.scalars(
-        select(Device).where(Device.revoked_at.is_(None))
-    ).all()
-    existing_peers = [
-        (device.wg_public_key, str(device.wg_tunnel_ip)) for device in existing_devices
-    ]
-    previous_logo = uploaded_logo_path(settings.branding_upload_dir)
-    previous_logo_name = previous_logo.name if previous_logo else None
-    previous_logo_content = previous_logo.read_bytes() if previous_logo else None
-    key_path = Path(settings.wg_server_private_key_path)
-    previous_key_content = key_path.read_text() if key_path.exists() else None
-
     for model in BACKUP_RESTORE_DELETE_ORDER:
         db.execute(delete(model))
     for table_name, model in BACKUP_TABLE_MODELS:
-        for row in data.get(table_name, []):
+        for row in data[table_name]:
             db.add(deserialize_model_row(model, row))
         db.flush()
-
-    try:
-        if logo_file:
-            logo_name, logo_content = logo_file
-            extension = detect_image_extension(logo_content)
-            if logo_name != f"logo{extension}":
-                raise HTTPException(
-                    status_code=400,
-                    detail="backup archive branding logo filename is invalid",
-                )
-            save_uploaded_logo(settings.branding_upload_dir, extension, logo_content)
-        else:
-            clear_uploaded_logo(settings.branding_upload_dir)
-        if wireguard_private_key is not None:
-            key_path.parent.mkdir(parents=True, exist_ok=True)
-            key_path.write_text(wireguard_private_key.strip() + "\n")
-            with contextlib.suppress(OSError):
-                os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
-        for public_key, _tunnel_ip in existing_peers:
-            with contextlib.suppress(WireGuardError):
-                remove_peer(public_key)
-        bootstrap_wireguard(db)
-    except Exception as exc:
-        if previous_logo_content is not None and previous_logo_name is not None:
-            save_uploaded_logo(
-                settings.branding_upload_dir,
-                Path(previous_logo_name).suffix,
-                previous_logo_content,
-            )
-        else:
-            clear_uploaded_logo(settings.branding_upload_dir)
-        if previous_key_content is not None:
-            key_path.parent.mkdir(parents=True, exist_ok=True)
-            key_path.write_text(previous_key_content)
-            with contextlib.suppress(OSError):
-                os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
-        else:
-            with contextlib.suppress(OSError):
-                key_path.unlink(missing_ok=True)
-        for public_key, tunnel_ip in existing_peers:
-            with contextlib.suppress(WireGuardError):
-                add_peer(public_key, tunnel_ip)
-        raise HTTPException(
-            status_code=400,
-            detail=f"restore failed safely before commit: WireGuard could not be reinitialized: {exc}",
-        ) from exc

@@ -1393,7 +1393,7 @@ def test_delete_stored_backup_removes_backup_record(monkeypatch, tmp_path):
     assert remaining_backups == []
 
 
-def test_backup_restore_shows_error_when_wireguard_reinit_fails(monkeypatch, tmp_path):
+def test_backup_restore_commits_before_reporting_wireguard_reconcile_failure(monkeypatch, tmp_path):
     source_branding_dir = tmp_path / "branding-source-restore-fail"
     source_branding_dir.mkdir(parents=True, exist_ok=True)
     (source_branding_dir / "logo.png").write_bytes(PNG_BYTES)
@@ -1432,11 +1432,23 @@ def test_backup_restore_shows_error_when_wireguard_reinit_fails(monkeypatch, tmp
                 files={"backup_file": ("hub-backup.zip", bundle, "application/zip")},
                 follow_redirects=False,
             )
+        restored_company = target_session.scalar(
+            select(Company).where(Company.name == "Acme")
+        )
+        old_company = target_session.scalar(
+            select(Company).where(Company.name == "Old Company")
+        )
+        restored_sessions = target_session.scalars(select(SessionToken)).all()
         app.dependency_overrides.clear()
 
-    assert response.status_code == 400
+    assert response.status_code == 500
     assert "Restore configuration" in response.text
-    assert "WireGuard could not be reinitialized" in response.text
+    assert "post-commit reconciliation failed" in response.text
+    assert restored_company is not None
+    assert old_company is None
+    assert restored_sessions == []
+    assert (target_branding_dir / "logo.png").read_bytes() == PNG_BYTES
+    assert target_wg_key_path.read_text().strip() == VALID_WG_PRIVATE_KEY
 
 
 def test_backup_restore_replaces_configuration_and_clears_sessions(

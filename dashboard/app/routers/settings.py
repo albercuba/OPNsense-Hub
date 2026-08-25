@@ -44,9 +44,13 @@ from ..services.admin_security import (
 )
 from ..services.auth_service import revoke_session_token, session_from_request
 from ..services.backup_service import (
+    apply_staged_restore_files,
+    cleanup_staged_restore_files,
     export_backup_bundle,
     parse_backup_bundle,
+    reconcile_wireguard_after_restore,
     restore_backup_bundle,
+    stage_restore_files,
 )
 from ..services.common import (
     clean_optional,
@@ -824,12 +828,20 @@ async def restore_settings_backup(
         write_audit(db, request, "settings.backup.restore.failed", user=user)
         db.commit()
         raise HTTPException(status_code=400, detail="backup file is required")
+    restore_actor_email = user.email
+    file_stage = None
     try:
         _manifest, data, logo_file, wireguard_private_key = parse_backup_bundle(
             content, clean_optional(backup_passphrase)
         )
+        file_stage = stage_restore_files(logo_file, wireguard_private_key)
         restore_backup_bundle(db, data, logo_file, wireguard_private_key)
+        write_audit(db, request, "settings.backup.restore", user=None)
+        db.execute(delete(SessionToken))
+        db.commit()
     except HTTPException as exc:
+        if file_stage is not None:
+            cleanup_staged_restore_files(file_stage)
         db.rollback()
         write_audit(db, request, "settings.backup.restore.failed", user=user)
         db.commit()
@@ -855,6 +867,8 @@ async def restore_settings_backup(
             },
         )
     except Exception as exc:
+        if file_stage is not None:
+            cleanup_staged_restore_files(file_stage)
         db.rollback()
         write_audit(db, request, "settings.backup.restore.failed", user=user)
         db.commit()
@@ -879,9 +893,55 @@ async def restore_settings_backup(
                 "message": f"Backup restore failed: {exc}",
             },
         )
-    write_audit(db, request, "settings.backup.restore", user=user)
-    db.execute(delete(SessionToken))
-    db.commit()
+
+    try:
+        if file_stage is not None:
+            apply_staged_restore_files(file_stage)
+        reconcile_wireguard_after_restore(db)
+    except HTTPException as exc:
+        log_security_warning(
+            "settings.backup.restore.post_commit_failed",
+            detail=str(exc.detail),
+        )
+        send_security_alert_email(
+            db,
+            "[OPNsense Hub] Security event: backup restore follow-up failed",
+            f"Backup restore committed for {restore_actor_email}, but post-commit reconciliation failed: {exc.detail}",
+        )
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=500,
+            backup_verification_result={
+                "ok": False,
+                "filename": backup_file.filename or "backup file",
+                "message": f"Backup restore committed, but post-commit reconciliation failed: {exc.detail}",
+            },
+        )
+    except Exception as exc:
+        log_security_warning(
+            "settings.backup.restore.post_commit_failed",
+            detail=str(exc),
+        )
+        send_security_alert_email(
+            db,
+            "[OPNsense Hub] Security event: backup restore follow-up failed",
+            f"Backup restore committed for {restore_actor_email}, but post-commit reconciliation failed: {exc}",
+        )
+        return render_settings_template(
+            db,
+            request,
+            user,
+            "backup",
+            status_code=500,
+            backup_verification_result={
+                "ok": False,
+                "filename": backup_file.filename or "backup file",
+                "message": f"Backup restore committed, but post-commit reconciliation failed: {exc}",
+            },
+        )
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(settings.session_cookie_name)
     return response
