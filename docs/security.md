@@ -2,7 +2,7 @@
 
 ## Current protections
 
-- OTP enrollment codes are generated randomly, short-lived, single-use, and stored only as PBKDF2 hashes.
+- OTP enrollment codes are generated randomly, short-lived, single-use, stored only as PBKDF2 hashes, and atomically claimed during enrollment.
 - Dashboard login now uses random server-side session tokens stored only as HMAC-SHA256 hashes in PostgreSQL with expiration and revocation support.
 - Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
@@ -23,7 +23,7 @@
 
 ## Isolation invariant
 
-Every enrolled firewall gets a unique WireGuard tunnel IPv4 address. The only route installed on the Hub for a firewall peer is that firewall tunnel `/32`, and the only route installed on the firewall for the Hub peer is the Hub tunnel `/32`.
+Every enrolled firewall gets a unique WireGuard public key and tunnel IPv4 address. Enrollment reserves the device row and consumes the OTP in the database before WireGuard runtime changes. If post-commit peer installation fails, the Hub compensates by removing the reserved device row and releasing the OTP for retry. The only route installed on the Hub for a firewall peer is that firewall tunnel `/32`, and the only route installed on the firewall for the Hub peer is the Hub tunnel `/32`.
 
 This is intentional:
 

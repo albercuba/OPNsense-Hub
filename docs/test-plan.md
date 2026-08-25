@@ -33,12 +33,12 @@ Relevant automated coverage must prove:
 - Startup validation rejects invalid connector/relay limits and refuses `PUBLIC_L4_RELAY_ENABLED=true` unless `PUBLIC_L4_RELAY_MTLS_REQUIRED=true`.
 - Firewall backup tests use the actual OpenSSL command to prove encryption/decryption, key separation and root-only permissions, MAC tamper rejection, wrong-key rejection, recovery-key export/import, and absence of XML plaintext from the upload request.
 - Hub tests prove capability gating, pending-request enforcement, strict encrypted-envelope validation, server-time retention, plaintext upload rejection, opaque no-store download, Hub export/restore without a `content` field, restore rejection for missing tables, manifest row-count mismatches, invalid required fields/foreign keys, staging database failures before existing rows are deleted, and post-commit WireGuard reconciliation failures after database/files are already consistently restored.
-- Existing security coverage continues to prove secret hashing, OTP format, WireGuard key validation, `/32`-only routes, and RBAC ordering.
+- Existing security coverage continues to prove secret hashing, OTP format, WireGuard key validation, unique device public keys, concurrency-safe OTP claim/device reservation, post-commit enrollment peer-add compensation, `/32`-only routes, and RBAC ordering.
 
 ## Default connector manual tests
 
 1. Start the normal stack with `docker compose up --build`; do not apply `deploy/docker-compose.l4.yml` and confirm TCP `55000-55099` is not published.
-2. Log in, create a company, generate an enrollment OTP, enroll a disposable OPNsense firewall, and verify OTP replay fails.
+2. Log in, create a company, generate an enrollment OTP, enroll a disposable OPNsense firewall, and verify OTP replay fails. Repeat with concurrent enrollment attempts and confirm only one succeeds, duplicate WireGuard public keys are rejected, and a failed peer add leaves no active device row while allowing OTP retry.
 3. Verify the firewall receives only its unique WireGuard `/32`, heartbeats work, and the WebGUI is reachable from the Hub only at `OPNSENSE_GUI_PORT` through the tunnel.
 4. Click Open and verify the browser sends a CSRF-protected `POST /devices/{device_id}/proxy/open` on `PUBLIC_URL`.
 5. Verify the response has `Cache-Control: no-store` and `Referrer-Policy: no-referrer`, contains a short-lived connector token/instructions, creates no proxy authorization cookie, and contains no `/proxy/bootstrap` handoff.

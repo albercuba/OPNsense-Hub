@@ -690,6 +690,92 @@ def test_enrollment_invalid_otp_writes_audit_log(monkeypatch, tmp_path):
     assert entry is not None
 
 
+def test_enrollment_rejects_duplicate_wireguard_public_key_and_keeps_otp(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "enrollment_duplicate_key") as session:
+        admin = seed_backup_source(session)
+        company = session.scalar(select(Company).where(Company.name == "Acme"))
+        assert company is not None
+        code = EnrollmentCode(
+            id=uuid4(),
+            company_id=company.id,
+            code_hash=hash_secret("DUPKEY1"),
+            expires_at=utc_now() + timedelta(minutes=10),
+            created_by=admin.id,
+            created_at=utc_now(),
+        )
+        session.add(code)
+        session.commit()
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/enroll",
+                json={
+                    "otp": "DUPKEY1",
+                    "hostname": "fw-duplicate",
+                    "wg_public_key": VALID_WG_PUBLIC_KEY,
+                },
+            )
+        refreshed_code = session.get(EnrollmentCode, code.id)
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert refreshed_code is not None
+    assert refreshed_code.used_at is None
+
+
+def test_enrollment_compensates_database_when_post_commit_peer_add_fails(
+    monkeypatch, tmp_path
+):
+    with sqlite_session(tmp_path, "enrollment_peer_add_compensation") as session:
+        admin = seed_backup_source(session)
+        company = session.scalar(select(Company).where(Company.name == "Acme"))
+        assert company is not None
+        code = EnrollmentCode(
+            id=uuid4(),
+            company_id=company.id,
+            code_hash=hash_secret("WGFAIL1"),
+            expires_at=utc_now() + timedelta(minutes=10),
+            created_by=admin.id,
+            created_at=utc_now(),
+        )
+        session.add(code)
+        session.commit()
+        monkeypatch.setattr(
+            "app.routers.enrollment.add_peer",
+            lambda _public_key, _tunnel_ip: (_ for _ in ()).throw(
+                __import__("app.wireguard", fromlist=["WireGuardError"]).WireGuardError(
+                    "wg0 unavailable"
+                )
+            ),
+        )
+        configure_test_client(monkeypatch, session, admin)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/enroll",
+                json={
+                    "otp": "WGFAIL1",
+                    "hostname": "fw-peer-fail",
+                    "wg_public_key": VALID_WG_PUBLIC_KEY_2,
+                },
+            )
+        refreshed_code = session.get(EnrollmentCode, code.id)
+        reserved_device = session.scalar(
+            select(Device).where(Device.wg_public_key == VALID_WG_PUBLIC_KEY_2)
+        )
+        failure_log = session.scalar(
+            select(AuditLog).where(AuditLog.action == "enrollment.peer_add_failed")
+        )
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert refreshed_code is not None
+    assert refreshed_code.used_at is None
+    assert reserved_device is None
+    assert failure_log is not None
+
+
 def test_device_firmware_card_uses_normalized_update_count(monkeypatch, tmp_path):
     with sqlite_session(tmp_path, "device_firmware_card_detail") as session:
         admin = seed_backup_source(session)

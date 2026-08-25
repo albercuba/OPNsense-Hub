@@ -248,6 +248,9 @@ class EnrollmentCode(Base):
 
 class Device(Base):
     __tablename__ = "devices"
+    __table_args__ = (
+        UniqueConstraint("wg_public_key", name="uq_devices_wg_public_key"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

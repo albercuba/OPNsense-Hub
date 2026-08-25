@@ -22,7 +22,8 @@ sequenceDiagram
     Admin->>Hub: Create company and short-lived enrollment OTP
     Plugin->>Plugin: Generate WireGuard keypair locally
     Plugin->>Hub: POST /api/v1/enroll with OTP + public key + metadata
-    Hub->>Hub: Validate hashed OTP and allocate firewall /32
+    Hub->>Hub: Atomically claim OTP and reserve unique public key plus firewall /32
+    Hub->>Hub: Commit enrollment database state
     Hub->>WG: Add peer public key with firewall tunnel /32 only
     Hub-->>Plugin: Device token + WireGuard client config
     Plugin->>Plugin: Validate /32 values and retain private key locally
@@ -49,7 +50,7 @@ sequenceDiagram
 - WireGuard server setup is bootstrapped by the app container on startup.
 - Startup validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS`, generates/persists the Hub server key, renders `wg0.conf`, brings up `wg0`, and restores non-revoked peers from the database.
 - WireGuard peers are managed by a small validated wrapper around `wg set`.
-- Peer routes are `/32` only: one unique firewall tunnel IP per device. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
+- Enrollment atomically claims one unexpired OTP, reserves the device row before touching WireGuard runtime state, and enforces unique WireGuard public keys and tunnel `/32` addresses. Customer LAN subnets are never routed, so overlapping company LANs do not conflict.
 - By default the Hub disables IPv4/IPv6 forwarding and installs a verified tunnel policy. All forwarding originating from `wg0` is dropped regardless of output interface. Input from `wg0` permits established/related return traffic plus new IPv4 TCP connections from `HUB_WG_CIDR` to the exact `HUB_WG_ADDRESS` and `HUB_CONTROL_PLANE_PORT`; every other IPv4/IPv6 tunnel-input packet is dropped.
 - `PUBLIC_URL` is the dashboard/control-plane origin. It serves normal HTTPS routes and the authenticated WSS connector upgrade at `/api/v1/connector/devices/{device_id}`.
 - Opening a firewall starts with a CSRF-protected `POST /devices/{device_id}/proxy/open`. After dashboard session and company-scoped RBAC checks, the Hub creates a random, short-lived, device-scoped connector token bound to the issuing dashboard session, stores only its hash, writes a `device.connector.open` audit event, and returns `no-store` instructions.

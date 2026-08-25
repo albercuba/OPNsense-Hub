@@ -169,6 +169,7 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
               created_at timestamptz NOT NULL DEFAULT now()
             )
             """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_wg_public_key ON devices(wg_public_key)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_attention_ack_unique ON user_attention_acknowledgements(user_id, attention_key)",
         ]
         for statement in statements:
