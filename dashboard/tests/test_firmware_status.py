@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -19,8 +19,22 @@ from app.main import (
     upload_device_backup,
 )
 from app.models import Device, DeviceBackup, DeviceEvent
+from app.routers.devices import rotate_device_token
 from app.security import hash_secret
 from app.services.device_backup_crypto import ENCRYPTED_DEVICE_BACKUP_FORMAT
+from starlette.requests import Request
+
+
+def make_request(path="/"):
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": path,
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
 
 
 def encrypted_backup_envelope(device_id, marker: bytes = b"A"):
@@ -120,6 +134,8 @@ def make_device(hostname, token="device-token", **overrides):
         backup_interval_value=24,
         backup_interval_unit="hours",
         backup_interval_hours=24,
+        device_token_issued_at=now,
+        device_token_expires_at=now + timedelta(days=90),
         created_at=now,
     )
     for key, value in overrides.items():
@@ -194,6 +210,54 @@ def test_heartbeat_response_includes_pending_firmware_request():
     assert response["firmware_check_requested"] is True
     assert response["firmware_check_requested_at"] == pending_at.isoformat()
     assert response["firmware_check_request_reason"] == "scheduled"
+    assert response["device_token_expires_at"] == device.device_token_expires_at.isoformat()
+    assert response["device_token_rotation_required"] is False
+    assert response["device_token_rotation_url"] == f"/api/v1/devices/{device.id}/token/rotate"
+    assert db.committed is True
+
+
+def test_heartbeat_requests_device_token_rotation_when_expiring_soon():
+    token = "device-token"
+    device = make_device(
+        "fw-token-rotate",
+        token=token,
+        device_token_expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {"status": "online", "hostname": "fw-token-rotate"},
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["device_token_rotation_required"] is True
+    assert response["device_token_rotation_url"] == f"/api/v1/devices/{device.id}/token/rotate"
+
+
+def test_rotate_device_token_requires_current_token_and_returns_new_token():
+    token = "device-token"
+    device = make_device("fw-token-rotate-endpoint", token=token)
+    original_hash = device.device_token_hash
+    db = FakeDb(device=device)
+
+    response = rotate_device_token(
+        device.id,
+        make_request(f"/api/v1/devices/{device.id}/token/rotate"),
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["ok"] is True
+    assert response["device_token"] != token
+    assert response["device_token_issued_at"] == device.device_token_issued_at.isoformat()
+    assert response["device_token_expires_at"] == device.device_token_expires_at.isoformat()
+    assert device.device_token_hash != original_hash
+    assert any(
+        isinstance(item, DeviceEvent) and item.event_type == "device_token_rotated"
+        for item in db.added
+    )
     assert db.committed is True
 
 

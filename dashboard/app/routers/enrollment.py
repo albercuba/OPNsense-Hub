@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from ..audit import write_audit
 from ..database import get_db
 from ..models import AuditLog, Device, DeviceEvent, EnrollmentCode
-from ..security import hash_secret, random_token, utc_now, verify_secret
+from ..security import utc_now, verify_secret
 from ..security.rate_limit import apply_rate_limit
+from ..services.device_tokens import issue_device_token
 from ..services.firmware_scheduler import apply_device_license_payload
 from ..web import settings
 from ..wireguard import (
@@ -127,7 +128,6 @@ def enroll(
         )
 
     tunnel_ip = next_tunnel_ip(db)
-    token = random_token(48)
     device = Device(
         company_id=company_id,
         hostname=hostname,
@@ -135,10 +135,11 @@ def enroll(
         plugin_version=payload.get("plugin_version"),
         wg_public_key=wg_public_key,
         wg_tunnel_ip=tunnel_ip,
-        device_token_hash=hash_secret(token),
+        device_token_hash="pending",
         status="online",
         last_seen_at=now,
     )
+    token = issue_device_token(device, now)
     apply_device_license_payload(device, payload)
     db.add(device)
     try:
@@ -182,6 +183,8 @@ def enroll(
     return {
         "device_id": str(device_id),
         "device_token": token,
+        "device_token_issued_at": device.device_token_issued_at.isoformat(),
+        "device_token_expires_at": device.device_token_expires_at.isoformat(),
         "wireguard": {
             "interface_address": f"{tunnel_ip}/32",
             "server_public_key": server_public_key,

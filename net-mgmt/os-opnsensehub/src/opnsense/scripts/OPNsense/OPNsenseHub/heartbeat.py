@@ -105,6 +105,38 @@ def backup_request_pending(body):
     return bool(body.get("backup_requested"))
 
 
+def token_rotation_pending(body):
+    return bool(body.get("device_token_rotation_required"))
+
+
+def rotate_device_token(state, body):
+    rotate_url = body.get("device_token_rotation_url")
+    if not isinstance(rotate_url, str) or not rotate_url.strip():
+        rotate_url = "/api/v1/devices/" + state["device_id"] + "/token/rotate"
+    if rotate_url.startswith("/"):
+        rotate_url = state["hub_url"].rstrip("/") + rotate_url
+    req = urllib.request.Request(
+        rotate_url,
+        data=b"{}",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + state["device_token"],
+            "User-Agent": "os-opnsensehub/0.1",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    new_token = payload.get("device_token")
+    if not isinstance(new_token, str) or not new_token:
+        raise RuntimeError("Hub token rotation response did not include a device token")
+    state["device_token"] = new_token
+    state["device_token_issued_at"] = payload.get("device_token_issued_at")
+    state["device_token_expires_at"] = payload.get("device_token_expires_at")
+    save_state(state)
+    return payload
+
+
 def upload_backup(state):
     expected_key_id = state.get("backup_key_id")
     if expected_key_id and not BACKUP_KEY_FILE.exists():
@@ -158,11 +190,15 @@ def main():
     state = load_state()
     try:
         response_body = send_heartbeat(state, heartbeat_payload(state))
+        if token_rotation_pending(response_body):
+            rotate_device_token(state, response_body)
         if request_firmware_check_pending(response_body):
             firmware = collect_firmware_status()
             state["firmware"] = firmware
             save_state(state)
             response_body = send_heartbeat(state, heartbeat_payload(state, firmware))
+            if token_rotation_pending(response_body):
+                rotate_device_token(state, response_body)
         backup_error = False
         if backup_request_pending(response_body):
             try:

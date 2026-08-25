@@ -61,6 +61,21 @@ def test_runtime_validation_rejects_invalid_memory_rate_limit_cap():
     assert any("RATE_LIMIT_MEMORY_MAX_BUCKETS" in error for error in errors)
 
 
+def test_runtime_validation_rejects_invalid_device_token_ttl_settings():
+    errors = runtime_validation_errors(
+        production_settings(device_token_ttl_days=0)
+    )
+    assert any("DEVICE_TOKEN_TTL_DAYS" in error for error in errors)
+
+    errors = runtime_validation_errors(
+        production_settings(
+            device_token_ttl_days=30,
+            device_token_rotation_window_days=30,
+        )
+    )
+    assert any("DEVICE_TOKEN_ROTATION_WINDOW_DAYS" in error for error in errors)
+
+
 def test_runtime_validation_accepts_secure_proxy_settings():
     assert runtime_validation_errors(production_settings()) == []
 

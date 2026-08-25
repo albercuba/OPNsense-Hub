@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -21,6 +21,10 @@ from .database import Base
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def default_device_token_expires_at() -> datetime:
+    return now_utc() + timedelta(days=90)
 
 
 class User(Base):
@@ -296,6 +300,12 @@ class Device(Base):
     wg_public_key: Mapped[str] = mapped_column(String(80), nullable=False)
     wg_tunnel_ip: Mapped[str] = mapped_column(INET, nullable=False, unique=True)
     device_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    device_token_issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+    device_token_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=default_device_token_expires_at, nullable=False
+    )
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
     health_missed_checks: Mapped[int] = mapped_column(default=0, nullable=False)
     health_success_checks: Mapped[int] = mapped_column(default=0, nullable=False)

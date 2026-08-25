@@ -11,6 +11,7 @@ from .models import Company, Device, User
 from .rbac import has_company_access as rbac_has_company_access
 from .security import verify_secret
 from .services.auth_service import session_from_request
+from .services.device_tokens import device_token_is_expired
 
 
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
@@ -61,4 +62,6 @@ def device_from_token(
         raise HTTPException(status_code=410, detail="device revoked")
     if not verify_secret(token, device.device_token_hash):
         raise HTTPException(status_code=401)
+    if device_token_is_expired(device):
+        raise HTTPException(status_code=401, detail="device token expired")
     return device

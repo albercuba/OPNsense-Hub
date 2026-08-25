@@ -808,6 +808,8 @@ def main():
         "hub_url": hub_url,
         "device_id": response["device_id"],
         "device_token": response["device_token"],
+        "device_token_issued_at": response.get("device_token_issued_at"),
+        "device_token_expires_at": response.get("device_token_expires_at"),
         "tunnel_ip": wireguard["interface_address"],
         "wireguard": wireguard,
         "status": "connected",

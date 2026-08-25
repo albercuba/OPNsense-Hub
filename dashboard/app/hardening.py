@@ -242,6 +242,12 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         errors.append("Add the PUBLIC_URL host to ALLOWED_HOSTS")
     if settings.trusted_proxy_cidrs.strip() and not _trusted_proxy_networks(settings):
         errors.append("TRUSTED_PROXY_CIDRS contains no valid proxy networks")
+    if settings.device_token_ttl_days <= 0:
+        errors.append("Set DEVICE_TOKEN_TTL_DAYS to a positive value")
+    if not 0 <= settings.device_token_rotation_window_days < settings.device_token_ttl_days:
+        errors.append(
+            "Set DEVICE_TOKEN_ROTATION_WINDOW_DAYS to zero or more and less than DEVICE_TOKEN_TTL_DAYS"
+        )
     if settings.log_retention_sweep_interval_hours <= 0:
         errors.append("Set LOG_RETENTION_SWEEP_INTERVAL_HOURS to a positive value")
     elif (

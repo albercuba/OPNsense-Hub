@@ -43,6 +43,7 @@ from ..services.device_backup_crypto import (
     encrypted_device_backup_filename,
     validate_encrypted_device_backup,
 )
+from ..services.device_tokens import device_token_rotation_due, issue_device_token
 from ..services.firmware_scheduler import (
     apply_device_firmware_payload,
     apply_device_license_payload,
@@ -348,7 +349,8 @@ def heartbeat(
         device.plugin_version = str(plugin_version)[:80]
     apply_device_license_payload(device, payload)
     firmware_applied = apply_device_firmware_payload(device, payload)
-    device.last_seen_at = utc_now()
+    now = utc_now()
+    device.last_seen_at = now
     if firmware_applied or reported_status not in {"", "online"}:
         event_message = reported_status or previous_status
         if firmware_applied:
@@ -391,6 +393,42 @@ def heartbeat(
         "backup_interval_hours": device.backup_interval_hours
         if (device.backup_enabled or pending_backup)
         else None,
+        "device_token_expires_at": device.device_token_expires_at.isoformat(),
+        "device_token_rotation_required": device_token_rotation_due(device, now),
+        "device_token_rotation_url": f"/api/v1/devices/{device.id}/token/rotate",
+    }
+
+
+@router.post("/api/v1/devices/{device_id}/token/rotate")
+def rotate_device_token(
+    device_id: uuid.UUID,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+):
+    apply_rate_limit(
+        request,
+        "device-token-rotate",
+        str(device_id),
+        settings.rate_limit_device_heartbeat_attempts,
+        settings.rate_limit_device_heartbeat_window_seconds,
+    )
+    device = device_from_token(db, device_id, authorization)
+    now = utc_now()
+    token = issue_device_token(device, now)
+    db.add(
+        DeviceEvent(
+            device_id=device.id,
+            event_type="device_token_rotated",
+            message="Device token rotated",
+        )
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "device_token": token,
+        "device_token_issued_at": device.device_token_issued_at.isoformat(),
+        "device_token_expires_at": device.device_token_expires_at.isoformat(),
     }
 
 

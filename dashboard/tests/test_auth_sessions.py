@@ -143,6 +143,27 @@ def test_current_user_looks_up_user_from_hashed_session_token():
     assert current_user(make_request(token), cast(Session, db)).id == user.id
 
 
+def test_device_from_token_rejects_expired_device_token():
+    device_token = "device-token"
+    device = Device(
+        id=uuid4(),
+        company_id=uuid4(),
+        hostname="fw-expired-token",
+        wg_public_key="pubkey",
+        wg_tunnel_ip="100.96.0.2",
+        device_token_hash=hash_secret(device_token),
+        device_token_issued_at=utc_now() - timedelta(days=91),
+        device_token_expires_at=utc_now() - timedelta(minutes=1),
+    )
+    db = FakeDb(device=device)
+
+    with pytest.raises(HTTPException) as exc_info:
+        device_from_token(cast(Session, db), device.id, f"Bearer {device_token}")
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "device token expired"
+
+
 def test_device_from_token_returns_gone_for_revoked_device():
     device_token = "device-token"
     device = Device(

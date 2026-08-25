@@ -40,6 +40,9 @@ def http_error(url, code):
 
 
 class FakeHttpResponse:
+    def __init__(self, payload=None):
+        self.payload = {"ok": True} if payload is None else payload
+
     def __enter__(self):
         return self
 
@@ -47,7 +50,7 @@ class FakeHttpResponse:
         return False
 
     def read(self):
-        return b'{"ok":true}'
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class BackupCryptoTests(unittest.TestCase):
@@ -150,6 +153,46 @@ class BackupCryptoTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(heartbeat.HeartbeatRevoked, "revoked"):
                 heartbeat.send_heartbeat(state, {"timestamp": "2026-08-25T00:00:00+00:00"})
+
+    def test_device_token_rotation_updates_saved_state(self) -> None:
+        captured_request = None
+        saved = []
+        state = {
+            "hub_url": "https://hub.example.test",
+            "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "device_token": "old-device-token",
+        }
+        body = {
+            "device_token_rotation_url": "/api/v1/devices/01234567-89ab-cdef-0123-456789abcdef/token/rotate"
+        }
+
+        def fake_urlopen(request, timeout):
+            nonlocal captured_request
+            captured_request = request
+            self.assertEqual(timeout, 20)
+            return FakeHttpResponse(
+                {
+                    "ok": True,
+                    "device_token": "new-device-token",
+                    "device_token_issued_at": "2026-08-25T00:00:00+00:00",
+                    "device_token_expires_at": "2026-11-23T00:00:00+00:00",
+                }
+            )
+
+        with (
+            patch.object(heartbeat.urllib.request, "urlopen", fake_urlopen),
+            patch.object(heartbeat, "save_state", lambda value: saved.append(dict(value))),
+        ):
+            response = heartbeat.rotate_device_token(state, body)
+
+        self.assertEqual(response["device_token"], "new-device-token")
+        self.assertEqual(state["device_token"], "new-device-token")
+        self.assertEqual(saved[-1]["device_token"], "new-device-token")
+        self.assertEqual(
+            captured_request.full_url,
+            "https://hub.example.test/api/v1/devices/01234567-89ab-cdef-0123-456789abcdef/token/rotate",
+        )
+        self.assertEqual(captured_request.headers["Authorization"], "Bearer old-device-token")
 
     def test_heartbeat_upload_contains_only_encrypted_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

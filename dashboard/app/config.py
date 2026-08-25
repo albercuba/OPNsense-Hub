@@ -108,6 +108,8 @@ class Settings(BaseSettings):
     rate_limit_device_heartbeat_window_seconds: int = 60
     rate_limit_device_backup_attempts: int = 20
     rate_limit_device_backup_window_seconds: int = 300
+    device_token_ttl_days: int = 90
+    device_token_rotation_window_days: int = 14
     rate_limit_backup_restore_attempts: int = 3
     rate_limit_backup_restore_window_seconds: int = 900
     rate_limit_device_access_attempts: int = 20

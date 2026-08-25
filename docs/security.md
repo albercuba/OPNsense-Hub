@@ -5,7 +5,7 @@
 - OTP enrollment codes are generated randomly, short-lived, single-use, stored only as PBKDF2 hashes, and atomically claimed during enrollment.
 - Dashboard login now uses random server-side session tokens stored only as HMAC-SHA256 hashes in PostgreSQL with expiration and revocation support.
 - Pending local MFA logins carry a signed nonce bound to a server-side pending-login row; failed authenticator-code attempts are counted in the database and the pending login is invalidated after `RATE_LIMIT_MFA_ATTEMPTS` failures.
-- Device tokens are random, shown only to the enrolling plugin, and stored hashed in PostgreSQL.
+- Device tokens are random, shown only to the enrolling plugin, stored hashed in PostgreSQL, issued with `device_token_issued_at`/`device_token_expires_at`, rejected after expiry, and rotated through a current-token-authenticated endpoint before `DEVICE_TOKEN_TTL_DAYS` elapses.
 - WireGuard private keys are generated locally on OPNsense and never sent to Hub.
 - Hub validates `HUB_WG_CIDR` and `HUB_WG_ADDRESS` at startup before allocating or restoring peers.
 - In the default Compose deployment, the public FastAPI web container runs as unprivileged UID `10001` with all capabilities dropped and no `/dev/net/tun` or `/etc/wireguard` mount; its direct `8083` publication is bound only to `127.0.0.1` so Caddy remains the public HTTP(S) entry point. Only the `opnsense-hub-wireguard` sidecar runs as root with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the WireGuard server key volume.

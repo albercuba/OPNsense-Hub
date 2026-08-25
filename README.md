@@ -60,7 +60,7 @@ docker-compose.yml
 - Company-scoped RBAC model in the database.
 - Short-lived single-use OTP enrollment codes stored hashed.
 - Device enrollment endpoint using WireGuard public key.
-- Device tokens stored hashed; heartbeat uses bearer token auth.
+- Device tokens stored hashed with issue/expiry timestamps; heartbeat uses bearer token auth and the plugin rotates tokens through an authenticated endpoint before expiry.
 - Automatic Hub WireGuard server bootstrap and peer restore on container startup.
 - `/32`-only WireGuard routes for firewall web UI access; customer LAN subnets are never routed.
 - Startup validation for Hub WireGuard CIDR/address, disabled IP forwarding by default, and verified default-deny tunnel input/forwarding rules or an explicitly attested external equivalent.
@@ -201,7 +201,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
    - `PUBLIC_L4_RELAY_IDLE_TIMEOUT_SECONDS` — inactivity timeout per raw connection; default `120`.
    - `PUBLIC_L4_RELAY_MAX_CONNECTIONS` — concurrent connections allowed per allocated relay; default `16`.
 
-   Other production-focused variables include `ALLOWED_HOSTS`, `TRUSTED_PROXY_CIDRS`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_MFA_ATTEMPTS`, `RATE_LIMIT_MFA_WINDOW_SECONDS`, `NETWORK_CONTROL_MODE`, `WG_AGENT_URL`, `WG_AGENT_TOKEN`, `WG_AGENT_MODE`, browser security-header controls, and backup/restore size limits.
+   Other production-focused variables include `ALLOWED_HOSTS`, `TRUSTED_PROXY_CIDRS`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_MFA_ATTEMPTS`, `RATE_LIMIT_MFA_WINDOW_SECONDS`, `DEVICE_TOKEN_TTL_DAYS`, `DEVICE_TOKEN_ROTATION_WINDOW_DAYS`, `NETWORK_CONTROL_MODE`, `WG_AGENT_URL`, `WG_AGENT_TOKEN`, `WG_AGENT_MODE`, browser security-header controls, and backup/restore size limits.
 
 4. Validate and start the default stack:
 
