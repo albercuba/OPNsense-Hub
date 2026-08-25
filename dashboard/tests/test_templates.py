@@ -110,8 +110,8 @@ def test_settings_navigation_is_grouped_by_admin_area():
     assert "['network', 'security'] %}open" in source
     assert 'data-settings-submenu' in source
     assert 'data-settings-section' in source
-    assert 'addEventListener("click"' in source
-    assert 'event.preventDefault()' in source
+    assert 'addEventListener("click"' not in source
+    assert 'event.preventDefault()' not in source
     assert 'addEventListener("toggle"' in source
     assert "document</script>" not in source
     assert "\ndiv>" not in source

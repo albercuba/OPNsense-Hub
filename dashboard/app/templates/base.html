@@ -230,10 +230,6 @@
                         "details[data-settings-section]"
                     );
                     sections.forEach((section) => {
-                        const summary = section.querySelector("summary");
-                        summary?.addEventListener("click", (event) => {
-                            if (section.open) event.preventDefault();
-                        });
                         section.addEventListener("toggle", () => {
                             if (!section.open) return;
                             sections.forEach((other) => {
