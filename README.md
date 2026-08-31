@@ -401,7 +401,15 @@ By default (`CONFIG_BACKUP_MODE=encrypted`), plugin version `0.2` encrypts `/con
 
 The plugin advertises both `opnsense-config-encrypted-v1` and `opnsense-config-plaintext-v1` in its heartbeat. The Hub requests the format selected by `CONFIG_BACKUP_MODE` and accepts uploads only while a backup request is pending. Legacy `content` uploads and unknown or malformed envelopes are rejected. Retention ordering uses Hub receipt time rather than a device-supplied timestamp.
 
-Set `CONFIG_BACKUP_MODE=plaintext` only when you intentionally want the Hub to receive, store, export, and download readable `config.xml` backups. In plaintext mode, downloaded firewall backups are `.xml`; Hub database rows, Hub exports, PostgreSQL backups/snapshots, WAL archives, storage replicas, and operators with backup-download access may contain firewall secrets. Protect those systems accordingly and normally use passphrase protection for Hub exports.
+Set `CONFIG_BACKUP_MODE=plaintext` only when you intentionally want the Hub to receive, store, export, and download readable `config.xml` backups:
+
+```env
+CONFIG_BACKUP_MODE=plaintext
+```
+
+Restart the Hub after changing the environment. The Stored backups card shows the encrypted-backup notice while the running Hub is still in the default `encrypted` mode; it changes to a plaintext warning only after `CONFIG_BACKUP_MODE=plaintext` is active. Existing `.opnenc` backups remain encrypted. Only new backup requests made after switching modes are uploaded and downloaded as `.xml`.
+
+In plaintext mode, downloaded firewall backups are `.xml`; Hub database rows, Hub exports, PostgreSQL backups/snapshots, WAL archives, storage replicas, and operators with backup-download access may contain firewall secrets. Protect those systems accordingly and normally use passphrase protection for Hub exports.
 
 In encrypted mode, the Hub stores a canonical encrypted envelope, serves downloads as `.opnenc`, and cannot validate the envelope HMAC or decrypt it because it does not possess the firewall key. Integrity is verified locally when the file is decrypted. Hub exports contain only these opaque envelopes, although the rest of a Hub export still contains sensitive Hub data and should normally use passphrase protection.
 
