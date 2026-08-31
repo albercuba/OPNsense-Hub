@@ -54,7 +54,6 @@ def test_fresh_postgresql_upgrade_sql_uses_static_baseline_and_later_migrations(
     assert "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider" in output
     assert "CREATE TABLE pending_mfa_logins" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_issued_at" in output
-    assert "opnsense-config-plaintext-v1" in output
     assert "Base.metadata" not in output
     assert "create_all" not in output
 
@@ -73,7 +72,6 @@ def test_legacy_postgresql_upgrade_sql_from_baseline_to_head():
     assert "ALTER TABLE devices ADD CONSTRAINT uq_devices_wg_public_key" in output
     assert "CREATE TABLE pending_mfa_logins" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_expires_at" in output
-    assert "opnsense-config-plaintext-v1" in output
 
 
 def test_incremental_postgresql_upgrade_sql_from_previous_head():
@@ -85,7 +83,6 @@ def test_incremental_postgresql_upgrade_sql_from_previous_head():
 
     assert "ALTER TABLE devices ADD COLUMN device_token_issued_at" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_expires_at" in output
-    assert "opnsense-config-plaintext-v1" in output
     assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output
 
 
@@ -97,5 +94,4 @@ def test_incremental_postgresql_upgrade_sql_from_device_token_head():
     )
 
     assert "DROP CONSTRAINT IF EXISTS ck_device_backups_encrypted_format" in output
-    assert "opnsense-config-plaintext-v1" in output
     assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output

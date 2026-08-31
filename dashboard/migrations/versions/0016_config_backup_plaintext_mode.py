@@ -43,12 +43,10 @@ def _set_lock_timeout() -> None:
 
 def upgrade() -> None:
     _set_lock_timeout()
+    # Existing deployments only need the old encrypted-only database check removed.
+    # Upload and restore paths still validate the exact encrypted/plaintext formats,
+    # and fresh schemas keep the broader model/baseline constraint.
     _drop_format_constraint()
-    op.execute(
-        "ALTER TABLE device_backups ADD CONSTRAINT "
-        f"{_CONSTRAINT} CHECK (backup_format IN "
-        f"('{_ENCRYPTED_FORMAT}', '{_PLAINTEXT_FORMAT}')) NOT VALID"
-    )
 
 
 def downgrade() -> None:
