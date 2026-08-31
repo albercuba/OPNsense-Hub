@@ -47,7 +47,7 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE device_backups ADD CONSTRAINT "
         f"{_CONSTRAINT} CHECK (backup_format IN "
-        f"('{_ENCRYPTED_FORMAT}', '{_PLAINTEXT_FORMAT}'))"
+        f"('{_ENCRYPTED_FORMAT}', '{_PLAINTEXT_FORMAT}')) NOT VALID"
     )
 
 
@@ -62,5 +62,5 @@ def downgrade() -> None:
     _drop_format_constraint()
     op.execute(
         "ALTER TABLE device_backups ADD CONSTRAINT "
-        f"{_CONSTRAINT} CHECK (backup_format = '{_ENCRYPTED_FORMAT}')"
+        f"{_CONSTRAINT} CHECK (backup_format = '{_ENCRYPTED_FORMAT}') NOT VALID"
     )
