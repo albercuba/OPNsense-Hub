@@ -14,17 +14,19 @@ SETTINGS_TEMPLATE = ROOT / "dashboard/app/templates/settings.html"
 class BackupIntervalOptionParser(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.in_backup_interval_options = False
+        self.in_backup_interval_unit_select = False
         self.options: list[HtmlAttrs] = []
+        self.backup_interval_unit_select: HtmlAttrs | None = None
         self.strong_depth = 0
         self.unmatched_strong_closes = 0
         self.backup_now_button_classes: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
-        if tag == "datalist" and attrs_dict.get("id") == "backup-interval-unit-options":
-            self.in_backup_interval_options = True
-        if self.in_backup_interval_options and tag == "option":
+        if tag == "select" and attrs_dict.get("name") == "backup_interval_unit":
+            self.in_backup_interval_unit_select = True
+            self.backup_interval_unit_select = attrs_dict
+        if self.in_backup_interval_unit_select and tag == "option":
             self.options.append(attrs_dict)
         if tag == "button" and (attrs_dict.get("formaction") or "").endswith(
             "/backup-now"
@@ -34,8 +36,8 @@ class BackupIntervalOptionParser(HTMLParser):
             self.strong_depth += 1
 
     def handle_endtag(self, tag):
-        if tag == "datalist" and self.in_backup_interval_options:
-            self.in_backup_interval_options = False
+        if tag == "select" and self.in_backup_interval_unit_select:
+            self.in_backup_interval_unit_select = False
         if tag == "strong":
             if self.strong_depth == 0:
                 self.unmatched_strong_closes += 1
@@ -43,15 +45,22 @@ class BackupIntervalOptionParser(HTMLParser):
                 self.strong_depth -= 1
 
 
-def test_backup_interval_options_are_well_formed():
+def test_backup_interval_unit_uses_select_with_all_options():
     parser = BackupIntervalOptionParser()
-    parser.feed(DEVICE_TEMPLATE.read_text())
+    source = DEVICE_TEMPLATE.read_text()
+    parser.feed(source)
 
-    assert parser.options == [
-        {"value": "Hours", "data-unit-value": "hours"},
-        {"value": "Days", "data-unit-value": "days"},
-        {"value": "Months", "data-unit-value": "months"},
+    assert parser.backup_interval_unit_select is not None
+    assert "backup-interval-unit-select" in (
+        parser.backup_interval_unit_select.get("class") or ""
+    )
+    assert [option.get("value") for option in parser.options] == [
+        "hours",
+        "days",
+        "months",
     ]
+    assert "backup-interval-unit-options" not in source
+    assert "data-backup-interval-unit-input" not in source
     assert parser.unmatched_strong_closes == 0
 
 

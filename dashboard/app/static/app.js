@@ -992,27 +992,6 @@ document.addEventListener("DOMContentLoaded", () => {
     syncRole();
   });
 
-  const backupIntervalUnitInput = document.querySelector(
-    "[data-backup-interval-unit-input]",
-  );
-  const backupIntervalUnitValue = document.querySelector(
-    "[data-backup-interval-unit-value]",
-  );
-  const backupSettingsForm = backupIntervalUnitInput?.closest("form") || null;
-  const syncBackupIntervalUnit = () => {
-    if (backupIntervalUnitValue) {
-      backupIntervalUnitValue.value =
-        resolveDatalistValue(
-          "backup-interval-unit-options",
-          backupIntervalUnitInput?.value,
-          "unitValue",
-        ) || "hours";
-    }
-  };
-  backupIntervalUnitInput?.addEventListener("input", syncBackupIntervalUnit);
-  backupIntervalUnitInput?.addEventListener("change", syncBackupIntervalUnit);
-  backupSettingsForm?.addEventListener("submit", syncBackupIntervalUnit);
-  syncBackupIntervalUnit();
 
   const recentEventsTable = document.querySelector("#recent-events-table");
   const rangeSelect = document.querySelector("[data-events-range-select]");

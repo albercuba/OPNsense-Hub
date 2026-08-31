@@ -511,7 +511,7 @@ h3 {
     min-width: 5.5rem;
     flex: 0 0 5.5rem;
 }
-.backup-interval-field[data-backup-interval-unit-input] {
+.backup-interval-unit-select {
     width: 7.25rem;
     min-width: 7.25rem;
     flex-basis: 7.25rem;
@@ -2876,7 +2876,7 @@ select option {
     flex: 0 0 5.75rem;
 }
 
-#device-settings-grid .backup-interval-field[data-backup-interval-unit-input] {
+#device-settings-grid .backup-interval-unit-select {
     width: 8rem;
     min-width: 8rem;
     flex-basis: 8rem;
@@ -2925,7 +2925,7 @@ select option {
     }
 
     #device-settings-grid .backup-interval-field,
-    #device-settings-grid .backup-interval-field[data-backup-interval-unit-input] {
+    #device-settings-grid .backup-interval-unit-select {
         width: 100%;
         min-width: 0;
         flex-basis: auto;
