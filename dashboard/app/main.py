@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -54,24 +55,33 @@ from .services.notification_service import (
 from .services.scheduler_locks import run_cluster_singleton_loop
 from .web import APP_DIR, current_brand_logo_url, format_datetime, settings, templates
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    apply_startup_hardening(settings)
-    bootstrap()
-    app.state.health_check_task = asyncio.create_task(
-        run_cluster_singleton_loop("device_health_checks", device_health_check_loop)
-    )
-    app.state.firmware_schedule_task = asyncio.create_task(
-        run_cluster_singleton_loop("firmware_schedule", firmware_check_schedule_loop)
-    )
-    app.state.log_retention_task = (
-        asyncio.create_task(
-            run_cluster_singleton_loop("log_retention", log_retention_loop)
+    app.state.health_check_task = None
+    app.state.firmware_schedule_task = None
+    app.state.log_retention_task = None
+    try:
+        apply_startup_hardening(settings)
+        bootstrap()
+        app.state.health_check_task = asyncio.create_task(
+            run_cluster_singleton_loop("device_health_checks", device_health_check_loop)
         )
-        if settings.log_retention_enabled
-        else None
-    )
+        app.state.firmware_schedule_task = asyncio.create_task(
+            run_cluster_singleton_loop("firmware_schedule", firmware_check_schedule_loop)
+        )
+        app.state.log_retention_task = (
+            asyncio.create_task(
+                run_cluster_singleton_loop("log_retention", log_retention_loop)
+            )
+            if settings.log_retention_enabled
+            else None
+        )
+    except Exception:
+        logger.exception("Application startup failed")
+        raise
     try:
         yield
     finally:
