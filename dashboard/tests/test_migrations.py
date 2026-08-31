@@ -42,7 +42,7 @@ def test_alembic_has_single_head():
     output = run_alembic("heads")
     heads = [line for line in output.splitlines() if "(head)" in line]
 
-    assert heads == ["0016_config_backup_plaintext_mode (head)"]
+    assert heads == ["0016_plaintext_backups (head)"]
 
 
 def test_fresh_postgresql_upgrade_sql_uses_static_baseline_and_later_migrations():
@@ -83,7 +83,7 @@ def test_incremental_postgresql_upgrade_sql_from_previous_head():
 
     assert "ALTER TABLE devices ADD COLUMN device_token_issued_at" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_expires_at" in output
-    assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output
+    assert "UPDATE alembic_version SET version_num='0016_plaintext_backups'" in output
 
 
 def test_incremental_postgresql_upgrade_sql_from_device_token_head():
@@ -94,4 +94,4 @@ def test_incremental_postgresql_upgrade_sql_from_device_token_head():
     )
 
     assert "DROP CONSTRAINT IF EXISTS ck_device_backups_encrypted_format" in output
-    assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output
+    assert "UPDATE alembic_version SET version_num='0016_plaintext_backups'" in output

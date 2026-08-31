@@ -140,7 +140,7 @@ On a disposable OPNsense VM:
 - Verify an unversioned legacy database is stamped and then upgraded through `head` in the same startup rather than starting against the legacy plaintext column.
 - Verify downgrade deletes ciphertext rather than exposing it as XML, and verify old Hub archive format/version or a version-2 archive containing `device_backups[].content` is rejected.
 - Verify startup migration reaches Alembic `head`, then test application backup and restore without expecting environment variables or firewall recovery keys to be restored.
-- Upgrade a revision-`0015` database to `0016_config_backup_plaintext_mode`; verify the `device_backups.backup_format` constraint accepts both encrypted and explicit plaintext formats, and downgrade deletes plaintext rows before restoring encrypted-only validation.
+- Upgrade a revision-`0015` database to `0016_plaintext_backups`; verify the `device_backups.backup_format` constraint accepts both encrypted and explicit plaintext formats, and downgrade deletes plaintext rows before restoring encrypted-only validation.
 - Verify Docker images build from a clean checkout.
 - Verify startup creates `/etc/wireguard/server.key`, renders `/etc/wireguard/wg0.conf`, and brings up `wg0` when `WG_DRY_RUN=false`.
 - Verify every peer in `wg show` uses only `100.96.x.y/32` AllowedIPs and no customer LAN subnet; revocation must remove the peer.

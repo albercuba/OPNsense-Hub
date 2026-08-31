@@ -9,7 +9,7 @@ import sqlalchemy as sa
 op = import_module("alembic.op")
 context = import_module("alembic.context")
 
-revision = "0016_config_backup_plaintext_mode"
+revision = "0016_plaintext_backups"
 down_revision = "0015_device_token_expiry"
 branch_labels = None
 depends_on = None
