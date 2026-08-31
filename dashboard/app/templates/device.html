@@ -420,8 +420,9 @@
             cannot read or restore their contents. Keep the firewall's exported backup
             recovery key in separate offline storage.
         </p>
-        <table></table>
-            <thead>
+        <div class="device-backup-history-table-wrap">
+            <table class="device-backup-history-table">
+                <thead>
                 <tr>
                     <th>Created</th>
                     <th>Filename</th>
@@ -436,8 +437,9 @@
                     <td class="actions">
                         <a
                             class="icon-button"
-                            href="/devices/{{ device.id }}/backups/{{ backup.id }}/do                            title="Download encrypted backup"
-                            aria-label="Download encrypted backup" backup"
+                            href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
+                            title="Download encrypted backup"
+                            aria-label="Download encrypted backup"
                             ><i class="fa-solid fa-download"></i
                         ></a>
                         <form
@@ -471,8 +473,9 @@
                     </td>
                 </tr>
                 {% endfor %}
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
     </section>
     <section id="device-email-notifications-card" class="card device-email-notifications-card">
         <div class="admin-card-header">
