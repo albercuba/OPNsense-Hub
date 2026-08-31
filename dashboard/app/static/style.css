@@ -1343,7 +1343,8 @@ tr[data-user-hidden="true"] {
 .timeline-scroll-panel {
     max-height: 24rem;
     overflow-y: auto;
-    padding-right: 0.35rem;
+    padding-right: 1rem;
+    scrollbar-gutter: stable;
 }
 
 .activity-timeline {
@@ -2900,6 +2901,10 @@ select option {
 }
 
 @media (max-width: 900px) {
+    .app-layout {
+        grid-template-columns: 1fr;
+    }
+
     #device-settings-grid.device-settings-grid {
         grid-template-columns: 1fr;
     }
