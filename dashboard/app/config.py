@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     rate_limit_device_heartbeat_window_seconds: int = 60
     rate_limit_device_backup_attempts: int = 20
     rate_limit_device_backup_window_seconds: int = 300
+    config_backup_mode: str = "encrypted"
     device_token_ttl_days: int = 90
     device_token_rotation_window_days: int = 14
     rate_limit_backup_restore_attempts: int = 3

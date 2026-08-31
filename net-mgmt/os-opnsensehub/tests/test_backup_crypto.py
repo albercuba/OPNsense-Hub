@@ -214,9 +214,12 @@ class BackupCryptoTests(unittest.TestCase):
                 stat.S_IRUSR | stat.S_IWUSR,
             )
 
-    def test_heartbeat_advertises_only_encrypted_backup_format(self) -> None:
+    def test_heartbeat_advertises_encrypted_and_plaintext_backup_formats(self) -> None:
         payload = heartbeat.heartbeat_payload({})
-        self.assertEqual(payload["backup_formats"], [BACKUP_FORMAT])
+        self.assertEqual(
+            payload["backup_formats"],
+            [BACKUP_FORMAT, heartbeat.PLAINTEXT_BACKUP_FORMAT],
+        )
 
     def test_primary_heartbeat_410_is_explicit_revocation(self) -> None:
         state = {
@@ -313,6 +316,42 @@ class BackupCryptoTests(unittest.TestCase):
             payload = json.loads(request_body)
             self.assertEqual(payload["format"], BACKUP_FORMAT)
             self.assertEqual(payload["encrypted_backup"]["format"], BACKUP_FORMAT)
+
+    def test_heartbeat_upload_sends_plaintext_only_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config = root / "config.xml"
+            plaintext = "<opnsense><api-key>plain-on-purpose</api-key></opnsense>"
+            config.write_text(plaintext)
+            captured_request = None
+
+            def fake_urlopen(request, timeout):
+                nonlocal captured_request
+                captured_request = request
+                self.assertEqual(timeout, 30)
+                return FakeHttpResponse()
+
+            state = {
+                "hub_url": "https://hub.example.test",
+                "device_id": "01234567-89ab-cdef-0123-456789abcdef",
+                "device_token": "device-token",
+                "backup_key_id": "existing-key-id",
+            }
+            with (
+                patch.object(heartbeat, "CONFIG_XML", config),
+                patch.object(heartbeat, "save_state", lambda _state: None),
+                patch.object(heartbeat.urllib.request, "urlopen", fake_urlopen),
+            ):
+                heartbeat.upload_backup(state, heartbeat.PLAINTEXT_BACKUP_FORMAT)
+
+            self.assertIsNotNone(captured_request)
+            payload = json.loads(captured_request.data.decode("utf-8"))
+            self.assertEqual(payload["format"], heartbeat.PLAINTEXT_BACKUP_FORMAT)
+            self.assertEqual(
+                payload["plaintext_backup"]["format"], heartbeat.PLAINTEXT_BACKUP_FORMAT
+            )
+            self.assertIn("plain-on-purpose", payload["plaintext_backup"]["content"])
+            self.assertEqual(state["backup_key_id"], "existing-key-id")
 
     def test_decrypt_without_key_does_not_create_wrong_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -458,7 +497,7 @@ class BackupCryptoTests(unittest.TestCase):
             patch.object(
                 heartbeat,
                 "upload_backup",
-                lambda _state: (_ for _ in ()).throw(
+                lambda _state, _required_format=None: (_ for _ in ()).throw(
                     http_error("https://hub.example.test/api/v1/devices/id/backups", 401)
                 ),
             ),

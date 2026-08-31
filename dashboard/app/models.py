@@ -472,7 +472,8 @@ class DeviceBackup(Base):
     __tablename__ = "device_backups"
     __table_args__ = (
         CheckConstraint(
-            "backup_format = 'opnsense-config-encrypted-v1'",
+            "backup_format IN ('opnsense-config-encrypted-v1', "
+            "'opnsense-config-plaintext-v1')",
             name="ck_device_backups_encrypted_format",
         ),
     )

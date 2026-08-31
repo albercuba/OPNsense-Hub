@@ -28,6 +28,7 @@ from app.services.backup_service import parse_backup_bundle, restore_backup_bund
 from app.services.device_backup_crypto import (
     ENCRYPTED_DEVICE_BACKUP_FORMAT,
     ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES,
+    PLAINTEXT_DEVICE_BACKUP_FORMAT,
 )
 from app.services.notification_service import maybe_notify_for_repeated_auth_failures
 from fastapi.testclient import TestClient
@@ -52,6 +53,17 @@ VALID_WG_PUBLIC_KEY = "A" * 43 + "="
 VALID_WG_PUBLIC_KEY_2 = "B" * 43 + "="
 VALID_WG_PRIVATE_KEY = "C" * 43 + "="
 VALID_WG_PRIVATE_KEY_2 = "D" * 43 + "="
+
+
+def plaintext_backup_envelope(device_id):
+    return {
+        "format": PLAINTEXT_DEVICE_BACKUP_FORMAT,
+        "version": 1,
+        "device_id": str(device_id),
+        "source_hostname": "fw-acme-1",
+        "captured_at": "2026-06-25T23:00:00+00:00",
+        "content": "<opnsense><system /></opnsense>",
+    }
 
 
 def encrypted_backup_envelope(device_id):
@@ -325,7 +337,7 @@ def test_backup_export_preflights_encrypted_payload_restore_limits(
             assert False, "expected encrypted backup export preflight to fail"
         except Exception as exc:
             assert getattr(exc, "status_code", None) == 400
-            assert "stored encrypted firewall backups" in str(
+            assert "stored firewall backups" in str(
                 getattr(exc, "detail", exc)
             ).lower()
 
@@ -372,6 +384,38 @@ def test_parse_backup_bundle_rejects_legacy_plaintext_firewall_backup(
         assert "plaintext firewall backups" in str(
             getattr(exc, "detail", exc)
         ).lower()
+
+
+def test_parse_backup_bundle_accepts_explicit_plaintext_firewall_backup(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "branding_upload_dir", str(tmp_path / "branding"))
+    monkeypatch.setattr(
+        settings, "wg_server_private_key_path", str(tmp_path / "missing-server.key")
+    )
+    with sqlite_session(tmp_path, "plaintext_envelope_archive") as session:
+        seed_backup_source(session)
+        bundle, _filename, _media_type = export_backup_bundle(session)
+
+    def replace_with_plaintext_envelope(members):
+        payload = json.loads(members["data.json"])
+        device_id = payload["devices"][0]["id"]
+        backup = payload["device_backups"][0]
+        backup["filename"] = "fw-acme-1-backup.xml"
+        backup["backup_format"] = PLAINTEXT_DEVICE_BACKUP_FORMAT
+        backup["encrypted_payload"] = json.dumps(
+            plaintext_backup_envelope(device_id),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        members["data.json"] = json.dumps(payload).encode("utf-8")
+
+    mutated = rewrite_backup_bundle(bundle, replace_with_plaintext_envelope)
+    _manifest, data, _logo, _wg_key = parse_backup_bundle(mutated)
+
+    restored_backup = data["device_backups"][0]
+    assert restored_backup["backup_format"] == PLAINTEXT_DEVICE_BACKUP_FORMAT
+    assert "<opnsense" in str(restored_backup["encrypted_payload"])
 
 
 def test_backup_verification_reports_structural_integrity(monkeypatch, tmp_path):

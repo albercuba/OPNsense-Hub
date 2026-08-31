@@ -151,6 +151,8 @@ def runtime_validation_errors(settings: Settings) -> list[str]:
         )
     if settings.firewall_access_mode.strip().lower() not in {"connector", "hub_proxy"}:
         errors.append("Set FIREWALL_ACCESS_MODE to connector or hub_proxy")
+    if settings.config_backup_mode.strip().lower() not in {"encrypted", "plaintext"}:
+        errors.append("Set CONFIG_BACKUP_MODE to encrypted or plaintext")
     if settings.connector_session_ttl_minutes <= 0:
         errors.append("Set CONNECTOR_SESSION_TTL_MINUTES to a positive value")
     elif (

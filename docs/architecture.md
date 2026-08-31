@@ -92,8 +92,8 @@ The plugin is scaffolded using standard OPNsense MVC/configd layout:
 - The plugin generates the WireGuard private key locally; the private key is never sent to Hub.
 - The plugin validates Hub-returned `interface_address` and `allowed_ips` before writing config, reusing saved state, or starting the WireGuard client.
 - The plugin checks the Hub heartbeat response for pending firmware-check requests, runs the firmware probe locally on the firewall, and reports normalized status back to the Hub.
-- Plugin `0.2` advertises `opnsense-config-encrypted-v1`, creates a root-only per-firewall backup master key, and encrypts/authenticates `/conf/config.xml` before uploading only a versioned ciphertext envelope. The key remains on the firewall and can be exported separately for offline disaster recovery.
-- The Hub requests configuration backups only from plugins advertising the encrypted format, accepts them only for a pending request, and stores/returns only canonical opaque envelopes. It cannot decrypt them or validate their HMAC.
+- Plugin `0.2` advertises `opnsense-config-encrypted-v1` and `opnsense-config-plaintext-v1`. By default, it creates a root-only per-firewall backup master key and encrypts/authenticates `/conf/config.xml` before uploading only a versioned ciphertext envelope. The key remains on the firewall and can be exported separately for offline disaster recovery.
+- The Hub requests the backup format selected by `CONFIG_BACKUP_MODE`, accepts uploads only for a pending request, and stores/returns canonical envelopes. `CONFIG_BACKUP_MODE=encrypted` stores opaque `.opnenc` envelopes that the Hub cannot decrypt or HMAC-validate. Explicit `CONFIG_BACKUP_MODE=plaintext` stores readable XML config backups on the Hub.
 - Enrollment code is cleared after successful enrollment.
 - Device token is stored locally with restrictive file permissions by the backend script.
 
@@ -111,7 +111,7 @@ Some OPNsense service paths and WireGuard startup commands are marked `verify ag
 - `FIREWALL_ACCESS_MODE=hub_proxy` is an explicit browser-only mode for deployments that accept the weaker boundary: the Hub proxies WebGUI HTTP(S), so WebGUI credentials, cookies, requests, and responses may be visible to the Hub process and its logs if future logging is misconfigured. The mode remains dashboard-authenticated, company-scoped, audited, and limited to each firewall's WireGuard `/32` WebGUI target.
 - The optional public L4 relay is disabled by default and requires source-IP preservation plus exact per-device WebGUI certificate and client-certificate enforcement.
 - Firmware status reporting is local-first: the firewall plugin performs the check, the Hub stores the result, and no update is installed automatically.
-- Complete firewall configurations are encrypted and authenticated before leaving OPNsense. The Hub never receives plaintext `config.xml` or the backup master/recovery key; `.opnenc` downloads require the separately protected firewall key.
+- Complete firewall configurations are encrypted and authenticated before leaving OPNsense when `CONFIG_BACKUP_MODE=encrypted` (the default). The Hub never receives plaintext `config.xml` or the backup master/recovery key in that mode; `.opnenc` downloads require the separately protected firewall key. `CONFIG_BACKUP_MODE=plaintext` is an explicit exception that makes the Hub receive, store, export, and download readable XML firewall configs.
 - Migration `0012_encrypted_device_backups` purges legacy plaintext rows and resets backup timestamps because the Hub cannot safely convert them without violating the key boundary.
 - The dashboard does not create firewall policies, restore config, reboot firewalls, or reconfigure OPNsense beyond the plugin’s own local WireGuard client setup.
 - The Hub is not a site-to-site router. It only reaches each firewall web UI through that firewall's unique WireGuard tunnel `/32`.

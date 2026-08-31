@@ -75,7 +75,7 @@ docker-compose.yml
 - Branding logo upload with persistent storage and login/app-shell rendering.
 - Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.
 - Configurable database-backed retention management for audit logs and device events, with batched cleanup and local archive export from the Hub UI.
-- Complete OPNsense configuration backups encrypted and authenticated on the firewall before upload; the Hub stores and downloads only opaque ciphertext and never receives the recovery key.
+- Complete OPNsense configuration backups encrypted and authenticated on the firewall before upload by default; explicit `CONFIG_BACKUP_MODE=plaintext` makes the Hub request, store, and download readable XML backups instead.
 - Daily firmware update-status checks requested by Hub and executed locally by the OPNsense plugin at 23:00 Hub time.
 - Colored firmware status icons in the firewalls table for unknown, up to date, updates available, upgrade available, and check failed states.
 - OPNsense plugin scaffold with MVC, configd actions, and backend scripts.
@@ -395,13 +395,15 @@ Firmware status colors in the firewalls table:
 
 For UI-only development without WireGuard privileges, set `WG_DRY_RUN=true`.
 
-## Encrypted OPNsense configuration backups
+## OPNsense configuration backups
 
-Plugin version `0.2` encrypts `/conf/config.xml` locally before upload. The format uses AES-256-CBC with PBKDF2-HMAC-SHA256 plus an independent HMAC-SHA256 encrypt-then-MAC key. Encryption and authentication keys are derived separately from a random 32-byte master key stored only on the firewall at `/var/db/opnsensehub/backup_master.key` with root-only permissions. The key, plaintext XML, and decrypted configuration are never sent to the Hub.
+By default (`CONFIG_BACKUP_MODE=encrypted`), plugin version `0.2` encrypts `/conf/config.xml` locally before upload. The format uses AES-256-CBC with PBKDF2-HMAC-SHA256 plus an independent HMAC-SHA256 encrypt-then-MAC key. Encryption and authentication keys are derived separately from a random 32-byte master key stored only on the firewall at `/var/db/opnsensehub/backup_master.key` with root-only permissions. The key, plaintext XML, and decrypted configuration are never sent to the Hub.
 
-The plugin advertises `opnsense-config-encrypted-v1` in its heartbeat. The Hub requests a backup only from a plugin advertising that format and accepts uploads only while a backup request is pending. Legacy `content` uploads and unknown or malformed envelopes are rejected. Retention ordering uses Hub receipt time rather than a device-supplied timestamp.
+The plugin advertises both `opnsense-config-encrypted-v1` and `opnsense-config-plaintext-v1` in its heartbeat. The Hub requests the format selected by `CONFIG_BACKUP_MODE` and accepts uploads only while a backup request is pending. Legacy `content` uploads and unknown or malformed envelopes are rejected. Retention ordering uses Hub receipt time rather than a device-supplied timestamp.
 
-The Hub stores a canonical encrypted envelope, serves downloads as `.opnenc`, and cannot validate the envelope HMAC or decrypt it because it does not possess the firewall key. Integrity is verified locally when the file is decrypted. Hub exports contain only these opaque envelopes, although the rest of a Hub export still contains sensitive Hub data and should normally use passphrase protection.
+Set `CONFIG_BACKUP_MODE=plaintext` only when you intentionally want the Hub to receive, store, export, and download readable `config.xml` backups. In plaintext mode, downloaded firewall backups are `.xml`; Hub database rows, Hub exports, PostgreSQL backups/snapshots, WAL archives, storage replicas, and operators with backup-download access may contain firewall secrets. Protect those systems accordingly and normally use passphrase protection for Hub exports.
+
+In encrypted mode, the Hub stores a canonical encrypted envelope, serves downloads as `.opnenc`, and cannot validate the envelope HMAC or decrypt it because it does not possess the firewall key. Integrity is verified locally when the file is decrypted. Hub exports contain only these opaque envelopes, although the rest of a Hub export still contains sensitive Hub data and should normally use passphrase protection.
 
 Back up the recovery key separately before relying on off-device backups:
 
@@ -440,6 +442,7 @@ Set `APP_ENV=production` to enable strict startup validation. In production the 
 - `PUBLIC_URL` is localhost, plain HTTP, or otherwise not an HTTPS user-facing URL
 - `PROXY_PUBLIC_URL`, which supplies the optional relay base hostname, is not HTTPS, is invalid, or is not distinct from `PUBLIC_URL`
 - `FIREWALL_ACCESS_MODE` is not `connector` or `hub_proxy`
+- `CONFIG_BACKUP_MODE` is not `encrypted` or `plaintext`; `encrypted` is the default and recommended production setting
 - connector limits are invalid, or the public relay is enabled without `PUBLIC_L4_RELAY_MTLS_REQUIRED=true` and valid relay limits
 - `HUB_CONTROL_PLANE_PORT` is invalid, or inline tunnel policy management is disabled/external without `HUB_EXTERNAL_ISOLATION_POLICY_VERIFIED=true`
 - the retained `PROXY_VERIFY_TLS` setting is `false` without `ALLOW_INSECURE_PROXY_TLS_IN_PRODUCTION=true`; the default connector still leaves firewall TLS validation to the user's browser

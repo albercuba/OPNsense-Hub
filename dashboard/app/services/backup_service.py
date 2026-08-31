@@ -35,7 +35,9 @@ from sqlalchemy.pool import StaticPool
 
 from .device_backup_crypto import (
     ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    PLAINTEXT_DEVICE_BACKUP_FORMAT,
     validate_encrypted_device_backup,
+    validate_plaintext_device_backup,
 )
 from ..backups import (
     DEVICE_BACKUP_INTERVAL_HOURS_MAX,
@@ -610,27 +612,36 @@ def validate_backup_data(
                 status_code=400,
                 detail="legacy Hub archives containing plaintext firewall backups are not supported",
             )
-        if row.get("backup_format") != ENCRYPTED_DEVICE_BACKUP_FORMAT:
+        backup_format = row.get("backup_format")
+        if backup_format not in {
+            ENCRYPTED_DEVICE_BACKUP_FORMAT,
+            PLAINTEXT_DEVICE_BACKUP_FORMAT,
+        }:
             raise HTTPException(
                 status_code=400,
                 detail="backup archive contains an unsupported firewall backup format",
             )
-        encrypted_payload = row.get("encrypted_payload")
-        if not isinstance(encrypted_payload, str):
+        stored_payload = row.get("encrypted_payload")
+        if not isinstance(stored_payload, str):
             raise HTTPException(
                 status_code=400,
-                detail="backup archive contains an invalid encrypted firewall backup",
+                detail="backup archive contains an invalid stored firewall backup",
             )
         try:
-            envelope = json.loads(encrypted_payload)
+            envelope = json.loads(stored_payload)
         except json.JSONDecodeError as exc:
             raise HTTPException(
                 status_code=400,
-                detail="backup archive contains an invalid encrypted firewall backup",
+                detail="backup archive contains an invalid stored firewall backup",
             ) from exc
-        row["encrypted_payload"] = validate_encrypted_device_backup(
-            envelope, expected_device_id=device_id
-        )
+        if backup_format == PLAINTEXT_DEVICE_BACKUP_FORMAT:
+            row["encrypted_payload"] = validate_plaintext_device_backup(
+                envelope, expected_device_id=device_id
+            )
+        else:
+            row["encrypted_payload"] = validate_encrypted_device_backup(
+                envelope, expected_device_id=device_id
+            )
 
     for row in data["device_events"]:
         if _backup_uuid(
@@ -871,7 +882,7 @@ def decrypt_backup_payload(content: bytes, passphrase: str | None) -> bytes:
 def export_backup_bundle(
     db: Session, passphrase: str | None = None
 ) -> tuple[bytes, str, str]:
-    encrypted_backup_count, encrypted_payload_characters = db.execute(
+    device_backup_count, stored_payload_characters = db.execute(
         select(
             func.count(DeviceBackup.id),
             func.coalesce(func.sum(func.length(DeviceBackup.encrypted_payload)), 0),
@@ -880,7 +891,7 @@ def export_backup_bundle(
     # Device backup envelopes are ASCII JSON embedded inside data.json. Account
     # conservatively for JSON escaping and row metadata before materializing them.
     estimated_device_backup_json_bytes = (
-        int(encrypted_payload_characters) * 2 + int(encrypted_backup_count) * 1024
+        int(stored_payload_characters) * 2 + int(device_backup_count) * 1024
     )
     data_member_limit = min(
         settings.max_backup_restore_file_bytes,
@@ -890,7 +901,7 @@ def export_backup_bundle(
         raise HTTPException(
             status_code=400,
             detail=(
-                "stored encrypted firewall backups exceed the configured Hub archive "
+                "stored firewall backups exceed the configured Hub archive "
                 "restore limits; increase MAX_BACKUP_RESTORE_FILE_BYTES and "
                 "MAX_BACKUP_RESTORE_TOTAL_UNCOMPRESSED_BYTES before exporting"
             ),

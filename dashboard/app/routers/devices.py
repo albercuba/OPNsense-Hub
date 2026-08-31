@@ -40,8 +40,10 @@ from ..services.common import (
 from ..services.device_backup_crypto import (
     ENCRYPTED_DEVICE_BACKUP_FORMAT,
     ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES,
-    encrypted_device_backup_filename,
+    PLAINTEXT_DEVICE_BACKUP_FORMAT,
+    device_backup_filename,
     validate_encrypted_device_backup,
+    validate_plaintext_device_backup,
 )
 from ..services.device_tokens import device_token_rotation_due, issue_device_token
 from ..services.firmware_scheduler import (
@@ -366,12 +368,17 @@ def heartbeat(
     pending_firmware_check_at = device.firmware_check_requested_at
     pending_firmware_check_reason = device.firmware_check_request_reason
     advertised_backup_formats = payload.get("backup_formats")
-    supports_encrypted_backups = (
+    required_backup_format = (
+        PLAINTEXT_DEVICE_BACKUP_FORMAT
+        if settings.config_backup_mode.strip().lower() == "plaintext"
+        else ENCRYPTED_DEVICE_BACKUP_FORMAT
+    )
+    supports_required_backup_format = (
         isinstance(advertised_backup_formats, list)
-        and ENCRYPTED_DEVICE_BACKUP_FORMAT in advertised_backup_formats
+        and required_backup_format in advertised_backup_formats
     )
     pending_backup = (
-        mark_device_backup_requested(device) if supports_encrypted_backups else False
+        mark_device_backup_requested(device) if supports_required_backup_format else False
     )
     pending_backup_at = device.backup_last_requested_at if pending_backup else None
     db.commit()
@@ -383,7 +390,7 @@ def heartbeat(
         else None,
         "firmware_check_request_reason": pending_firmware_check_reason,
         "backup_requested": pending_backup,
-        "backup_format_required": ENCRYPTED_DEVICE_BACKUP_FORMAT,
+        "backup_format_required": required_backup_format,
         "backup_requested_at": pending_backup_at.isoformat()
         if pending_backup_at
         else None,
@@ -457,25 +464,37 @@ def _store_device_backup_payload(
     if "content" in payload:
         raise HTTPException(
             status_code=400,
-            detail="plaintext configuration backups are not accepted",
+            detail="legacy plaintext configuration backups are not accepted",
         )
-    if set(payload) != {"format", "encrypted_backup"}:
-        raise HTTPException(
-            status_code=400, detail="encrypted backup request fields are invalid"
-        )
-    if payload.get("format") != ENCRYPTED_DEVICE_BACKUP_FORMAT:
-        raise HTTPException(
-            status_code=400, detail="encrypted backup format is required"
-        )
-    encrypted_payload = validate_encrypted_device_backup(
-        payload.get("encrypted_backup"), expected_device_id=device.id
+    required_backup_format = (
+        PLAINTEXT_DEVICE_BACKUP_FORMAT
+        if settings.config_backup_mode.strip().lower() == "plaintext"
+        else ENCRYPTED_DEVICE_BACKUP_FORMAT
     )
+    if payload.get("format") != required_backup_format:
+        raise HTTPException(status_code=400, detail="required backup format was not used")
+    if required_backup_format == PLAINTEXT_DEVICE_BACKUP_FORMAT:
+        if set(payload) != {"format", "plaintext_backup"}:
+            raise HTTPException(
+                status_code=400, detail="plaintext backup request fields are invalid"
+            )
+        backup_payload = validate_plaintext_device_backup(
+            payload.get("plaintext_backup"), expected_device_id=device.id
+        )
+    else:
+        if set(payload) != {"format", "encrypted_backup"}:
+            raise HTTPException(
+                status_code=400, detail="encrypted backup request fields are invalid"
+            )
+        backup_payload = validate_encrypted_device_backup(
+            payload.get("encrypted_backup"), expected_device_id=device.id
+        )
     received_at = utc_now()
     backup = DeviceBackup(
         device_id=device.id,
-        filename=encrypted_device_backup_filename(device.hostname, received_at),
-        backup_format=ENCRYPTED_DEVICE_BACKUP_FORMAT,
-        encrypted_payload=encrypted_payload,
+        filename=device_backup_filename(device.hostname, received_at, required_backup_format),
+        backup_format=required_backup_format,
+        encrypted_payload=backup_payload,
         created_at=received_at,
     )
     device.backup_last_uploaded_at = utc_now()
@@ -528,7 +547,7 @@ def _reject_duplicate_json_keys(pairs):
     return value
 
 
-async def _read_encrypted_backup_request(request: Request) -> dict[str, object]:
+async def _read_device_backup_request(request: Request) -> dict[str, object]:
     content_length = request.headers.get("content-length")
     if content_length:
         try:
@@ -536,19 +555,19 @@ async def _read_encrypted_backup_request(request: Request) -> dict[str, object]:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
         if declared_length > ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES:
-            raise HTTPException(status_code=413, detail="encrypted backup request is too large")
+            raise HTTPException(status_code=413, detail="backup request is too large")
 
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
         if len(body) > ENCRYPTED_DEVICE_BACKUP_MAX_REQUEST_BYTES:
-            raise HTTPException(status_code=413, detail="encrypted backup request is too large")
+            raise HTTPException(status_code=413, detail="backup request is too large")
     try:
         payload = json.loads(body, object_pairs_hook=_reject_duplicate_json_keys)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="encrypted backup request is invalid") from exc
+        raise HTTPException(status_code=400, detail="backup request is invalid") from exc
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="encrypted backup request must be an object")
+        raise HTTPException(status_code=400, detail="backup request must be an object")
     return payload
 
 
@@ -562,7 +581,7 @@ async def upload_device_backup(
     device = _authorize_device_backup_upload(
         device_id, request, db, authorization
     )
-    payload = await _read_encrypted_backup_request(request)
+    payload = await _read_device_backup_request(request)
     return _store_device_backup_payload(device, payload, db)
 
 
@@ -678,6 +697,7 @@ def device_page(
             "company": company,
             "device": device,
             "backups": backups,
+            "config_backup_mode": settings.config_backup_mode.strip().lower(),
             "can_edit_notification_settings": can_edit_notification_settings,
             "can_manage_device": has_company_access(
                 db, user, device.company_id, "admin"
@@ -995,17 +1015,29 @@ def download_device_backup(
     backup = db.get(DeviceBackup, backup_id)
     if not backup or backup.device_id != device.id:
         raise HTTPException(status_code=404)
+    if backup.backup_format == PLAINTEXT_DEVICE_BACKUP_FORMAT:
+        try:
+            payload = json.loads(backup.encrypted_payload)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=500, detail="stored backup is invalid") from exc
+        content = str(payload.get("content") or "").encode("utf-8")
+        media_type = "application/xml"
+        fallback = "firewall-backup.xml"
+    else:
+        content = backup.encrypted_payload.encode("utf-8")
+        media_type = "application/vnd.opnsense-hub.encrypted-config+json"
+        fallback = "firewall-backup.opnenc"
     headers = {
         "Content-Disposition": content_disposition_attachment(
             backup.filename,
-            fallback="firewall-backup.opnenc",
+            fallback=fallback,
         ),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
     }
     return Response(
-        content=backup.encrypted_payload.encode("utf-8"),
-        media_type="application/vnd.opnsense-hub.encrypted-config+json",
+        content=content,
+        media_type=media_type,
         headers=headers,
     )
 

@@ -88,6 +88,14 @@ def test_runtime_validation_rejects_invalid_firewall_access_mode():
     assert any("FIREWALL_ACCESS_MODE" in error for error in errors)
 
 
+def test_runtime_validation_rejects_invalid_config_backup_mode():
+    errors = runtime_validation_errors(
+        production_settings(config_backup_mode="disabled")
+    )
+
+    assert any("CONFIG_BACKUP_MODE" in error for error in errors)
+
+
 def test_runtime_validation_requires_strong_wireguard_agent_token():
     errors = runtime_validation_errors(
         production_settings(

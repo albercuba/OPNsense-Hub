@@ -16,12 +16,16 @@ from app.main import (
     normalize_device_firmware_payload,
     request_device_backup_now,
     run_firmware_schedule_once,
+    settings,
     upload_device_backup,
 )
 from app.models import Device, DeviceBackup, DeviceEvent
-from app.routers.devices import rotate_device_token
+from app.routers.devices import download_device_backup, rotate_device_token
 from app.security import hash_secret
-from app.services.device_backup_crypto import ENCRYPTED_DEVICE_BACKUP_FORMAT
+from app.services.device_backup_crypto import (
+    ENCRYPTED_DEVICE_BACKUP_FORMAT,
+    PLAINTEXT_DEVICE_BACKUP_FORMAT,
+)
 from starlette.requests import Request
 
 
@@ -35,6 +39,17 @@ def make_request(path="/"):
             "client": ("127.0.0.1", 12345),
         }
     )
+
+
+def plaintext_backup_envelope(device_id):
+    return {
+        "format": PLAINTEXT_DEVICE_BACKUP_FORMAT,
+        "version": 1,
+        "device_id": str(device_id),
+        "source_hostname": "test-firewall",
+        "captured_at": "2026-06-25T23:00:00+00:00",
+        "content": "<opnsense><system /></opnsense>",
+    }
 
 
 def encrypted_backup_envelope(device_id, marker: bytes = b"A"):
@@ -83,6 +98,10 @@ class FakeDb:
     def get(self, model, key):
         if model is Device and self.device and key == self.device.id:
             return self.device
+        if model is DeviceBackup:
+            for backup in self.backups:
+                if key == backup.id:
+                    return backup
         return None
 
     def add(self, obj):
@@ -340,6 +359,7 @@ def test_heartbeat_response_includes_pending_backup_request():
     )
 
     assert response["backup_requested"] is True
+    assert response["backup_format_required"] == ENCRYPTED_DEVICE_BACKUP_FORMAT
     assert response["backup_requested_at"] is not None
     assert response["backup_retention_count"] == 4
     assert response["backup_interval_hours"] == 12
@@ -348,6 +368,58 @@ def test_heartbeat_response_includes_pending_backup_request():
         isinstance(event, DeviceEvent) and event.event_type == "heartbeat"
         for event in db.added
     )
+
+
+def test_heartbeat_requests_plaintext_backup_when_explicitly_configured(monkeypatch):
+    monkeypatch.setattr(settings, "config_backup_mode", "plaintext")
+    token = "device-token"
+    device = make_device(
+        "fw-plaintext-heartbeat",
+        token=token,
+        backup_enabled=True,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {
+            "status": "online",
+            "hostname": "fw-plaintext-heartbeat",
+            "backup_formats": [PLAINTEXT_DEVICE_BACKUP_FORMAT],
+        },
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["backup_requested"] is True
+    assert response["backup_format_required"] == PLAINTEXT_DEVICE_BACKUP_FORMAT
+    assert device.backup_last_requested_at is not None
+
+
+def test_heartbeat_does_not_request_backup_when_required_format_is_missing(monkeypatch):
+    monkeypatch.setattr(settings, "config_backup_mode", "plaintext")
+    token = "device-token"
+    device = make_device(
+        "fw-missing-plaintext",
+        token=token,
+        backup_enabled=True,
+    )
+    db = FakeDb(device=device)
+
+    response = heartbeat(
+        device.id,
+        {
+            "status": "online",
+            "hostname": "fw-missing-plaintext",
+            "backup_formats": [ENCRYPTED_DEVICE_BACKUP_FORMAT],
+        },
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["backup_requested"] is False
+    assert response["backup_format_required"] == PLAINTEXT_DEVICE_BACKUP_FORMAT
+    assert device.backup_last_requested_at is None
 
 
 def test_heartbeat_does_not_request_backup_from_plaintext_only_plugin():
@@ -531,6 +603,35 @@ def test_upload_device_backup_rotates_to_retention_limit():
     )
 
 
+def test_upload_device_backup_accepts_plaintext_when_explicitly_configured(monkeypatch):
+    monkeypatch.setattr(settings, "config_backup_mode", "plaintext")
+    token = "device-token"
+    device = make_device(
+        "fw-plaintext-backup",
+        token=token,
+        backup_enabled=True,
+        backup_last_requested_at=datetime.now(timezone.utc),
+    )
+    db = FakeDb(device=device)
+
+    response = upload_device_backup(
+        device.id,
+        {
+            "format": PLAINTEXT_DEVICE_BACKUP_FORMAT,
+            "plaintext_backup": plaintext_backup_envelope(device.id),
+        },
+        db,
+        authorization=f"Bearer {token}",
+    )
+
+    assert response["ok"] is True
+    assert response["filename"].endswith(".xml")
+    assert len(db.backups) == 1
+    assert db.backups[0].backup_format == PLAINTEXT_DEVICE_BACKUP_FORMAT
+    assert "<opnsense" in db.backups[0].encrypted_payload
+    assert device.backup_last_requested_at is None
+
+
 def test_upload_device_backup_rejects_plaintext_content():
     token = "device-token"
     device = make_device(
@@ -552,6 +653,32 @@ def test_upload_device_backup_rejects_plaintext_content():
     assert getattr(exc_info.value, "status_code", None) == 400
     assert "plaintext" in str(getattr(exc_info.value, "detail", "")).lower()
     assert db.backups == []
+
+
+def test_download_device_backup_returns_plaintext_xml(monkeypatch):
+    monkeypatch.setattr("app.routers.devices.has_company_access", lambda *_args: True)
+    device = make_device("fw-download-plaintext")
+    backup = DeviceBackup(
+        id=uuid4(),
+        device_id=device.id,
+        filename="fw-download-plaintext-backup.xml",
+        backup_format=PLAINTEXT_DEVICE_BACKUP_FORMAT,
+        encrypted_payload=json.dumps(plaintext_backup_envelope(device.id)),
+        created_at=datetime.now(timezone.utc),
+    )
+    db = FakeDb(device=device, backups=[backup])
+
+    response = download_device_backup(
+        device.id,
+        backup.id,
+        db,
+        SimpleNamespace(id=uuid4(), role="administrator"),
+    )
+
+    assert response.media_type == "application/xml"
+    assert response.body == b"<opnsense><system /></opnsense>"
+    assert "firewall-backup.xml" not in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.parametrize("mutation", ["wrong-device", "unexpected-field", "bad-base64"])

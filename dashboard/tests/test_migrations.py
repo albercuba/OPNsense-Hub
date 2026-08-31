@@ -42,7 +42,7 @@ def test_alembic_has_single_head():
     output = run_alembic("heads")
     heads = [line for line in output.splitlines() if "(head)" in line]
 
-    assert heads == ["0015_device_token_expiry (head)"]
+    assert heads == ["0016_config_backup_plaintext_mode (head)"]
 
 
 def test_fresh_postgresql_upgrade_sql_uses_static_baseline_and_later_migrations():
@@ -54,6 +54,7 @@ def test_fresh_postgresql_upgrade_sql_uses_static_baseline_and_later_migrations(
     assert "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider" in output
     assert "CREATE TABLE pending_mfa_logins" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_issued_at" in output
+    assert "opnsense-config-plaintext-v1" in output
     assert "Base.metadata" not in output
     assert "create_all" not in output
 
@@ -72,6 +73,7 @@ def test_legacy_postgresql_upgrade_sql_from_baseline_to_head():
     assert "ALTER TABLE devices ADD CONSTRAINT uq_devices_wg_public_key" in output
     assert "CREATE TABLE pending_mfa_logins" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_expires_at" in output
+    assert "opnsense-config-plaintext-v1" in output
 
 
 def test_incremental_postgresql_upgrade_sql_from_previous_head():
@@ -83,4 +85,17 @@ def test_incremental_postgresql_upgrade_sql_from_previous_head():
 
     assert "ALTER TABLE devices ADD COLUMN device_token_issued_at" in output
     assert "ALTER TABLE devices ADD COLUMN device_token_expires_at" in output
-    assert "UPDATE alembic_version SET version_num='0015_device_token_expiry'" in output
+    assert "opnsense-config-plaintext-v1" in output
+    assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output
+
+
+def test_incremental_postgresql_upgrade_sql_from_device_token_head():
+    output = run_alembic(
+        "upgrade",
+        "0015_device_token_expiry:head",
+        "--sql",
+    )
+
+    assert "DROP CONSTRAINT ck_device_backups_encrypted_format" in output
+    assert "opnsense-config-plaintext-v1" in output
+    assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output

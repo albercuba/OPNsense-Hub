@@ -418,11 +418,18 @@
     </section>
     <section id="device-backup-history-card" class="card device-backup-history-card">
         <h2>Stored backups</h2>
+        {% if config_backup_mode == 'plaintext' %}
+        <p class="warning">
+            Plaintext backup mode is enabled. Configuration backups are uploaded and
+            stored as readable XML on the Hub; protect Hub storage and exports accordingly.
+        </p>
+        {% else %}
         <p class="muted">
             Configuration backups are encrypted on the firewall before upload. The Hub
             cannot read or restore their contents. Keep the firewall's exported backup
             recovery key in separate offline storage.
         </p>
+        {% endif %}
         <div class="device-backup-history-table-wrap">
             <table class="device-backup-history-table">
                 <thead>
@@ -441,8 +448,8 @@
                         <a
                             class="icon-button"
                             href="/devices/{{ device.id }}/backups/{{ backup.id }}/download"
-                            title="Download encrypted backup"
-                            aria-label="Download encrypted backup"
+                            title="Download backup"
+                            aria-label="Download backup"
                             ><i class="fa-solid fa-download"></i
                         ></a>
                         <form

@@ -152,7 +152,7 @@ def ensure_schema_compat_legacy(target_engine: Engine) -> None:
               encrypted_payload text NOT NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
               CONSTRAINT ck_device_backups_encrypted_format
-                CHECK (backup_format = 'opnsense-config-encrypted-v1')
+                CHECK (backup_format IN ('opnsense-config-encrypted-v1', 'opnsense-config-plaintext-v1'))
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_device_backups_device_id ON device_backups(device_id)",
