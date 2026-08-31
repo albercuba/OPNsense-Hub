@@ -2817,3 +2817,82 @@ select option {
 .brand-mark i {
     font-size: 1.05rem;
 }
+
+.device-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.device-settings-grid > .card {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+}
+
+.device-settings-grid .backup-settings-row {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+}
+
+.device-settings-grid .inline-field-group {
+    max-width: 100%;
+}
+
+.device-settings-grid .backup-interval-field {
+    width: 5.75rem;
+    min-width: 5.75rem;
+    flex: 0 0 5.75rem;
+}
+
+.device-settings-grid .backup-interval-field[data-backup-interval-unit-input] {
+    width: 8rem;
+    min-width: 8rem;
+    flex-basis: 8rem;
+    padding-right: 1.9rem;
+}
+
+.device-settings-grid input::-webkit-calendar-picker-indicator,
+.device-settings-grid input::-webkit-inner-spin-button,
+.device-settings-grid input::-webkit-outer-spin-button {
+    background-color: transparent;
+    color: var(--text);
+}
+
+@media (max-width: 1200px) {
+    .device-settings-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .device-settings-grid > #device-email-notifications-card {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 900px) {
+    .device-settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .device-settings-grid > #device-email-notifications-card {
+        grid-column: auto;
+    }
+
+    .device-settings-grid .backup-settings-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 420px) {
+    .device-settings-grid .inline-field-group {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .device-settings-grid .backup-interval-field,
+    .device-settings-grid .backup-interval-field[data-backup-interval-unit-input] {
+        width: 100%;
+        min-width: 0;
+        flex-basis: auto;
+    }
+}
