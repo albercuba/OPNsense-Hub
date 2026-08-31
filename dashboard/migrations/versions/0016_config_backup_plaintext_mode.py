@@ -31,20 +31,28 @@ def _constraint_names() -> set[str]:
 
 def _drop_format_constraint() -> None:
     if context.is_offline_mode() or _CONSTRAINT in _constraint_names():
-        op.drop_constraint(_CONSTRAINT, "device_backups", type_="check")
+        op.execute(
+            f"ALTER TABLE device_backups DROP CONSTRAINT IF EXISTS {_CONSTRAINT}"
+        )
+
+
+def _set_lock_timeout() -> None:
+    if not context.is_offline_mode():
+        op.execute("SET LOCAL lock_timeout = '5s'")
 
 
 def upgrade() -> None:
+    _set_lock_timeout()
     _drop_format_constraint()
-    op.create_check_constraint(
-        _CONSTRAINT,
-        "device_backups",
-        "backup_format IN "
-        f"('{_ENCRYPTED_FORMAT}', '{_PLAINTEXT_FORMAT}')",
+    op.execute(
+        "ALTER TABLE device_backups ADD CONSTRAINT "
+        f"{_CONSTRAINT} CHECK (backup_format IN "
+        f"('{_ENCRYPTED_FORMAT}', '{_PLAINTEXT_FORMAT}'))"
     )
 
 
 def downgrade() -> None:
+    _set_lock_timeout()
     # Rows uploaded in explicit plaintext mode cannot satisfy the previous
     # encrypted-only schema. Remove only those rows before restoring it.
     op.execute(
@@ -52,8 +60,7 @@ def downgrade() -> None:
         f"WHERE backup_format = '{_PLAINTEXT_FORMAT}'"
     )
     _drop_format_constraint()
-    op.create_check_constraint(
-        _CONSTRAINT,
-        "device_backups",
-        f"backup_format = '{_ENCRYPTED_FORMAT}'",
+    op.execute(
+        "ALTER TABLE device_backups ADD CONSTRAINT "
+        f"{_CONSTRAINT} CHECK (backup_format = '{_ENCRYPTED_FORMAT}')"
     )

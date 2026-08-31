@@ -96,6 +96,6 @@ def test_incremental_postgresql_upgrade_sql_from_device_token_head():
         "--sql",
     )
 
-    assert "DROP CONSTRAINT ck_device_backups_encrypted_format" in output
+    assert "DROP CONSTRAINT IF EXISTS ck_device_backups_encrypted_format" in output
     assert "opnsense-config-plaintext-v1" in output
     assert "UPDATE alembic_version SET version_num='0016_config_backup_plaintext_mode'" in output
