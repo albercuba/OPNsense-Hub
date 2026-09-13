@@ -28,6 +28,7 @@ def production_settings(**overrides):
         "wg_dry_run": False,
         "allowed_hosts": "hub.example.com,proxy.example.com",
         "rate_limit_backend": "edge",
+        "wg_agent_token": "a" * 32,
     }
     values.update(overrides)
     return Settings(**values)

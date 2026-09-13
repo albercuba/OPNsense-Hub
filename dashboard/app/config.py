@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     firewall_health_critical_recovery_successes: int = 2
 
 
+# Module-level settings snapshots must be imported only after this cache is
+# initialized; clearing the cache later creates a second Settings object for
+# modules that already captured the previous one.
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

@@ -474,6 +474,7 @@ def test_retention_cleanup_requires_admin_and_csrf(monkeypatch):
     with sqlite_session() as session:
         admin, _company, _device = seed_log_data(session)
         configure_test_client(monkeypatch, session, admin)
+        monkeypatch.setattr(settings, "log_retention_enabled", True)
         with TestClient(app, raise_server_exceptions=False) as client:
             missing_csrf = client.post(
                 "/settings/retention/run-cleanup", follow_redirects=False
