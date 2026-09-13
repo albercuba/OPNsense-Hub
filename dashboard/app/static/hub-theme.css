@@ -641,6 +641,32 @@ button.button:focus-visible {
     }
 }
 
+/* Dashboard page header: title first, filters and saved-view tools below. */
+.dashboard-filters-card {
+    display: block;
+}
+
+.dashboard-filters-card > .dashboard-page-header,
+.dashboard-filters-card > .admin-card-header {
+    display: block;
+    margin-bottom: 1rem;
+}
+
+.dashboard-filters-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.dashboard-phase-two-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
 /* Health cards: keep the label and status badge on predictable separate rows. */
 .health-detail-head {
     display: flex;
