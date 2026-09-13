@@ -53,9 +53,8 @@ pip-licenses --format=markdown --with-license-file --with-urls > THIRD_PARTY_PYT
 | Asset | How used | License / terms |
 | --- | --- | --- |
 | Font Awesome Free 6.5.2 | Loaded from cdnjs in HTML templates | Font Awesome Free License: icons CC BY 4.0, fonts SIL OFL 1.1, code MIT. Keep attribution notices when bundling. |
-| JetBrains Mono | Loaded from Google Fonts in CSS | SIL Open Font License 1.1. If self-hosting, include font license text. |
+| Inter | Bundled locally under `dashboard/app/static/fonts/` | SIL Open Font License 1.1. The complete license is included in `dashboard/app/static/fonts/Inter-OFL.txt`. |
 | cdnjs | CDN provider for Font Awesome CSS | Subject to cdnjs/Cloudflare terms. Consider self-hosting for production privacy/compliance. |
-| Google Fonts | CDN provider for JetBrains Mono | Subject to Google Fonts terms and client IP disclosure to Google. Consider self-hosting for production privacy/compliance. |
 
 ## OPNsense and trademarks
 

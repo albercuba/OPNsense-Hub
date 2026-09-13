@@ -70,7 +70,7 @@ docker-compose.yml
 - Default local connector that carries opaque browser TLS bytes over an authenticated, device-scoped WSS connection; the Hub never terminates firewall TLS or receives WebGUI credentials.
 - Optional `FIREWALL_ACCESS_MODE=hub_proxy` browser-only mode that proxies authenticated WebGUI HTTP(S) through the Hub and WireGuard sidecar, avoiding local connector installs at the cost of exposing WebGUI requests/responses to the Hub process.
 - Optional, disabled-by-default public raw L4 relay for deployments where each OPNsense WebGUI enforces client certificates.
-- Server-rendered dashboard with an Ephemeral-Link-inspired style.
+- Server-rendered dashboard with a PharmaPMS/RxDesk-inspired style and locally bundled Inter font assets.
 - Grouped Settings side-menu for organization, integrations, system, and network/security administration, including companies, users, branding, email, Microsoft 365, Local AD, backups, retention, network, and sessions/secrets management.
 - Branding logo upload with persistent storage and login/app-shell rendering.
 - Admin backup/restore settings for exporting a portable Hub configuration archive and restoring it into another Hub container.

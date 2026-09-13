@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = True
     content_security_policy: str = (
         "default-src 'self'; img-src 'self' data:; "
-        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
         "script-src 'self' 'unsafe-inline'; "
-        "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
+        "font-src 'self' data: https://cdnjs.cloudflare.com; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     )
     referrer_policy: str = "strict-origin-when-cross-origin"
