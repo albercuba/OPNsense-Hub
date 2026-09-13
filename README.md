@@ -104,7 +104,7 @@ INITIAL_ADMIN_PASSWORD=change-me
 
 By default, the Compose stack separates the public web process from privileged WireGuard operations. `opnsense-hub-api` runs as an unprivileged UID with all Linux capabilities dropped and no WireGuard key volume. Its direct FastAPI port is bound only to `127.0.0.1:8083` for local administration/development; public deployments should expose the dashboard through Caddy on TCP `80`/`443`. The API delegates server-key, interface, peer, and runtime-peer operations to the authenticated internal `opnsense-hub-wireguard` sidecar. Only that sidecar runs with `NET_ADMIN`, `/dev/net/tun`, UDP `51820`, and the `opnsense_hub_wg` volume. The sidecar generates and persists the Hub server private key, renders `/etc/wireguard/wg0.conf`, brings up `wg0`, restores enrolled peers supplied by the web process, disables IP forwarding inside its container, and installs a verified default-deny tunnel policy. That policy drops all forwarding originating from `wg0`, permits only established return traffic and new TCP connections to the exact Hub WireGuard address/control-plane port, and drops every other packet entering from `wg0`.
 
-Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`.
+Branding uploads are stored in the `opnsense_hub_branding` Docker volume and served from `/branding/logo`. Compose initializes the volume ownership for the unprivileged API UID so uploads and logo removal work across container recreations.
 
 ## Exact dashboard commands
 

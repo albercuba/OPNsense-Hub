@@ -22,6 +22,14 @@ services:
       timeout: 5s
       retries: 5
 
+  opnsense-hub-branding-init:
+    build: ./dashboard
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /var/lib/opnsense-hub/branding && chown -R 10001:10001 /var/lib/opnsense-hub/branding"]
+    restart: "no"
+    volumes:
+      - opnsense_hub_branding:/var/lib/opnsense-hub/branding
+
   opnsense-hub-api:
     build: ./dashboard
     env_file: .env
@@ -35,6 +43,8 @@ services:
         condition: service_healthy
       opnsense-hub-wireguard:
         condition: service_started
+      opnsense-hub-branding-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8083:8083"
     cap_drop:
@@ -75,6 +85,8 @@ services:
         condition: service_healthy
       opnsense-hub-redis:
         condition: service_healthy
+      opnsense-hub-branding-init:
+        condition: service_completed_successfully
     profiles: ["split-services"]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8083"]
     volumes:
