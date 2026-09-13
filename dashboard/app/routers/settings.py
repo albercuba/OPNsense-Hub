@@ -651,7 +651,10 @@ async def update_branding_settings(
         branding_logo_url
     )
     if remove_logo == "on":
-        clear_uploaded_logo(settings.branding_upload_dir)
+        try:
+            clear_uploaded_logo(settings.branding_upload_dir)
+        except BrandingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         integration_settings.branding_logo_url = None
     elif branding_logo_file and branding_logo_file.filename:
         content = await branding_logo_file.read()

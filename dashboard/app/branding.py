@@ -43,8 +43,14 @@ def validate_branding_upload(
 
 def clear_uploaded_logo(upload_dir: str) -> None:
     path = Path(upload_dir)
-    for existing in path.glob("logo.*"):
-        existing.unlink(missing_ok=True)
+    if not path.exists():
+        return
+    try:
+        for existing in path.glob("logo.*"):
+            if existing.is_file() or existing.is_symlink():
+                existing.unlink(missing_ok=True)
+    except OSError as exc:
+        raise BrandingError("Uploaded logo storage could not be cleared") from exc
 
 
 def save_uploaded_logo(upload_dir: str, extension: str, content: bytes) -> Path:

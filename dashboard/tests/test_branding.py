@@ -74,6 +74,10 @@ def test_remove_uploaded_logo_clears_file(tmp_path):
     assert uploaded_logo_path(str(tmp_path)) is None
 
 
+def test_clear_uploaded_logo_is_idempotent_for_missing_directory(tmp_path):
+    clear_uploaded_logo(str(tmp_path / "missing-branding"))
+
+
 def test_current_brand_logo_url_rejects_non_https_remote_logo():
     assert current_brand_logo_url(cast(Session, FakeDb("javascript:alert(1)"))) is None
     assert (
