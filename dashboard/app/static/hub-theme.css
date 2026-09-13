@@ -1,4 +1,4 @@
-/* PharmaPMS visual language for OPNsense Hub.
+/* OPNsense Hub visual language.
  * This file intentionally overrides presentation only; routes, forms, and
  * security-sensitive interaction hooks remain in the existing templates/JS.
  */
