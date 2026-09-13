@@ -175,7 +175,7 @@ These steps deploy the Hub with the included Compose stack, PostgreSQL, persiste
 
    `PROXY_PUBLIC_URL` is retained as the base hostname used to construct optional raw relay names; it is not an L7 proxy origin. Production validation currently requires it to be a valid HTTPS URL on a hostname distinct from `PUBLIC_URL`, even while the relay is disabled. Wildcard DNS and relay ports are unnecessary until the relay is explicitly enabled.
 
-   `docker-compose.yml` sets `WG_AGENT_URL=http://opnsense-hub-wireguard:8084` for the web container and `WG_AGENT_MODE=true` for the sidecar. Set `WG_AGENT_TOKEN` to the same long random value for both services through `.env`; production startup rejects the development placeholder.
+   `docker compose` sets `WG_AGENT_URL=http://opnsense-hub-wireguard:8084` for the web container and `WG_AGENT_MODE=true` for the sidecar. Set `WG_AGENT_TOKEN` to the same long random value for both services through `.env`; production startup rejects the development placeholder. The API host binding defaults to `127.0.0.1:8083`. If an external reverse-proxy container must reach the host-published API, set `API_BIND_ADDRESS=172.18.0.1` (or the host bridge address used by that proxy) in `.env`, then recreate the API container.
 
    If you change the PostgreSQL username, password, database, Redis service name, WireGuard sidecar name, or service hostnames, keep `DATABASE_URL`, `RATE_LIMIT_REDIS_URL`, and `WG_AGENT_URL` aligned with `docker-compose.yml`.
 

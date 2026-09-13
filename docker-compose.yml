@@ -46,7 +46,9 @@ services:
       opnsense-hub-branding-init:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:8083:8083"
+      # Keep localhost as the secure default. Set API_BIND_ADDRESS in .env
+      # when an external reverse-proxy container must reach the host binding.
+      - "${API_BIND_ADDRESS:-127.0.0.1}:8083:8083"
     cap_drop:
       - ALL
     security_opt:
