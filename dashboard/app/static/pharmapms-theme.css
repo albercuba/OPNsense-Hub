@@ -399,6 +399,84 @@ button.button:focus-visible {
     }
 }
 
+/* Exact shell alignment with ui-template/styles.css. */
+.sidebar {
+    position: fixed;
+    top: 50px;
+    bottom: 0;
+    left: 0;
+    width: 240px;
+    padding: 14px 8px 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: var(--surface);
+    border-right: 1px solid #e8ebed;
+}
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 32px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.sidebar-item:hover,
+.sidebar-item:focus-visible {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.sidebar-item.active {
+    color: var(--accent-hover);
+    background: #eaf4fe;
+}
+
+:root[data-theme="dark"] .sidebar-item.active {
+    color: var(--accent);
+    background: var(--surface-active);
+}
+
+.sidebar-item i {
+    flex: 0 0 16px;
+    width: 16px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.sidebar-item.active i {
+    color: var(--accent);
+}
+
+.sidebar-group {
+    display: grid;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.sidebar-group > summary {
+    list-style: none;
+}
+
+.sidebar-group > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sidebar-section-items {
+    display: grid;
+    gap: 2px;
+    margin-top: 2px;
+    padding-left: 0;
+}
+
 /* Final shell overrides: keep the sidebar geometry stable against legacy rules. */
 .side-menu-backdrop {
     display: none;
