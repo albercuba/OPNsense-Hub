@@ -226,6 +226,13 @@ body {
     color: var(--accent);
 }
 
+.side-menu-group,
+.side-menu-submenu,
+.side-menu-section,
+.side-menu-section-items {
+    background: transparent;
+}
+
 .side-menu-submenu {
     display: grid;
     gap: 0.15rem;
@@ -246,10 +253,14 @@ body {
 }
 
 .side-menu-sublink:hover,
-.side-menu-sublink:focus-visible,
-.side-menu-sublink.active {
+.side-menu-sublink:focus-visible {
     color: var(--text-primary);
     background: var(--surface-hover);
+}
+
+.side-menu-sublink.active {
+    color: var(--accent-hover);
+    background: transparent;
 }
 
 .card,
@@ -628,6 +639,26 @@ button.button:focus-visible {
     .actions {
         flex-wrap: wrap;
     }
+}
+
+/* Health cards: keep the label and status badge on predictable separate rows. */
+.health-detail-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0.55rem;
+}
+
+.health-detail-head > .muted {
+    flex: 0 0 auto;
+    width: 100%;
+}
+
+.health-detail-head .health-status {
+    flex: 0 0 auto;
+    width: fit-content;
+    max-width: 100%;
 }
 
 /* Global semantic text colors: no page should fall back to legacy blue/white text. */
