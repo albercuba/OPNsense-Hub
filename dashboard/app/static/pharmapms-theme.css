@@ -407,6 +407,11 @@ button.button:focus-visible {
     left: 0;
     width: 240px;
     padding: 14px 8px 24px;
+    display: flex !important;
+    flex-direction: column;
+    align-content: flex-start;
+    justify-content: flex-start;
+    gap: 2px;
     overflow-x: hidden;
     overflow-y: auto;
     background: var(--surface);
