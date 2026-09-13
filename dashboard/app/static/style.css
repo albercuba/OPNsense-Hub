@@ -238,11 +238,14 @@ a {
     margin: 0;
     padding: 0.4rem 0.6rem;
     border-radius: var(--radius-md);
-    color: var(--text-primary);
+    color: var(--text-secondary);
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     cursor: pointer;
+}
+.side-menu-group[open] > .side-menu-section-title {
+    color: var(--text-primary);
 }
 .side-menu-section-title::after {
     color: var(--text-secondary);
