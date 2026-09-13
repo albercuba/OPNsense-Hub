@@ -2505,7 +2505,6 @@ td {
     margin-top: 0.2rem;
     padding: 0.25rem 0 0.25rem 0.4rem;
     border-left: 1px solid var(--border);
-    background: var(--status-bg);
     border-radius: var(--radius-md);
 }
 select option {
