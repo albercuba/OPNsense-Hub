@@ -61,7 +61,9 @@
     --chart-neutral: var(--text-muted);
     --chart-info: var(--info);
     --backup-action: #087f5b;
+    --backup-action-hover: #175a4c;
     --restore-action: #b66a00;
+    --restore-action-hover: #a96600;
     --sidebar-width: 240px;
     --radius-sm: 4px;
     --radius-md: 6px;
@@ -131,7 +133,9 @@
     --chart-neutral: var(--text-muted);
     --chart-info: var(--info);
     --backup-action: #087f5b;
+    --backup-action-hover: #175a4c;
     --restore-action: #b66a00;
+    --restore-action-hover: #a96600;
     --focus-outline: rgba(104, 168, 255, 0.34);
     --action-shadow: 0 8px 22px rgba(3, 9, 19, 0.32);
     --action-hover: #4d95f4;
@@ -359,8 +363,23 @@ button.button:focus-visible {
     border-color: var(--text-muted);
 }
 
-.button.backup-action { color: #fff; background: var(--backup-action); }
-.button.restore-action { color: #fff; background: var(--restore-action); }
+.button.backup-action,
+.button.restore-action {
+    color: #fff;
+}
+
+.button.backup-action { background: var(--backup-action); }
+.button.restore-action { background: var(--restore-action); }
+
+.button.backup-action:hover,
+.button.backup-action:focus-visible {
+    background: var(--backup-action-hover);
+}
+
+.button.restore-action:hover,
+.button.restore-action:focus-visible {
+    background: var(--restore-action-hover);
+}
 
 .icon-button,
 .side-menu-toggle,
