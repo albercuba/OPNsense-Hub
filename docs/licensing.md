@@ -16,11 +16,11 @@ The most important compliance points are:
 - Generate complete transitive dependency reports before tagged releases.
 - Review Docker image SBOMs because container images include OS packages beyond this repository.
 - Keep LGPL/GPL command-line tool notices available when distributing built images.
-- If bundling Font Awesome or JetBrains Mono instead of loading from CDN, include the required font/icon license files.
+- If bundling Font Awesome or JetBrains Mono, include the required font/icon license files.
 
 ## CDN privacy note
 
-The dashboard loads Font Awesome from cdnjs and JetBrains Mono from Google Fonts. That means users' browsers contact those third-party services. For production deployments with stricter privacy requirements, self-host these assets and include their license notices locally.
+The dashboard bundles Font Awesome and Inter locally under `dashboard/app/static/`, so browsers do not need to contact those third-party font providers. Keep the corresponding license files and notices with source and binary distributions.
 
 ## OPNsense trademark note
 

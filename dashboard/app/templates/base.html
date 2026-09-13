@@ -21,7 +21,7 @@
         {% endif %}
         <link
             rel="stylesheet"
-            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+            href="/static/fontawesome/all.min.css"
         />
         <link rel="stylesheet" href="/static/style.css?v=20260831-device-settings-2" />
                 <link rel="stylesheet" href="/static/hub-theme.css?v=20260913-4" />
@@ -83,25 +83,25 @@
             <aside id="primary-side-menu" class="sidebar side-menu" aria-label="Primary navigation">
                 <div class="sidebar-section-label">Workspace</div>
                 <a
-                    class="sidebar-item side-menu-link {% if active_page == 'dashboard' %}active{% endif %}"
+                    class="sidebar-item {% if active_page == 'dashboard' %}active{% endif %}"
                     href="/dashboard"
                     ><i class="fa-solid fa-chart-line"></i> Dashboard</a
                 >
                 <a
-                    class="sidebar-item side-menu-link {% if active_page == 'companies' %}active{% endif %}"
+                    class="sidebar-item {% if active_page == 'companies' %}active{% endif %}"
                     href="/companies"
                     ><i class="fa-solid fa-building"></i> Firewalls
                     Management</a
                 >
                 <a
-                    class="sidebar-item side-menu-link {% if active_page == 'account-security' %}active{% endif %}"
+                    class="sidebar-item {% if active_page == 'account-security' %}active{% endif %}"
                     href="/account/security"
                     ><i class="fa-solid fa-user-shield"></i> Account Security</a
                 >
                 {% if user and user.role == 'administrator' %}
                     <div class="sidebar-section-label">Administration</div>
                     <a
-                        class="sidebar-item side-menu-link {% if active_page == 'audit-logs' %}active{% endif %}"
+                        class="sidebar-item {% if active_page == 'audit-logs' %}active{% endif %}"
                         href="/audit-logs"
                         ><i class="fa-solid fa-clipboard-list"></i> Audit logs</a
                     >
@@ -111,7 +111,7 @@
                     <details class="side-menu-group">
                     {% endif %}
                         <summary
-                            class="sidebar-item side-menu-link {% if active_page == 'settings' %}active{% endif %}"
+                            class="sidebar-item {% if active_page == 'settings' %}active{% endif %}"
                         >
                             <i class="fa-solid fa-gear"></i> Settings
                         </summary>
@@ -124,17 +124,17 @@
                                 <summary class="side-menu-section-title">Organization</summary>
                                 <div class="side-menu-section-items">
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'manage-companies' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'manage-companies' %}active{% endif %}"
                                         href="/settings/manage-companies"
                                         >Manage Companies</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'manage-users' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'manage-users' %}active{% endif %}"
                                         href="/settings/manage-users"
                                         >Manage Users</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'branding' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'branding' %}active{% endif %}"
                                         href="/settings/branding"
                                         >Branding</a
                                     >
@@ -148,17 +148,17 @@
                                 <summary class="side-menu-section-title">Integrations</summary>
                                 <div class="side-menu-section-items">
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'microsoft-365' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'microsoft-365' %}active{% endif %}"
                                         href="/settings/microsoft-365"
                                         >Microsoft 365 Integration</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'local-ad' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'local-ad' %}active{% endif %}"
                                         href="/settings/local-ad"
                                         >Microsoft Local AD Integration</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'email-settings' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'email-settings' %}active{% endif %}"
                                         href="/settings/email-settings"
                                         >Email Settings</a
                                     >
@@ -172,12 +172,12 @@
                                 <summary class="side-menu-section-title">System</summary>
                                 <div class="side-menu-section-items">
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'backup' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'backup' %}active{% endif %}"
                                         href="/settings/backup"
                                         >Backup</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'retention' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'retention' %}active{% endif %}"
                                         href="/settings/retention"
                                         >Retention</a
                                     >
@@ -191,12 +191,12 @@
                                 <summary class="side-menu-section-title">Network &amp; Security</summary>
                                 <div class="side-menu-section-items">
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'network' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'network' %}active{% endif %}"
                                         href="/settings/network"
                                         >Network</a
                                     >
                                     <a
-                                        class="sidebar-item side-menu-sublink {% if active_settings == 'security' %}active{% endif %}"
+                                        class="sidebar-item {% if active_settings == 'security' %}active{% endif %}"
                                         href="/settings/security"
                                         >Sessions &amp; Secrets</a
                                     >

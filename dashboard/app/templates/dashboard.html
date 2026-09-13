@@ -69,7 +69,9 @@
             </datalist>
         </label>
     </form>
-    <div class="dashboard-phase-two-tools">
+    <details class="dashboard-filter-options">
+        <summary>More filters</summary>
+        <div class="dashboard-phase-two-tools">
         <form
             action="/dashboard/filters"
             method="post"
@@ -159,7 +161,8 @@
             </div>
         </div>
         {% endif %}
-    </div>
+        </div>
+    </details>
 </section>
 
 <section id="dashboard-summary-card" class="dashboard-summary-grid">
