@@ -600,6 +600,105 @@ button.button:focus-visible {
     }
 }
 
+/* Global semantic text colors: no page should fall back to legacy blue/white text. */
+body,
+button,
+input,
+select,
+textarea {
+    color: var(--text-primary);
+}
+
+input,
+select,
+textarea {
+    color-scheme: inherit;
+}
+
+a {
+    color: var(--text-secondary);
+}
+
+a:hover,
+a:focus-visible {
+    color: var(--accent-hover);
+}
+
+th,
+.form-row,
+.form-row > span,
+.form-label,
+label,
+.muted,
+.text-muted,
+.summary,
+.eyebrow {
+    color: var(--text-secondary);
+}
+
+td,
+td strong,
+td a,
+.card h1,
+.card h2,
+.card h3,
+.admin-card-header h1,
+.admin-card-header h2,
+.admin-card-header h3 {
+    color: var(--text-primary);
+}
+
+.button,
+.button:hover,
+.button:focus-visible,
+button.button,
+button.button:hover,
+button.button:focus-visible {
+    color: #fff;
+}
+
+.button.secondary,
+.button.secondary:hover,
+.button.secondary:focus-visible,
+.button.outline,
+.button.outline:hover,
+.button.outline:focus-visible {
+    color: var(--text-primary);
+}
+
+.icon-button,
+.link-button,
+.modal-close,
+.toast-close {
+    color: var(--text-secondary);
+}
+
+.icon-button:hover,
+.icon-button:focus-visible,
+.link-button:hover,
+.link-button:focus-visible,
+.modal-close:hover,
+.toast-close:hover {
+    color: var(--text-primary);
+}
+
+.status.online,
+.text-success {
+    color: var(--success);
+}
+
+.status.warning,
+.text-warning {
+    color: var(--warning);
+}
+
+.status.offline,
+.status.error,
+.text-danger,
+.danger-text:hover {
+    color: var(--danger);
+}
+
 @media (max-width: 560px) {
     .topbar .brand {
         font-size: 0.82rem;
