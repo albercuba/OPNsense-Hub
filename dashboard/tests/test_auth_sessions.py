@@ -283,6 +283,7 @@ def test_login_page_only_shows_external_auth_buttons_when_fully_configured(monke
     monkeypatch.setattr("app.main.apply_startup_hardening", lambda _settings: None)
     monkeypatch.setattr("app.main.device_health_check_loop", noop)
     monkeypatch.setattr("app.main.firmware_check_schedule_loop", noop)
+    monkeypatch.setattr("app.main.log_retention_loop", noop)
 
     cases = [
         (

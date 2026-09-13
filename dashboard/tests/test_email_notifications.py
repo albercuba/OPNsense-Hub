@@ -194,6 +194,8 @@ def test_send_smtp_email_uses_starttls_before_login_when_available(monkeypatch):
 
 def test_offline_notification_requires_critical_miss_threshold(monkeypatch):
     sent = []
+    # Keep this test below the critical threshold regardless of deployment .env values.
+    monkeypatch.setattr("app.main.settings.firewall_health_critical_misses", 5)
     device = make_device(
         status="warning",
         health_missed_checks=3,
