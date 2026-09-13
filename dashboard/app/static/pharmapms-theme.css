@@ -80,7 +80,7 @@ body {
     height: 50px;
     padding: 0 1rem;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #e8ebed;
     box-shadow: 0 1px 2px rgb(31 39 46 / 3%);
 }
 
@@ -438,6 +438,7 @@ button.button:focus-visible {
     overflow-x: hidden;
     overflow-y: auto;
     background: var(--surface);
+    border: 0;
     border-right: 1px solid #e8ebed;
 }
 
