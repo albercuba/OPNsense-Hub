@@ -81,6 +81,7 @@
             <button class="side-menu-backdrop" type="button" hidden data-side-menu-backdrop aria-label="Close navigation menu"></button>
             {% endif %}
             <aside id="primary-side-menu" class="side-menu" aria-label="Primary navigation">
+                <div class="sidebar-section-label">Workspace</div>
                 <a
                     class="side-menu-link {% if active_page == 'dashboard' %}active{% endif %}"
                     href="/dashboard"
@@ -98,6 +99,7 @@
                     ><i class="fa-solid fa-user-shield"></i> Account Security</a
                 >
                 {% if user and user.role == 'administrator' %}
+                    <div class="sidebar-section-label">Administration</div>
                     <a
                         class="side-menu-link {% if active_page == 'audit-logs' %}active{% endif %}"
                         href="/audit-logs"
