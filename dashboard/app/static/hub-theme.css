@@ -55,6 +55,11 @@
     --warning: #a15c00;
     --success: #087443;
     --info: #315f9e;
+    --chart-success: var(--success);
+    --chart-warning: var(--warning);
+    --chart-danger: var(--danger);
+    --chart-neutral: var(--text-muted);
+    --chart-info: var(--info);
     --backup-action: #087f5b;
     --restore-action: #b66a00;
     --sidebar-width: 240px;
@@ -120,6 +125,11 @@
     --warning: #f0b35a;
     --success: #56d492;
     --info: #8abcf2;
+    --chart-success: var(--success);
+    --chart-warning: var(--warning);
+    --chart-danger: var(--danger);
+    --chart-neutral: var(--text-muted);
+    --chart-info: var(--info);
     --backup-action: #087f5b;
     --restore-action: #b66a00;
     --focus-outline: rgba(104, 168, 255, 0.34);
