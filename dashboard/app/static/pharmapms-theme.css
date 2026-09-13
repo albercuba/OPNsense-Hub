@@ -364,6 +364,101 @@ button.button:focus-visible {
     }
 }
 
+/* Final shell overrides: keep the sidebar geometry stable against legacy rules. */
+.side-menu-backdrop {
+    display: none;
+}
+
+@media (min-width: 901px) {
+    .app-layout {
+        display: block;
+        padding-left: calc(var(--sidebar-width) + 1rem);
+        padding-right: 1rem;
+    }
+
+    .side-menu {
+        position: fixed;
+        top: 50px;
+        left: 0;
+        width: var(--sidebar-width);
+        height: calc(100vh - 50px);
+        max-height: none;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 900px) {
+    .app-layout {
+        display: block;
+        padding: 0 0.75rem;
+    }
+
+    .side-menu {
+        position: fixed;
+        top: 50px;
+        bottom: 0;
+        left: 0;
+        width: min(var(--sidebar-width), calc(100vw - 2rem));
+        height: calc(100dvh - 50px);
+        max-height: none;
+        overflow-x: hidden;
+        overflow-y: auto;
+        transform: translateX(-105%);
+    }
+
+    body.side-menu-open .side-menu {
+        transform: translateX(0);
+    }
+
+    body.side-menu-open .side-menu-backdrop {
+        display: block !important;
+        position: fixed;
+        inset: 50px 0 0;
+        z-index: 35;
+        background: var(--overlay);
+    }
+
+    .shell {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0.75rem 0 1.5rem;
+    }
+
+    .dashboard-filters-card,
+    .dashboard-filters-form,
+    .audit-log-filters-form,
+    .dashboard-top-grid,
+    .dashboard-chart-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .responsive-table {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .responsive-table table {
+        min-width: 38rem;
+    }
+
+    .grid,
+    .dual-settings-grid,
+    .settings-grid-form,
+    .inline-user-form {
+        grid-template-columns: 1fr;
+    }
+
+    .device-page-header,
+    .company-overview-header,
+    .device-page-actions,
+    .actions {
+        flex-wrap: wrap;
+    }
+}
+
 @media (max-width: 560px) {
     .topbar .brand {
         font-size: 0.82rem;
