@@ -30,7 +30,7 @@ from .security.csrf import (
 from .security.rate_limit import rate_limiter
 from .security.request_context import ensure_allowed_host, ensure_host_path_boundary
 from .services import firmware_scheduler as firmware_scheduler_service
-from .services import notification_service as notification_service_module
+
 from .services.auth_service import session_from_request
 from .services.backup_service import export_backup_bundle
 from .services.db_migrations import bootstrap
@@ -176,12 +176,6 @@ def _compat_post_request(path: str = "/") -> Request:
     )
 
 
-def _sync_scheduler_compat_exports() -> None:
-    firmware_scheduler_service.SessionLocal = SessionLocal
-    firmware_scheduler_service.httpx = httpx
-    firmware_scheduler_service.probe_device_webgui = probe_device_webgui
-    notification_service_module.send_notification_email = send_notification_email
-
 
 # Re-export commonly used symbols for tests and compatibility.
 login = auth_router.login
@@ -205,13 +199,19 @@ update_device_email_notification_settings = (
 
 
 async def run_device_health_checks_once():
-    _sync_scheduler_compat_exports()
-    await firmware_scheduler_service.run_device_health_checks_once()
+    await firmware_scheduler_service.run_device_health_checks_once(
+        session_factory=SessionLocal,
+        httpx_module=httpx,
+        probe=probe_device_webgui,
+        email_sender=send_notification_email,
+    )
 
 
 async def run_firmware_schedule_once(now=None):
-    _sync_scheduler_compat_exports()
-    return await firmware_scheduler_service.run_firmware_schedule_once(now=now)
+    return await firmware_scheduler_service.run_firmware_schedule_once(
+        now=now,
+        session_factory=SessionLocal,
+    )
 
 
 def upload_device_backup(device_id, payload, db, authorization=None):

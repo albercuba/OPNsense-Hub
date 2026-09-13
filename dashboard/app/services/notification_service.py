@@ -246,12 +246,13 @@ def _send_device_rule_notification(
     body: str,
     event_message: str,
     failure_context: str,
+    email_sender=None,
 ) -> bool:
     recipient = clean_optional(device.email_notification_recipient)
     if not recipient:
         return False
     try:
-        send_notification_email(db, recipient, subject, body)
+        (email_sender or send_notification_email)(db, recipient, subject, body)
     except Exception as exc:
         db.add(
             DeviceEvent(
@@ -288,6 +289,7 @@ def maybe_send_phase2_device_notifications(
     license_expiring: bool,
     firmware_available: bool,
     current_time: datetime,
+    email_sender=None,
 ) -> None:
     if device.revoked_at or maintenance_window_active(device, current_time):
         return
@@ -324,6 +326,7 @@ def maybe_send_phase2_device_notifications(
                 body=body,
                 event_message="Backup overdue notification sent",
                 failure_context="backup overdue",
+                email_sender=email_sender,
             ):
                 device.backup_overdue_notified_at = current_time
     else:
@@ -360,6 +363,7 @@ def maybe_send_phase2_device_notifications(
                 body=body,
                 event_message="License expiring notification sent",
                 failure_context="license expiring",
+                email_sender=email_sender,
             ):
                 device.license_expiring_notified_at = current_time
     else:
@@ -393,6 +397,7 @@ def maybe_send_phase2_device_notifications(
                 body=body,
                 event_message="Firmware available notification sent",
                 failure_context="firmware available",
+                email_sender=email_sender,
             ):
                 device.firmware_available_notified_at = current_time
     else:

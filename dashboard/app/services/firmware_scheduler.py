@@ -110,21 +110,26 @@ def device_health_status(device: Device, healthy: bool) -> str:
     return new_state.status
 
 
-async def run_device_health_checks_once() -> None:
-    with SessionLocal() as db:
+async def run_device_health_checks_once(
+    session_factory=SessionLocal,
+    httpx_module=httpx,
+    probe=probe_device_webgui,
+    email_sender=None,
+) -> None:
+    with session_factory() as db:
         devices = db.scalars(
             select(Device).where(Device.revoked_at.is_(None)).order_by(Device.hostname)
         ).all()
         if not devices:
             return
         now = utc_now()
-        async with httpx.AsyncClient(
+        async with httpx_module.AsyncClient(
             verify=settings.proxy_verify_tls,
             follow_redirects=False,
             timeout=settings.firewall_health_check_timeout_seconds,
         ) as client:
             for device in devices:
-                healthy, message = await probe_device_webgui(client, device)
+                healthy, message = await probe(client, device)
                 previous_status = device.status
                 new_status = device_health_status(device, healthy)
                 if previous_status != new_status:
@@ -139,7 +144,12 @@ async def run_device_health_checks_once() -> None:
                         )
                     )
                     maybe_send_health_notification(
-                        db, device, previous_status, new_status, now
+                        db,
+                        device,
+                        previous_status,
+                        new_status,
+                        now,
+                        email_sender=email_sender,
                     )
                 if healthy:
                     device.last_seen_at = now
@@ -172,6 +182,7 @@ async def run_device_health_checks_once() -> None:
                     license_expiring=license_expiring,
                     firmware_available=firmware_available,
                     current_time=now,
+                    email_sender=email_sender,
                 )
         db.commit()
 
@@ -186,11 +197,14 @@ async def device_health_check_loop() -> None:
         await asyncio.sleep(interval)
 
 
-async def run_firmware_schedule_once(now: datetime | None = None) -> int:
+async def run_firmware_schedule_once(
+    now: datetime | None = None,
+    session_factory=SessionLocal,
+) -> int:
     current_time = now or app_now()
     if current_time.hour != 23:
         return 0
-    with SessionLocal() as db:
+    with session_factory() as db:
         marked = mark_devices_for_firmware_check(
             db, reason="scheduled", now=current_time
         )

@@ -12,6 +12,7 @@ from app.main import (
 )
 from app.models import Company, Device, DeviceEvent, IntegrationSettings
 from app.security import hash_secret
+from app.services import firmware_scheduler as firmware_scheduler_service
 from app.services.notification_service import (
     maybe_send_phase2_device_notifications,
     send_smtp_email,
@@ -224,6 +225,32 @@ def test_offline_notification_requires_critical_miss_threshold(monkeypatch):
 
     assert sent == []
     assert device.status == "warning"
+
+
+def test_health_check_does_not_leak_main_probe_patch_to_scheduler(monkeypatch):
+    device = make_device()
+    db = FakeDb(
+        device=device,
+        integration_settings=make_integration_settings(configured=True),
+    )
+    real_probe = firmware_scheduler_service.probe_device_webgui
+    calls = []
+
+    async def fake_probe(_client, _device):
+        calls.append(True)
+        return True, "reachable"
+
+    with monkeypatch.context() as patch:
+        patch.setattr("app.main.SessionLocal", lambda: FakeSessionContext(db))
+        patch.setattr(
+            "app.main.httpx.AsyncClient", lambda **kwargs: FakeAsyncClient()
+        )
+        patch.setattr("app.main.probe_device_webgui", fake_probe)
+        asyncio.run(run_device_health_checks_once())
+
+    assert calls == [True]
+    assert firmware_scheduler_service.probe_device_webgui is real_probe
+    assert firmware_scheduler_service.probe_device_webgui is not fake_probe
 
 
 def test_device_template_renders_email_notifications_section():
