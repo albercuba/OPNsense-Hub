@@ -399,6 +399,29 @@ button.button:focus-visible {
     }
 }
 
+/* Keep every navigation row on the template's 13px rhythm. */
+.side-menu-link,
+.side-menu-section-title,
+.side-menu-sublink,
+.sidebar-item {
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.side-menu-link,
+.side-menu-section-title {
+    font-weight: 500;
+}
+
+.side-menu-sublink {
+    font-weight: 400;
+}
+
+.sidebar-section-label {
+    font-size: 11px;
+    line-height: 1.2;
+}
+
 /* Exact shell alignment with ui-template/styles.css. */
 .sidebar {
     position: fixed;
