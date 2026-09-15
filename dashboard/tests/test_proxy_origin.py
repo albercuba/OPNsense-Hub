@@ -252,7 +252,10 @@ class FakeAgentHttpClient:
                 "body_b64": base64.b64encode(
                     b'<html><head><link href="/ui/css/main.css"></head>'
                     b'<body><img src="/ui/images/logo.png">'
-                    b'<form action="/index.php" method="post"></form></body></html>'
+                    b'<form action="/index.php" method="post"></form>'
+                    b'<script>ajaxGet("/api/wireguard/service/status", {}, function() {});'
+                    b"ajaxCall('/api/wireguard/general/get', {}, function() {});</script>"
+                    b'</body></html>'
                 ).decode("ascii"),
             }
         )
@@ -384,6 +387,14 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
         assert f'href="/proxy/devices/{device.id}/ui/css/main.css"' in response.text
         assert f'src="/proxy/devices/{device.id}/ui/images/logo.png"' in response.text
         assert f'action="/proxy/devices/{device.id}/index.php"' in response.text
+        assert (
+            f'"/proxy/devices/{device.id}/api/wireguard/service/status"'
+            in response.text
+        )
+        assert (
+            f"'/proxy/devices/{device.id}/api/wireguard/general/get'"
+            in response.text
+        )
         assert response.headers["location"] == f"/proxy/devices/{device.id}/ui/"
         assert f"opnhub_fw_{device.id.hex}_PHPSESSID=abc123" in response.headers[
             "set-cookie"

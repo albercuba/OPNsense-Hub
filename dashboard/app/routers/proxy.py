@@ -71,6 +71,9 @@ HUB_PROXY_HTML_URL_ATTR_RE = re.compile(
     re.IGNORECASE,
 )
 HUB_PROXY_CSS_URL_RE = re.compile(r'url\((?P<quote>["\']?)/(?P<path>[^)"\']*)')
+HUB_PROXY_SCRIPT_URL_RE = re.compile(
+    r'(?P<prefix>["\'])/(?P<path>(?:api|ui|themes|css|js|images|widgets|diag_[^"\']*)[^"\']*)'
+)
 
 relay_manager = (
     TcpRelayManager(
@@ -286,6 +289,18 @@ def _copy_firewall_cookies(
         )
 
 
+def _rewrite_firewall_text_urls(text: str, device_id: uuid.UUID) -> str:
+    proxy_base = f"/proxy/devices/{device_id}/"
+    text = HUB_PROXY_CSS_URL_RE.sub(
+        lambda match: f"url({match.group('quote')}{proxy_base}{match.group('path')}",
+        text,
+    )
+    return HUB_PROXY_SCRIPT_URL_RE.sub(
+        lambda match: f"{match.group('prefix')}{proxy_base}{match.group('path')}",
+        text,
+    )
+
+
 def _rewrite_firewall_body(
     body: bytes, content_type: str | None, device_id: uuid.UUID
 ) -> bytes:
@@ -299,17 +314,11 @@ def _rewrite_firewall_body(
             lambda match: f"{match.group('prefix')}{proxy_base}{match.group('path')}",
             text,
         )
-        text = HUB_PROXY_CSS_URL_RE.sub(
-            lambda match: f"url({match.group('quote')}{proxy_base}{match.group('path')}",
-            text,
-        )
+        text = _rewrite_firewall_text_urls(text, device_id)
         return text.encode("utf-8")
-    if "text/css" in normalized:
+    if "text/css" in normalized or "javascript" in normalized:
         text = body.decode("utf-8", errors="ignore")
-        text = HUB_PROXY_CSS_URL_RE.sub(
-            lambda match: f"url({match.group('quote')}{proxy_base}{match.group('path')}",
-            text,
-        )
+        text = _rewrite_firewall_text_urls(text, device_id)
         return text.encode("utf-8")
     return body
 
