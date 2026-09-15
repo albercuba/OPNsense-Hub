@@ -206,6 +206,26 @@ class FakeAgentHttpResponse:
         return self._payload
 
 
+class FakeFailingAgentHttpClient:
+    calls: ClassVar[list[tuple[str, dict]]] = []
+    status_code = 502
+    payload = {"detail": "WebGUI unreachable at https://100.96.0.10:443/: ConnectError: certificate verify failed"}
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeAgentHttpResponse(self.payload, status_code=self.status_code)
+
+
 class FakeAgentHttpClient:
     calls: ClassVar[list[tuple[str, dict]]] = []
 
@@ -400,6 +420,56 @@ def test_hub_proxy_fetches_through_agent_and_isolates_firewall_cookies(monkeypat
         assert post_kwargs["json"]["headers"]["origin"] == "https://100.96.0.10:443"
 
         app.dependency_overrides.clear()
+
+
+def test_hub_proxy_surfaces_wireguard_agent_failure_detail(monkeypatch):
+    with connector_test_database() as (session, session_factory):
+        user, device, _other_device = seed_connector_data(session)
+        configure_test_client(monkeypatch, session, session_factory, user)
+        monkeypatch.setattr(settings, "firewall_access_mode", "hub_proxy")
+        monkeypatch.setattr(
+            settings, "wg_agent_url", "http://opnsense-hub-wireguard:8084"
+        )
+        monkeypatch.setattr(settings, "wg_agent_token", "a" * 32)
+        FakeFailingAgentHttpClient.calls = []
+        FakeFailingAgentHttpClient.status_code = 502
+        FakeFailingAgentHttpClient.payload = {
+            "detail": "WebGUI unreachable at https://100.96.0.10:443/: ConnectError: certificate verify failed"
+        }
+        monkeypatch.setattr(proxy_router.httpx, "AsyncClient", FakeFailingAgentHttpClient)
+
+        with TestClient(app) as client:
+            response = client.get(f"/proxy/devices/{device.id}/", follow_redirects=False)
+
+        app.dependency_overrides.clear()
+        assert response.status_code == 502
+        assert response.json()["detail"] == (
+            "WebGUI unreachable at https://100.96.0.10:443/: ConnectError: certificate verify failed"
+        )
+
+
+def test_hub_proxy_explains_wireguard_agent_auth_failure(monkeypatch):
+    with connector_test_database() as (session, session_factory):
+        user, device, _other_device = seed_connector_data(session)
+        configure_test_client(monkeypatch, session, session_factory, user)
+        monkeypatch.setattr(settings, "firewall_access_mode", "hub_proxy")
+        monkeypatch.setattr(
+            settings, "wg_agent_url", "http://opnsense-hub-wireguard:8084"
+        )
+        monkeypatch.setattr(settings, "wg_agent_token", "a" * 32)
+        FakeFailingAgentHttpClient.calls = []
+        FakeFailingAgentHttpClient.status_code = 401
+        FakeFailingAgentHttpClient.payload = {}
+        monkeypatch.setattr(proxy_router.httpx, "AsyncClient", FakeFailingAgentHttpClient)
+
+        with TestClient(app) as client:
+            response = client.get(f"/proxy/devices/{device.id}/", follow_redirects=False)
+
+        app.dependency_overrides.clear()
+        assert response.status_code == 401
+        assert response.json()["detail"] == (
+            "WireGuard agent rejected the proxy request; check WG_AGENT_TOKEN"
+        )
 
 
 def test_connector_open_rejects_cross_company_viewer(monkeypatch):

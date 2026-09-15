@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
+import logging
 from contextlib import asynccontextmanager
 
 from typing import Annotated
@@ -29,6 +30,7 @@ from .wireguard import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 CONNECTOR_CHUNK_SIZE = 64 * 1024
 
 
@@ -254,7 +256,19 @@ async def proxy_request(payload: ProxyRequest):
                 content=body,
             )
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail="firewall proxy request failed") from exc
+        error_detail = str(exc) or repr(exc)
+        logger.warning(
+            "WireGuard agent firewall proxy request failed for %s:%s %s: %s: %s",
+            payload.host,
+            payload.port,
+            path,
+            exc.__class__.__name__,
+            error_detail,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"WebGUI unreachable at https://{payload.host}:{payload.port}{path}: {exc.__class__.__name__}: {error_detail}",
+        ) from exc
     if len(response.content) > settings.max_proxy_response_bytes:
         raise HTTPException(status_code=502, detail="firewall proxy response is too large")
     return ProxyResponse(

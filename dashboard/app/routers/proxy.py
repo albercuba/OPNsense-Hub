@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
+import logging
 import re
 import uuid
 from datetime import timezone
@@ -38,6 +39,7 @@ from ..web import render_template, settings
 from ..wireguard import get_validated_hub_wireguard_config
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 CONNECTOR_CHUNK_SIZE = 64 * 1024
 _connector_connection_counts: dict[uuid.UUID, int] = {}
 _connector_websockets: dict[uuid.UUID, set[WebSocket]] = {}
@@ -325,6 +327,23 @@ def _agent_header_pairs(payload: dict[str, object]) -> list[tuple[str, str]]:
     return pairs
 
 
+def _agent_failure_detail(agent_response: httpx.Response) -> str:
+    try:
+        payload = agent_response.json()
+    except ValueError:
+        payload = {}
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if agent_response.status_code == 401:
+        return "WireGuard agent rejected the proxy request; check WG_AGENT_TOKEN"
+    if agent_response.status_code == 400:
+        return "WireGuard agent rejected the firewall target; check HUB_WG_CIDR and OPNSENSE_GUI_PORT"
+    if agent_response.status_code == 502:
+        return "WireGuard agent could not reach the firewall WebGUI"
+    return "firewall proxy request failed"
+
+
 def _proxy_response_from_agent_payload(
     payload: dict[str, object], device_id: uuid.UUID, target_host: str
 ) -> Response:
@@ -386,9 +405,19 @@ async def _hub_proxy_request(
                 },
             )
         if agent_response.status_code >= 400:
+            detail = _agent_failure_detail(agent_response)
+            logger.warning(
+                "Hub proxy request failed via WireGuard agent for device=%s target=%s:%s path=%s status=%s detail=%s",
+                device_id,
+                target_host,
+                settings.opnsense_gui_port,
+                proxy_path,
+                agent_response.status_code,
+                detail,
+            )
             raise HTTPException(
                 status_code=agent_response.status_code,
-                detail="firewall proxy request failed",
+                detail=detail,
             )
         return _proxy_response_from_agent_payload(
             agent_response.json(), device_id, target_host
@@ -433,7 +462,18 @@ async def hub_proxy_device_request(
         target_host = validate_proxy_device_target(device)
         return await _hub_proxy_request(request, device.id, target_host, path)
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail="firewall proxy request failed") from exc
+        error_detail = str(exc) or repr(exc)
+        logger.warning(
+            "Hub proxy could not reach WireGuard agent for device=%s path=%s: %s: %s",
+            device_id,
+            path,
+            exc.__class__.__name__,
+            error_detail,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"WireGuard agent request failed: {exc.__class__.__name__}: {error_detail}",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
