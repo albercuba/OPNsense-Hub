@@ -18,6 +18,8 @@
         </script>
         {% if brand_logo_url %}
         <link rel="icon" href="{{ brand_logo_url }}" />
+        {% else %}
+        <link rel="icon" href="/static/opnsense-hub-cube-fluent.svg" />
         {% endif %}
         <link
             rel="stylesheet"
@@ -42,9 +44,16 @@
                     alt="OPNsense Hub logo"
                 />
                 {% else %}
-                <span class="brand-mark"
-                    ><i class="fa-solid fa-shield-halved"></i
-                ></span>
+                <img
+                    class="brand-logo default-brand-logo default-brand-logo-light"
+                    src="/static/opnsense-hub-cube-fluent.svg"
+                    alt="OPNsense Hub logo"
+                />
+                <img
+                    class="brand-logo default-brand-logo default-brand-logo-dark"
+                    src="/static/opnsense-hub-cube-fluent-gray.svg"
+                    alt="OPNsense Hub logo"
+                />
                 {% endif %} OPNsense Hub
             </div>
             </div>

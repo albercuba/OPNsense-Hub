@@ -208,6 +208,18 @@ body {
     max-height: 42px;
 }
 
+.default-brand-logo-dark {
+    display: none;
+}
+
+:root[data-theme="dark"] .default-brand-logo-light {
+    display: none;
+}
+
+:root[data-theme="dark"] .default-brand-logo-dark {
+    display: inline-block;
+}
+
 .brand-mark {
     display: inline-grid;
     place-items: center;
